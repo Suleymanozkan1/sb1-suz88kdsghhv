@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-emerald-50 text-emerald-900;
+  }
+}
+
+@layer components {
+  .container {
+    @apply max-w-7xl mx-auto;
+  }
+
+  .bamboo-card {
+    @apply bg-white/90 backdrop-blur-sm border border-emerald-100 shadow-lg;
+  }
+
+  @keyframes sway {
+    0%, 100% { transform: rotate(-2deg); }
+    50% { transform: rotate(2deg); }
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .swaying {
+    animation: sway 6s ease-in-out infinite;
+    transform-origin: bottom;
+  }
+
+  .floating {
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .bamboo-gradient {
+    background: linear-gradient(to bottom, #047857, #065f46);
+  }
+}
