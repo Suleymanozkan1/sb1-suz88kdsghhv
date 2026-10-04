@@ -3,19 +3,26 @@
 Checks: workbook loads; VBA project imported with all modules; pure-VBA functions compile and
 run (URL encoding, cell conversion, TSV contract parser); formulas recalculate; reconciliation
 formula checks evaluate to PASS/WARNING (no FAIL); defined names and the CONTROL button exist.
-Usage: python3 scripts/lo-validate.py <file.xlsm>
+Usage: python3 scripts/lo-validate.py [file.xlsm]   (default: the newest workbook written by `npm run excel:sample`)
 """
 import json, os, subprocess, sys, time, uno
 from com.sun.star.beans import PropertyValue
 
-import shutil, tempfile
+import glob, shutil, tempfile
+if len(sys.argv) > 1:
+    src = sys.argv[1]
+else:
+    found = sorted(glob.glob(os.path.join(tempfile.gettempdir(), "HotelCost_Cost_Report_*.xlsm")), key=os.path.getmtime)
+    if not found:
+        sys.exit("usage: lo-validate.py <file.xlsm> (or run `npm run excel:sample` first)")
+    src = found[-1]
 _tmpdir = tempfile.mkdtemp(prefix="hc-lo-")
-path = os.path.join(_tmpdir, os.path.basename(sys.argv[1]))
-shutil.copy(os.path.abspath(sys.argv[1]), path)
+path = os.path.join(_tmpdir, os.path.basename(src))
+shutil.copy(os.path.abspath(src), path)
 HARNESS_OUT = os.path.join(_tmpdir, "harness.txt")
 port = 2093
 proc = subprocess.Popen(["soffice", "--headless", "--invisible", "--norestore", "--nologo",
-                         f"--accept=socket,host=127.0.0.1,port={port};urp;", "-env:UserInstallation=file:///tmp/claude-0/lo-profile"],
+                         f"--accept=socket,host=127.0.0.1,port={port};urp;", f"-env:UserInstallation=file://{os.path.join(_tmpdir, 'lo-profile')}"],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 ctx = None
 for _ in range(60):
