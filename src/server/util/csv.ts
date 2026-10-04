@@ -1,6 +1,6 @@
 /** Minimal RFC-4180 CSV parser (quoted fields, escaped quotes, CRLF). */
 export function parseCsv(text: string, delimiter?: string): string[][] {
-  const src = text.replace(/^﻿/, "");
+  const src = text.replace(/^\uFEFF/, "");
   const firstLine = src.split(/\r?\n/, 1)[0] ?? "";
   const delim = delimiter ?? (firstLine.split(";").length > firstLine.split(",").length ? ";" : ",");
   const rows: string[][] = [];
@@ -47,4 +47,9 @@ export function csvToObjects(text: string): Array<Record<string, string>> {
 export function csvSafe(v: string): string {
   const s = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
   return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Map common POS export column names onto the sale import schema. */
+export function mapSaleRow(r: Record<string, string>) {
+  return { externalId: r.external_id ?? r.id ?? r.ticket_line ?? "", saleDate: r.sale_date ?? r.date ?? "", department: r.department ?? r.outlet ?? "", posCode: r.pos_code ?? r.item_code ?? r.plu ?? "", quantity: r.quantity ?? r.qty ?? "", netRevenue: r.net_revenue ?? r.revenue ?? r.amount ?? "" };
 }

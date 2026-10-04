@@ -36,7 +36,7 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
       const used30 = D(usage.find((u) => u.productId === p.id)?._sum.quantity?.toString() ?? 0).neg();
       const avgDaily = used30.div(30);
       const last = lastOut.find((u) => u.productId === p.id)?._max.txDate ?? null;
-      const daysIdle = last ? Math.floor((Date.now() - last.getTime()) / 86400000) : null;
+      const daysIdle = last ? Math.trunc((Date.now() - last.getTime()) / 86400000) : null;
       return {
         productId: p.id,
         sku: p.sku,
@@ -114,7 +114,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
       recipeIssues.push({ id: r.id, name: r.name, problem: e instanceof Error ? e.message : String(e) });
     }
   }
-  const daysSinceCount = lastCount ? Math.floor((now.getTime() - lastCount.countDate.getTime()) / 86400000) : null;
+  const daysSinceCount = lastCount ? Math.trunc((now.getTime() - lastCount.countDate.getTime()) / 86400000) : null;
   const score = completenessScore({
     recipesTotal: recipes.length,
     recipesComplete: complete,
