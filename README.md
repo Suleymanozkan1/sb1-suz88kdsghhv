@@ -2,7 +2,7 @@
 
 Cost intelligence for hotels: **purchase → stock → recipe → yield → consumption → waste → actual vs theoretical → variance → department / product cost**, with every figure traceable to source transactions — plus a macro-enabled **Excel reporting layer** (`.xlsm`) that uses the same cost engine.
 
-> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer)**. Buffet, minibar, rooms, labor, energy, allocation, budget and forecast are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
+> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar)**. Rooms, labor, energy, allocation, budget and forecast are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
 
 ## Quick start
 
@@ -43,7 +43,9 @@ Principles enforced in code and tests:
 | Actual cost (COGS) | Opening + Purchases + Transfers in − Transfers out − Closing |
 | Theoretical cost | Σ qty sold × cost of the recipe version effective on the sale date |
 | Variance | Actual − Theoretical |
-| Unexplained | Variance − Price/timing − Recorded waste − Staff meals − Complimentary |
+| Unexplained | Variance − Price/timing − Recorded waste − Staff meals − Complimentary − Buffet consumption − Minibar consumption |
+| Buffet food cost | Production + refills (ledger cost) − returned leftovers − staff meal; **cost / cover** = food cost / actual covers |
+| Minibar contribution | Revenue − cost of consumed items; shrinkage = expected room qty − counted qty (posted as count adjustment) |
 | Landed cost | Net price − discount + freight + shipping + customs + handling + other (tax separate) |
 | WAC | (Old qty × old avg + received qty × landed unit cost) / total qty |
 | Yield / required AP | EP / AP ; AP = EP / yield |
@@ -51,6 +53,14 @@ Principles enforced in code and tests:
 | Order recommendation | Expected consumption + safety stock + lead-time demand − stock − open PO, rounded up to purchase units |
 
 The workbook's `49_FORMULAS` sheet lists all formulas in English and Turkish.
+
+## Buffet & minibar (Phase 2)
+
+**Buffet** (`/buffet`, `/api/buffet/*`): a session = date + meal + outlet. Production and refill lines (products or recipe dishes, exploded to ingredients) are issued from stock through the ledger (`sourceType=BUFFET`). At close, leftovers are classified once: *reusable* returns to stock at the original cost, *waste* posts a `WASTE` movement + `BUFFET_LEFTOVER` waste record, *staff meal* posts `STAFF_MEAL` — so food is never counted both as consumption and as waste. KPIs: input cost, food cost, cost/cover, waste/cover, waste %, leftover %, oversupply, category split, grams per guest (estimated), and a forecast from comparable sessions.
+
+**Minibar** (`/minibar`, `/api/minibar/*`): items stay in inventory until consumed. A *Minibar store* and an *in-room* warehouse are created on first use; each room has a sub-ledger (`MinibarMovement`): restock (transfer to rooms), consumption (cost + revenue, folio ref), return, waste and physical count (difference = shrinkage). Par levels per room type or room; "restock to par" in one click. Invariant (checked in every export): Σ room quantities = in-room warehouse balance.
+
+Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIBAR_CONSUMPTION`) — they have no POS sale behind them, so they are not reported as unexplained — and fill Excel sheets 14–17 (buffet cost, summary, product; minibar cost), with pivots and the cost/cover chart.
 
 ## Excel Full Cost Report (.xlsm)
 
@@ -88,7 +98,7 @@ npm run build
 |---|---|
 | 1 ✅ | Domain, DB, UOM, purchasing/landed cost, ledger, WAC/FIFO, recipes/sub-recipes/versions, yield, waste, consumption, theoretical vs actual, variance, approvals, periods, audit, data quality, UI, API |
 | 1b ✅ | Excel `.xlsm` reporting layer + export contract |
-| 2 | Buffet sessions (production/refill/leftover, cost & waste per cover), minibar |
+| 2 ✅ | Buffet sessions (production/refill/leftover, cost & waste per cover, forecast), minibar (par, room sub-ledger, shrinkage, contribution) |
 | 3 | Rooms, housekeeping, laundry, labor, energy, engineering, allocation engine, PMS import |
 | 4 | Budget, forecast, what-if, saving actions, menu engineering |
 | 5 | Report archive/PDF pack, Excel/CSV import engine, month-end management pack |

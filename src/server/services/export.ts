@@ -17,13 +17,15 @@ import { D, Decimal, ZERO, safeDiv, str, sum } from "@/domain/money";
 import { stockLevel } from "@/domain/costing";
 import { costRecipe, type CostedLine } from "@/domain/recipe-cost";
 import type { Db } from "../db";
-import { type Actor, authorize, requireDepartment } from "../auth/actor";
+import { type Actor, authorize, can, canDepartment, requireDepartment } from "../auth/actor";
 import { theoreticalVsActual, type VarianceReport } from "./variance";
 import { buildResolver, versionToDef } from "./recipes";
 import { inventoryStatus, dataQuality } from "./insights";
 import { orderRecommendations } from "./inventory";
 import { costTableAsOf, snapshotOf } from "./sales";
 import { audit } from "./audit";
+import { periodReport as buffetPeriodReport } from "./buffet";
+import { minibarReport, minibarInvariant, MINIBAR_DEPT } from "./minibar";
 
 export const EXPORT_VERSION = "1.0";
 export const APP_VERSION = "0.1.0";
@@ -117,6 +119,12 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
 
   // ── Core: the same variance computation the app uses ──
   const tva = await theoreticalVsActual(db, actor, hotelId, { from: p.from, to: p.to, departmentId: p.departmentId ?? null, categoryGroup: p.categoryGroup ?? null });
+  // Buffet & minibar (Phase 2) — same services as the Buffet / Minibar screens
+  const buffet = can(actor, "buffet:view") ? await buffetPeriodReport(db, actor, hotelId, { from: p.from, to: p.to, departmentId: p.departmentId ?? null }) : null;
+  const miniDept = await db.department.findFirst({ where: { hotelId, code: MINIBAR_DEPT } });
+  const minibarInScope = can(actor, "minibar:view") && (!miniDept || canDepartment(actor, miniDept.id)) && (!p.departmentId || p.departmentId === miniDept?.id) && (!p.categoryGroup || p.categoryGroup === "BEVERAGE" || p.categoryGroup === "FOOD");
+  const minibar = minibarInScope ? await minibarReport(db, actor, hotelId, { from: p.from, to: p.to }) : null;
+  const minibarRevenue = minibar ? minibar.totals.revenue : ZERO;
   const [food, bev] = p.categoryGroup
     ? [p.categoryGroup === "FOOD" ? tva : null, p.categoryGroup === "BEVERAGE" ? tva : null]
     : await Promise.all([
@@ -381,6 +389,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   for (const c of costTx) deptCost.set(c.departmentId ?? "", (deptCost.get(c.departmentId ?? "") ?? ZERO).plus(D(c.amount.toString())));
   const deptRev = new Map<string, Decimal>();
   for (const sl of sales) deptRev.set(sl.departmentId, (deptRev.get(sl.departmentId) ?? ZERO).plus(D(sl.netRevenue.toString())));
+  if (miniDept && minibarRevenue.gt(0)) deptRev.set(miniDept.id, (deptRev.get(miniDept.id) ?? ZERO).plus(minibarRevenue));
   const deptKeys = [...new Set([...deptCost.keys(), ...deptRev.keys()])];
   const deptRows = deptKeys.map((k) => {
     const cost = deptCost.get(k) ?? ZERO;
@@ -443,10 +452,24 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
 
   // ── Later-phase modules (headers only, explicit NOT_AVAILABLE) ──
   const money = (k: string, h: string) => col(k, h, "money");
-  add(unavailable("buffetCost", "Buffet Cost", [col("date", "Date", "date"), col("meal", "Meal"), col("outlet", "Outlet"), col("covers", "Covers", "int"), col("productionQty", "Production Qty", "qty"), col("refillQty", "Refill Qty", "qty"), col("leftoverQty", "Leftover Qty", "qty"), col("wasteQty", "Waste Qty", "qty"), col("estimatedConsumption", "Estimated Consumption", "qty"), money("foodCost", "Food Cost"), money("wasteCost", "Waste Cost"), money("costPerCover", "Cost / Cover"), money("wastePerCover", "Waste / Cover"), col("wastePct", "Waste %", "pct")], "Phase 2 — Buffet"));
-  add(unavailable("buffetSummary", "Buffet Summary", [col("meal", "Meal"), money("cost", "Cost"), money("costPerCover", "Cost per Cover"), money("wastePerCover", "Waste per Cover"), col("foodCostPct", "Food Cost %", "pct")], "Phase 2 — Buffet"));
-  add(unavailable("buffetProduct", "Buffet Product Cost", [col("product", "Product"), col("opening", "Opening", "qty"), col("produced", "Produced", "qty"), col("refilled", "Refilled", "qty"), col("estimatedConsumed", "Estimated Consumed", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost")], "Phase 2 — Buffet"));
-  add(unavailable("minibarCost", "Minibar Cost", [col("room", "Room"), col("product", "Product"), col("opening", "Opening", "qty"), col("restocked", "Restocked", "qty"), col("consumed", "Consumed", "qty"), col("returned", "Returned", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost"), money("revenue", "Revenue"), money("contribution", "Contribution"), col("variance", "Variance", "qty")], "Phase 2 — Minibar"));
+  const buffetNote = buffet ? (buffet.openSessions ? `${buffet.openSessions} session(s) still open are excluded until closed. Estimated consumption is a control estimate (input − reusable − waste − staff meal).` : "Estimated consumption is a control estimate (input − reusable − waste − staff meal).") : "No buffet:view permission.";
+  const buffetCols = [col("date", "Date", "date"), col("meal", "Meal"), col("outlet", "Outlet"), col("covers", "Covers", "int"), col("productionQty", "Production Qty", "qty"), col("refillQty", "Refill Qty", "qty"), col("leftoverQty", "Leftover Qty", "qty"), col("wasteQty", "Waste Qty", "qty"), col("estimatedConsumption", "Estimated Consumption", "qty"), money("foodCost", "Food Cost"), money("wasteCost", "Waste Cost"), money("costPerCover", "Cost / Cover"), money("wastePerCover", "Waste / Cover"), col("wastePct", "Waste %", "pct")];
+  const closedSessions = buffet ? buffet.sessions.filter((r) => r.session.status === "CLOSED") : [];
+  add(section("buffetCost", "Buffet Cost", "BuffetCostService.periodReport (closed sessions)", buffetCols,
+    closedSessions.map(({ session: ss, metrics: m }) => ({
+      date: dt(ss.serviceDate), meal: ss.type, outlet: ss.department.name, covers: String(m.covers),
+      productionQty: s4(sum(m.items.map((i) => i.produced))), refillQty: s4(sum(m.items.map((i) => i.refilled))), leftoverQty: s4(sum(m.items.map((i) => i.reusable.plus(i.waste).plus(i.staffMeal)))), wasteQty: s4(sum(m.items.map((i) => i.waste))),
+      estimatedConsumption: s4(sum(m.items.map((i) => i.consumed))), foodCost: s4(m.buffetFoodCost), wasteCost: s4(m.wasteCost), costPerCover: s4(m.costPerCover), wastePerCover: s4(m.wastePerCover), wastePct: m.wastePct ? s4(m.wastePct.div(100)) : null,
+    })), buffet ? "OK" : "NOT_AVAILABLE", `${buffetNote} Quantities mix units across items; see BUFFET_PRODUCT for per-item units.`));
+  add(section("buffetSummary", "Buffet Summary", "BuffetCostService.periodReport", [col("meal", "Meal"), money("cost", "Cost"), money("costPerCover", "Cost per Cover"), money("wastePerCover", "Waste per Cover"), col("foodCostPct", "Food Cost %", "pct")],
+    buffet ? [...buffet.byType.map((t) => ({ meal: `${t.type} (${t.sessions} sessions, ${t.covers} covers)`, cost: s4(t.cost), costPerCover: s4(t.costPerCover), wastePerCover: s4(t.wastePerCover), foodCostPct: null })), { meal: `TOTAL (${buffet.totals.sessions} sessions, ${buffet.totals.covers} covers)`, cost: s4(buffet.totals.cost), costPerCover: s4(buffet.totals.costPerCover), wastePerCover: s4(buffet.totals.wastePerCover), foodCostPct: null }] : [],
+    buffet ? "PARTIAL" : "NOT_AVAILABLE", "Food Cost % needs buffet revenue (board-basis revenue allocation, Phase 3); cost per cover is ACTUAL."));
+  add(section("buffetProduct", "Buffet Product Cost", "BuffetCostService.periodReport (by item)", [col("product", "Product"), col("opening", "Opening", "qty"), col("produced", "Produced", "qty"), col("refilled", "Refilled", "qty"), col("estimatedConsumed", "Estimated Consumed", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost")],
+    buffet ? buffet.byItem.map((i) => ({ product: `${i.name} (${i.unit})`, opening: "0", produced: s4(i.produced), refilled: s4(i.refilled), estimatedConsumed: s4(i.consumed), waste: s4(i.waste), closing: s4(i.reusable), cost: s4(i.cost) })) : [],
+    buffet ? "OK" : "NOT_AVAILABLE", "Opening = 0 (each session starts from production); Closing = reusable leftovers."));
+  add(section("minibarCost", "Minibar Cost", "MinibarCostService.minibarReport (room sub-ledger)", [col("room", "Room"), col("product", "Product"), col("opening", "Opening", "qty"), col("restocked", "Restocked", "qty"), col("consumed", "Consumed", "qty"), col("returned", "Returned", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost"), money("revenue", "Revenue"), money("contribution", "Contribution"), col("variance", "Variance", "qty")],
+    minibar ? minibar.lines.sort((a, b) => a.room.localeCompare(b.room, undefined, { numeric: true }) || a.product.localeCompare(b.product)).map((l) => ({ room: l.room, product: l.product, opening: s4(l.opening), restocked: s4(l.restocked), consumed: s4(l.consumed), returned: s4(l.returned), waste: s4(l.waste), closing: s4(l.closing), cost: s4(l.cost), revenue: s4(l.revenue), contribution: s4(l.contribution), variance: s4(l.shrinkage.neg()) })) : [],
+    minibar ? "OK" : "NOT_AVAILABLE", minibar ? "Cost = consumed + waste + shrinkage. Variance = count difference (negative = missing, unexplained shrinkage)." : "Minibar is outside the export scope or permission."));
   const roomCols = [col("room", "Room"), col("roomType", "Room Type"), col("occupiedNights", "Occupied Nights", "int"), money("roomRevenue", "Room Revenue"), money("housekeeping", "Housekeeping Cost"), money("laundry", "Laundry Cost"), money("amenities", "Amenities Cost"), money("energy", "Energy Cost"), money("maintenance", "Maintenance Allocation"), money("labor", "Labor Allocation"), money("other", "Other Allocation"), money("distribution", "Distribution Cost"), money("fullCost", "Full Room Cost"), money("costPerNight", "Cost / Night"), money("contribution", "Contribution"), col("marginPct", "Margin %", "pct")];
   add(unavailable("roomCost", "Room Cost", roomCols, "Phase 3 — Rooms"));
   add(unavailable("roomTypeCost", "Room Type Cost", roomCols.slice(1), "Phase 3 — Rooms"));
@@ -461,7 +484,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   add(unavailable("costSaving", "Cost Saving", [col("driver", "Cost Driver"), money("current", "Current Cost"), money("target", "Target Cost"), money("saving", "Potential Saving"), col("savingPct", "Saving %", "pct"), col("action", "Action"), col("owner", "Owner"), col("dueDate", "Due Date", "date"), col("status", "Status"), money("actualSaving", "Actual Saving")], "Phase 4 — Saving actions"));
   const totalCost = sum(costTx.map((c) => c.amount.toString()));
   add(section("pnl", "P&L Cost View", "SaleLine revenue + CostTransaction", [col("line", "Line"), col("value", "Value", "money"), col("status", "Status")], [
-    { line: "Revenue (F&B mapped + unmapped sales in scope)", value: s4(tv.revenue.plus(tva.dataQuality.unmappedRevenue)), status: "ACTUAL" },
+    { line: "Revenue (F&B sales in scope + minibar)", value: s4(tv.revenue.plus(tva.dataQuality.unmappedRevenue).plus(minibarRevenue)), status: "ACTUAL" },
     { line: "Direct Cost (inventory consumption, waste, staff, comp, count variance)", value: s4(totalCost), status: "ACTUAL" },
     { line: "Departmental Cost (non-inventory)", value: null, status: "NOT_AVAILABLE" },
     { line: "Labor", value: null, status: "NOT_AVAILABLE" },
@@ -506,12 +529,21 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   chk("Department totals = hotel cost total", consumptionCostTx, sum(deptRows.map((r) => r.directCost ?? "0")), "Department split reconciles");
   chk("Monthly stock: Σ closing value = Inventory closing", tv.closing, sectionSum("monthlyStock", "closingValue"), "Stock report reconciles");
   chk("Theoretical cost: Σ sale lines = summary theoretical", p.categoryGroup ? null : tv.theoreticalCost, p.categoryGroup ? null : sum(sales.filter((s) => s.recipeVersionId).map((s) => s.theoreticalCost?.toString() ?? "0")), "Frozen theoretical cost reconciles");
+  if (buffet) {
+    const buffetLineIds = closedSessions.flatMap((r) => r.session.lines.map((l) => l.id));
+    const ledger = buffetLineIds.length ? await db.stockTransaction.aggregate({ where: { hotelId, sourceType: "BUFFET", sourceId: { in: buffetLineIds } }, _sum: { totalCost: true } }) : null;
+    chk("Buffet: Σ session ledger cost = BUFFET ledger postings", buffet.totals.ledgerCost, D(ledger?._sum.totalCost?.toString() ?? 0).neg(), "Session reports reconcile with the stock ledger");
+  }
+  if (minibar) {
+    const inv = await minibarInvariant(db, hotelId);
+    checks.push({ check: "Minibar: room sub-ledger = in-room warehouse", expected: "0", actual: String(inv.differences.length), difference: String(inv.differences.length), status: inv.ok ? "PASS" : "FAIL", note: inv.ok ? "Every room quantity is backed by the in-room warehouse balance" : `Differences: ${JSON.stringify(inv.differences).slice(0, 300)}` });
+  }
   checks.push({ check: "Sales mapping completeness", expected: "0", actual: String(tva.dataQuality.unmappedSaleLines), difference: String(tva.dataQuality.unmappedSaleLines), status: tva.dataQuality.unmappedSaleLines ? "WARNING" : "PASS", note: "Unmapped sale lines understate theoretical cost" });
   for (const s of Object.values(sections).filter((x) => x.status === "NOT_AVAILABLE")) checks.push({ check: `Module available: ${s.title}`, expected: null, actual: null, difference: null, status: "WARNING", note: s.note ?? "" });
 
   const lastTx = await db.stockTransaction.findFirst({ where: { hotelId, txDate: { lt: p.to } }, orderBy: { txDate: "desc" }, select: { txDate: true } });
   const summary: FullCostExport["summary"] = {
-    totalRevenue: { value: s4(tv.revenue.plus(tva.dataQuality.unmappedRevenue)), status: "ACTUAL", note: "POS net revenue imported for F&B outlets in scope" },
+    totalRevenue: { value: s4(tv.revenue.plus(tva.dataQuality.unmappedRevenue).plus(minibarRevenue)), status: "ACTUAL", note: "POS net revenue for F&B outlets in scope + minibar revenue" },
     totalCost: { value: s4(totalCost), status: "ACTUAL", note: "Cost ledger: inventory-based costs only (labor/energy/overhead modules pending)" },
     totalFoodCost: { value: s4(food?.totals.actualCost ?? null), status: food ? "ACTUAL" : "NOT_AVAILABLE" },
     totalBeverageCost: { value: s4(bev?.totals.actualCost ?? null), status: bev ? "ACTUAL" : "NOT_AVAILABLE" },
@@ -531,7 +563,10 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     laborCostPct: { value: null, status: "NOT_AVAILABLE" },
     wastePct: { value: tv.actualCost.gt(0) ? s4(tv.waste.div(tv.actualCost)) : null, status: "ACTUAL", note: "Waste cost / actual cost" },
     costPerOccupiedRoom: { value: null, status: "NOT_AVAILABLE", note: "Requires PMS occupancy import (Phase 3)" },
-    costPerCover: { value: null, status: "NOT_AVAILABLE", note: "Requires cover counts (Buffet/POS covers, Phase 2)" },
+    costPerCover: buffet && buffet.totals.costPerCover ? { value: s4(buffet.totals.costPerCover), status: "ACTUAL", note: `Buffet food cost / buffet covers (${buffet.totals.covers} covers, ${buffet.totals.sessions} closed sessions); à-la-carte covers need POS cover counts` } : { value: null, status: "NOT_AVAILABLE", note: "No closed buffet sessions in the period" },
+    minibarCost: minibar ? { value: s4(minibar.totals.cost), status: "ACTUAL", note: "Consumed + waste + shrinkage" } : { value: null, status: "NOT_AVAILABLE" },
+    minibarRevenue: minibar ? { value: s4(minibar.totals.revenue), status: "ACTUAL" } : { value: null, status: "NOT_AVAILABLE" },
+    buffetCost: buffet ? { value: s4(buffet.totals.cost), status: "ACTUAL" } : { value: null, status: "NOT_AVAILABLE" },
     costPerGuest: { value: null, status: "NOT_AVAILABLE" },
     avgCostPerPortion: { value: (() => { const q = sum(sales.filter((x) => x.recipeVersionId).map((x) => x.quantity.toString())); return q.gt(0) ? s4(tv.theoreticalCost.div(q)) : null; })(), status: "THEORETICAL" },
     stockTurnover: { value: (() => { const avg = tv.opening.plus(tv.closing).div(2); return avg.gt(0) ? s4(tv.actualCost.div(avg)) : null; })(), status: "ACTUAL", note: "Consumption cost / average inventory value (period)" },

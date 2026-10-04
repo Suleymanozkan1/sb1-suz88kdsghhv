@@ -29,7 +29,7 @@ Public Sub RefreshCharts()
     BarChart ws, "Top Waste Products", "tbl_topWaste", "Product", "Waste Cost", 10, 60 + 3 * (H + 20), 10
     PriceTrendChart ws, 10 + W + 20, 60 + 3 * (H + 20)
     NotAvailable ws, "Room Cost / Occupied Night", 10, 60 + 4 * (H + 20)
-    NotAvailable ws, "Buffet Cost / Cover", 10 + W + 20, 60 + 4 * (H + 20)
+    LineChart ws, "Buffet Cost / Cover", "tbl_buffetCost", "Date", Array("Cost / Cover", "Waste / Cover"), 10 + W + 20, 60 + 4 * (H + 20), False
 End Sub
 
 Private Function HasData(ByVal lo As ListObject) As Boolean

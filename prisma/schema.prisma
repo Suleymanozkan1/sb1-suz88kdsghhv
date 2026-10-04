@@ -302,6 +302,8 @@ model Hotel {
   costSnapshots     CostSnapshot[]
   calcRuns          CalculationRun[]
   buffetSessions    BuffetSession[]
+  minibarPars       MinibarPar[]
+  minibarMovements  MinibarMovement[]
   expenses          Expense[]
   budgets           Budget[]
   allocationRules   CostAllocationRule[]
@@ -312,24 +314,25 @@ model Hotel {
 }
 
 model Department {
-  id           String                 @id @default(cuid())
-  hotelId      String
-  hotel        Hotel                  @relation(fields: [hotelId], references: [id])
-  code         String
-  name         String
-  parentId     String?
-  parent       Department?            @relation("DeptTree", fields: [parentId], references: [id])
-  children     Department[]           @relation("DeptTree")
-  isOutlet     Boolean                @default(false)
-  active       Boolean                @default(true)
-  costCenters  CostCenter[]
-  warehouses   Warehouse[]
-  userAccess   UserDepartmentAccess[]
-  wasteRecords WasteRecord[]
-  sales        SaleLine[]
-  stockTxs     StockTransaction[]
-  costTxs      CostTransaction[]
-  recipes      Recipe[]
+  id             String                 @id @default(cuid())
+  hotelId        String
+  hotel          Hotel                  @relation(fields: [hotelId], references: [id])
+  code           String
+  name           String
+  parentId       String?
+  parent         Department?            @relation("DeptTree", fields: [parentId], references: [id])
+  children       Department[]           @relation("DeptTree")
+  isOutlet       Boolean                @default(false)
+  active         Boolean                @default(true)
+  costCenters    CostCenter[]
+  warehouses     Warehouse[]
+  userAccess     UserDepartmentAccess[]
+  wasteRecords   WasteRecord[]
+  sales          SaleLine[]
+  stockTxs       StockTransaction[]
+  costTxs        CostTransaction[]
+  recipes        Recipe[]
+  buffetSessions BuffetSession[]
 
   @@unique([hotelId, code])
 }
@@ -524,21 +527,24 @@ model Product {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  conversions    UnitConversion[]
-  supplierPrices SupplierPrice[]
-  stockTxs       StockTransaction[]
-  balances       StockBalance[]
-  fifoLayers     FifoLayer[]
-  recipeLines    RecipeIngredient[]
-  wasteRecords   WasteRecord[]
-  countLines     StockCountLine[]
-  poItems        PurchaseOrderItem[]
-  receiptItems   GoodsReceiptItem[]
-  invoiceItems   InvoiceItem[]
-  yieldRecords   YieldRecord[]
+  conversions      UnitConversion[]
+  supplierPrices   SupplierPrice[]
+  stockTxs         StockTransaction[]
+  balances         StockBalance[]
+  fifoLayers       FifoLayer[]
+  recipeLines      RecipeIngredient[]
+  wasteRecords     WasteRecord[]
+  countLines       StockCountLine[]
+  poItems          PurchaseOrderItem[]
+  receiptItems     GoodsReceiptItem[]
+  invoiceItems     InvoiceItem[]
+  yieldRecords     YieldRecord[]
   // a semi-finished product produced by a recipe
-  producedBy     Recipe[]              @relation("RecipeOutputProduct")
-  prItems        PurchaseRequestItem[]
+  producedBy       Recipe[]              @relation("RecipeOutputProduct")
+  prItems          PurchaseRequestItem[]
+  buffetLines      BuffetLine[]
+  minibarPars      MinibarPar[]
+  minibarMovements MinibarMovement[]
 
   @@unique([hotelId, sku])
   @@index([hotelId, name])
@@ -746,20 +752,21 @@ model InvoiceItem {
 // ───────────────────────── Inventory ledger ─────────────────────────
 
 model Warehouse {
-  id           String             @id @default(cuid())
-  hotelId      String
-  hotel        Hotel              @relation(fields: [hotelId], references: [id])
-  departmentId String?
-  department   Department?        @relation(fields: [departmentId], references: [id])
-  code         String
-  name         String
-  active       Boolean            @default(true)
-  stockTxs     StockTransaction[]
-  balances     StockBalance[]
-  fifoLayers   FifoLayer[]
-  receipts     GoodsReceipt[]
-  counts       StockCount[]
-  wasteRecords WasteRecord[]
+  id             String             @id @default(cuid())
+  hotelId        String
+  hotel          Hotel              @relation(fields: [hotelId], references: [id])
+  departmentId   String?
+  department     Department?        @relation(fields: [departmentId], references: [id])
+  code           String
+  name           String
+  active         Boolean            @default(true)
+  stockTxs       StockTransaction[]
+  balances       StockBalance[]
+  fifoLayers     FifoLayer[]
+  receipts       GoodsReceipt[]
+  counts         StockCount[]
+  wasteRecords   WasteRecord[]
+  buffetSessions BuffetSession[]
 
   @@unique([hotelId, code])
 }
@@ -972,6 +979,7 @@ model Recipe {
   versions        RecipeVersion[]
   usedAsSub       RecipeIngredient[] @relation("SubRecipe")
   sales           SaleLine[]
+  buffetLines     BuffetLine[]
 
   @@unique([hotelId, code])
   @@index([hotelId, posCode])
@@ -1242,38 +1250,135 @@ model Room {
   area     String?
   sqm      Decimal? @db.Decimal(20, 6)
 
+  active           Boolean           @default(true)
+  minibarMovements MinibarMovement[]
+  minibarPars      MinibarPar[]
+
   @@unique([hotelId, number])
 }
+
+// ───────────────────────── Buffet (Phase 2) ─────────────────────────
+// Production/refill lines issue stock (CONSUMPTION, sourceType BUFFET). Leftovers are
+// reclassified at close through the ledger, so food is never counted twice (spec 81).
 
 model BuffetSession {
   id             String       @id @default(cuid())
   hotelId        String
   hotel          Hotel        @relation(fields: [hotelId], references: [id])
   departmentId   String
+  department     Department   @relation(fields: [departmentId], references: [id])
+  warehouseId    String
+  warehouse      Warehouse    @relation(fields: [warehouseId], references: [id])
+  name           String?
   type           BuffetType
   serviceDate    DateTime     @db.Date
   startTime      DateTime?
   endTime        DateTime?
   expectedCovers Int?
   actualCovers   Int?
+  occupiedRooms  Int?
+  inHouseGuests  Int?
   boardBasis     String?
-  status         String       @default("OPEN")
+  notes          String?
+  status         String       @default("OPEN") // OPEN | CLOSED
+  createdById    String
+  createdAt      DateTime     @default(now())
+  closedAt       DateTime?
+  closedById     String?
   lines          BuffetLine[]
+
+  @@index([hotelId, serviceDate])
+  @@index([hotelId, departmentId, serviceDate])
 }
 
 model BuffetLine {
-  id            String         @id @default(cuid())
-  sessionId     String
-  session       BuffetSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  kind          String // PRODUCTION | REFILL | LEFTOVER
-  productId     String?
-  recipeId      String?
-  category      String?
-  quantity      Decimal        @db.Decimal(20, 6)
-  unit          String
-  unitCost      Decimal?       @db.Decimal(20, 6)
-  leftoverClass LeftoverClass?
-  recordedAt    DateTime       @default(now())
+  id              String         @id @default(cuid())
+  sessionId       String
+  session         BuffetSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind            String // PRODUCTION | REFILL | LEFTOVER
+  productId       String?
+  product         Product?       @relation(fields: [productId], references: [id])
+  recipeId        String?
+  recipe          Recipe?        @relation(fields: [recipeId], references: [id])
+  recipeVersionId String?
+  category        String?
+  quantity        Decimal        @db.Decimal(20, 6) // in `unit`
+  unit            String
+  /**
+   * for product lines: quantity in product stock unit; for recipes: output units
+   */
+  stockQty        Decimal?       @db.Decimal(20, 6)
+  unitCost        Decimal?       @db.Decimal(20, 6) // per `unit`, frozen from ledger postings
+  totalCost       Decimal?       @db.Decimal(20, 6)
+  refillNo        Int?
+  sourceLineId    String? // leftover → production/refill line
+  leftoverClass   LeftoverClass?
+  userId          String?
+  note            String?
+  recordedAt      DateTime       @default(now())
+
+  @@index([sessionId, kind])
+}
+
+// ───────────────────────── Minibar (Phase 2) ─────────────────────────
+// Room stock is a sub-ledger of the "Minibar In-Room" warehouse: restock = transfer in,
+// consumption = CONSUMPTION, count differences = COUNT_ADJUSTMENT (shrinkage).
+
+model MinibarPar {
+  id           String  @id @default(cuid())
+  hotelId      String
+  hotel        Hotel   @relation(fields: [hotelId], references: [id])
+  roomType     String?
+  roomId       String?
+  room         Room?   @relation(fields: [roomId], references: [id])
+  productId    String
+  product      Product @relation(fields: [productId], references: [id])
+  parQty       Decimal @db.Decimal(20, 6)
+  sellingPrice Decimal @db.Decimal(20, 6) // net of tax, per stock unit
+  active       Boolean @default(true)
+
+  @@unique([hotelId, roomType, roomId, productId])
+}
+
+enum MinibarMovementType {
+  RESTOCK
+  CONSUMED
+  RETURNED
+  WASTE
+  COUNT
+}
+
+model MinibarMovement {
+  id             String              @id @default(cuid())
+  hotelId        String
+  hotel          Hotel               @relation(fields: [hotelId], references: [id])
+  roomId         String
+  room           Room                @relation(fields: [roomId], references: [id])
+  productId      String
+  product        Product             @relation(fields: [productId], references: [id])
+  type           MinibarMovementType
+  movedAt        DateTime
+  /**
+   * signed quantity in stock unit (+ into the room, − out of the room)
+   */
+  quantity       Decimal             @db.Decimal(20, 6)
+  unitCost       Decimal             @db.Decimal(20, 6)
+  totalCost      Decimal             @db.Decimal(20, 6)
+  revenue        Decimal             @default(0) @db.Decimal(20, 6)
+  /**
+   * COUNT only: quantity the system expected before the count
+   */
+  expectedQty    Decimal?            @db.Decimal(20, 6)
+  stockTxId      String?
+  folioRef       String?
+  userId         String
+  note           String?
+  idempotencyKey String?
+  createdAt      DateTime            @default(now())
+
+  @@unique([hotelId, idempotencyKey])
+  @@index([hotelId, roomId, movedAt])
+  @@index([hotelId, movedAt, type])
 }
 
 model Expense {

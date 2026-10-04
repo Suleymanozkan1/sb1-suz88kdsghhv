@@ -23,8 +23,10 @@ Public Sub RefreshPivots()
     MakePivot ws, "tbl_waste", ws.Range("Q8"), "pvtWaste", "Waste Type", "Waste Cost", "Waste by Type"
     MakePivot ws, "tbl_inventoryValue", ws.Range("U8"), "pvtStock", "Category", "Stock Value", "Stock Value by Category"
     MakePivot ws, "tbl_recipeSummary", ws.Range("Y8"), "pvtRecipeCost", "Type", "Total Cost / Batch", "Recipe Cost by Type"
-    ws.Range("AC7").Value = "Buffet / Minibar / Room cost pivots: modules not yet available (NOT_AVAILABLE)."
-    ws.Range("AC7").Font.Italic = True
+    MakePivot ws, "tbl_buffetCost", ws.Range("AC8"), "pvtBuffetCost", "Meal", "Food Cost", "Buffet Cost by Meal"
+    MakePivot ws, "tbl_minibarCost", ws.Range("AG8"), "pvtMinibarCost", "Room", "Cost", "Minibar Cost by Room"
+    ws.Range("AK7").Value = "Room cost pivot: module not yet available (NOT_AVAILABLE)."
+    ws.Range("AK7").Font.Italic = True
 End Sub
 
 Private Sub MakePivot(ByVal ws As Worksheet, ByVal src As String, ByVal dest As Range, ByVal pivotName As String, _

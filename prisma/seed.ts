@@ -19,6 +19,8 @@ import { recordWaste } from "../src/server/services/waste";
 import { startCount, enterCount, submitCount } from "../src/server/services/counts";
 import { decideApproval } from "../src/server/services/approvals";
 import { requestStockDelete } from "../src/server/services/approvals";
+import { createSession, addLine, closeSession } from "../src/server/services/buffet";
+import { minibarSetup, setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../src/server/services/minibar";
 
 const prisma = new PrismaClient();
 const PASSWORD = "HotelCost!2026";
@@ -329,6 +331,116 @@ async function main() {
     const sub = await submitCount(prisma, actors.warehouse!, H, cnt.id);
     if (sub.approvalId) await decideApproval(prisma, admin, H, { approvalId: sub.approvalId, decision: "APPROVE", note: "Recount confirmed" });
   }
+
+  // ── Buffet (Phase 2): daily breakfast buffet + Saturday theme night ──
+  const scrambled = await createRecipe(prisma, fb, H, {
+    code: "BF-SCRAMBLED", name: "Scrambled Eggs (buffet)", type: "BREAKFAST", departmentId: dept.BRKF,
+    version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Buffet standard", lines: [{ productId: pid["EGG-LARGE"], quantity: 14, unit: "pc" }, { productId: pid["DAIRY-BUTTER"], quantity: 40, unit: "g" }, { productId: pid["MILK-WHOLE"], quantity: 50, unit: "ml" }] },
+  });
+  await approveVersion(prisma, admin, H, scrambled.versions[0]!.id, { effectiveFrom: new Date(start.getTime() - 86400000) });
+  const breakfastItems: Array<{ key: string; recipe?: boolean; unit: string; perCover: number }> = [
+    { key: scrambled.id, recipe: true, unit: "kg", perCover: 0.06 },
+    { key: pid["CHS-CHEDDAR"]!, unit: "kg", perCover: 0.025 },
+    { key: pid["VEG-TOMATO"]!, unit: "kg", perCover: 0.04 },
+    { key: pid["VEG-CUCUMBER"]!, unit: "kg", perCover: 0.03 },
+    { key: pid["FRT-STRAWB"]!, unit: "kg", perCover: 0.03 },
+    { key: pid["DAIRY-BUTTER"]!, unit: "kg", perCover: 0.012 },
+    { key: pid["MILK-WHOLE"]!, unit: "l", perCover: 0.08 },
+  ];
+  const themeItems: Array<{ key: string; unit: string; perCover: number }> = [
+    { key: pid["FISH-SALMON"]!, unit: "kg", perCover: 0.12 },
+    { key: pid["DRY-RICE"]!, unit: "kg", perCover: 0.08 },
+    { key: pid["VEG-LETTUCE"]!, unit: "kg", perCover: 0.05 },
+  ];
+  const buffetPrice: Record<string, number> = { [pid["EGG-LARGE"]!]: 4.2 * 180, [pid["CHS-CHEDDAR"]!]: 380, [pid["VEG-TOMATO"]!]: 38, [pid["VEG-CUCUMBER"]!]: 30, [pid["FRT-STRAWB"]!]: 140, [pid["DAIRY-BUTTER"]!]: 420, [pid["MILK-WHOLE"]!]: 32, [pid["FISH-SALMON"]!]: 820, [pid["DRY-RICE"]!]: 62, [pid["VEG-LETTUCE"]!]: 45 };
+  for (let w = 0; w < days.length; w += 7) {
+    // weekly buffet purchasing into the main store (eggs in cases of 180)
+    const items = [
+      { productId: pid["EGG-LARGE"]!, quantity: "20", unit: "case", unitPrice: (buffetPrice[pid["EGG-LARGE"]!]! * between(0.98, 1.03)).toFixed(2) },
+      ...[["CHS-CHEDDAR", 60], ["VEG-TOMATO", 90], ["VEG-CUCUMBER", 70], ["FRT-STRAWB", 70], ["DAIRY-BUTTER", 40], ["MILK-WHOLE", 190], ["FISH-SALMON", 25], ["DRY-RICE", 15], ["VEG-LETTUCE", 12]].map(([sku, q]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: PRODUCTS.find((x) => x.sku === sku)!.unit, unitPrice: (buffetPrice[pid[sku as string]!]! * between(0.97, 1.04)).toFixed(2) })),
+    ];
+    await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[1], warehouseId: wh.MAIN, receiptDate: at(days[w]!, 6), invoiceNo: `BUF-${days[w]!.toISOString().slice(0, 10)}`, items });
+  }
+  let sessionsCreated = 0;
+  for (const d of days) {
+    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+    const sessions: Array<{ type: "BREAKFAST" | "THEME_NIGHT"; deptCode: string; covers: number; expected: number; items: Array<{ key: string; recipe?: boolean; unit: string; perCover: number }> }> = [
+      { type: "BREAKFAST", deptCode: "BRKF", covers: Math.round(between(weekend ? 320 : 260, weekend ? 380 : 330)), expected: weekend ? 340 : 290, items: breakfastItems },
+    ];
+    if (d.getUTCDay() === 6) sessions.push({ type: "THEME_NIGHT", deptCode: "REST", covers: Math.round(between(120, 160)), expected: 140, items: themeItems });
+    for (const ss of sessions) {
+      const session = await createSession(prisma, fb, H, { departmentId: dept[ss.deptCode], warehouseId: wh.MAIN, type: ss.type, serviceDate: d, expectedCovers: ss.expected, occupiedRooms: ss.type === "BREAKFAST" ? Math.round(ss.covers / 1.8) : null, inHouseGuests: ss.type === "BREAKFAST" ? Math.round(ss.covers * 1.05) : null, boardBasis: ss.type === "BREAKFAST" ? "BB" : "HB" });
+      const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
+      for (const it of ss.items) {
+        const need = ss.expected * it.perCover;
+        const first = +(need * 0.8).toFixed(2);
+        const refill = +(need * between(0.25, 0.45)).toFixed(2);
+        await addLine(prisma, fb, H, session.id, { kind: "PRODUCTION", ...(it.recipe ? { recipeId: it.key } : { productId: it.key }), quantity: first, unit: it.unit });
+        await addLine(prisma, fb, H, session.id, { kind: "REFILL", ...(it.recipe ? { recipeId: it.key } : { productId: it.key }), quantity: refill, unit: it.unit });
+        const total = first + refill;
+        const left = total * between(0.04, ss.covers < ss.expected ? 0.2 : 0.12);
+        const waste = +(left * between(0.3, 0.6)).toFixed(3);
+        const staff = +(left * 0.15).toFixed(3);
+        const reuse = +(left - waste - staff).toFixed(3);
+        leftovers.push({ key: it.key, quantity: String(waste), class: it.recipe ? "MUST_DISCARD" : "WASTE" });
+        if (staff > 0) leftovers.push({ key: it.key, quantity: String(staff), class: "STAFF_MEAL" });
+        if (reuse > 0) leftovers.push({ key: it.key, quantity: String(reuse), class: "REFRIGERATED" });
+      }
+      // leave yesterday's breakfast open on the last day to show the open-session workflow
+      if (d.getTime() === end.getTime() && ss.type === "BREAKFAST") continue;
+      await closeSession(prisma, fb, H, session.id, { actualCovers: ss.covers, leftovers });
+      sessionsCreated++;
+    }
+  }
+
+  // ── Minibar (Phase 2): 40 rooms, par per room type, daily consumption, weekly counts ──
+  const mbProducts: Array<[string, string, number, string]> = [["MB-WATER", "Water 500ml", 6, "Water"], ["MB-CHOC", "Chocolate Bar", 28, "Chocolate"], ["MB-NUTS", "Mixed Nuts 50g", 45, "Nuts"]];
+  for (const [sku, name, , catName] of mbProducts) {
+    pid[sku] = (await prisma.product.create({ data: { hotelId: H, sku, name, categoryId: cat[catName]!, defaultSupplierId: suppliers[4], purchaseUnit: "pc", stockUnit: "pc", recipeUnit: "pc", taxRatePct: "10" } })).id;
+  }
+  const { store: mbStore } = await minibarSetup(prisma as never, admin, H);
+  await postGoodsReceipt(prisma, actors.warehouse!, H, {
+    supplierId: suppliers[4], warehouseId: mbStore.id, receiptDate: at(days[0]!, 5), invoiceNo: "MB-OPEN",
+    items: [{ productId: pid["BEV-COLA"]!, quantity: "60", unit: "case", unitPrice: (22 * 24).toFixed(2) }, { productId: pid["BEV-SODA"]!, quantity: "800", unit: "pc", unitPrice: "14" }, ...mbProducts.map(([sku, , price]) => ({ productId: pid[sku]!, quantity: "1500", unit: "pc", unitPrice: String(price) }))],
+  });
+  const roomTypes: Record<string, string> = { "1": "Standard", "2": "Standard", "3": "Deluxe", "4": "Suite" };
+  const roomIds: string[] = [];
+  for (const floor of ["1", "2", "3", "4"]) for (let n = 1; n <= 10; n++) roomIds.push((await prisma.room.create({ data: { hotelId: H, number: `${floor}${String(n).padStart(2, "0")}`, roomType: roomTypes[floor]!, floor, area: floor === "4" ? "Tower" : "Main building" } })).id);
+  const pars: Record<string, Array<[string, number, number]>> = {
+    Standard: [["BEV-COLA", 2, 90], ["BEV-SODA", 2, 70], ["MB-WATER", 2, 60], ["MB-CHOC", 1, 150], ["MB-NUTS", 1, 180]],
+    Deluxe: [["BEV-COLA", 3, 95], ["BEV-SODA", 2, 75], ["MB-WATER", 3, 65], ["MB-CHOC", 2, 160], ["MB-NUTS", 1, 190]],
+    Suite: [["BEV-COLA", 4, 110], ["BEV-SODA", 3, 85], ["MB-WATER", 4, 75], ["MB-CHOC", 2, 180], ["MB-NUTS", 2, 220]],
+  };
+  for (const [roomType, list] of Object.entries(pars)) for (const [sku, par, price] of list) await setPar(prisma, admin, H, { roomType, productId: pid[sku], parQty: par, sellingPrice: price });
+  const wh2 = actors.warehouse!;
+  for (const r of roomIds) await restockToParLevels(prisma, wh2, H, r, at(days[0]!, 9));
+  for (const [i, d] of days.entries()) {
+    for (const r of roomIds) {
+      if (rnd() > 0.35) continue;
+      const room = await prisma.room.findUniqueOrThrow({ where: { id: r } });
+      const items: Array<{ productId: string; quantity: string }> = [];
+      for (const [sku] of pars[room.roomType]!) {
+        if (rnd() > 0.45) continue;
+        const have = await roomQty(prisma, H, r, pid[sku]!);
+        const q = Math.min(Number(have), 1 + Math.floor(rnd() * 2));
+        if (q > 0) items.push({ productId: pid[sku]!, quantity: String(q) });
+      }
+      if (items.length) await recordMovement(prisma, wh2, H, { roomId: r, type: "CONSUMED", movedAt: at(d, 10), folioRef: `F-${room.number}-${i}`, items });
+      await restockToParLevels(prisma, wh2, H, r, at(d, 11));
+    }
+    if (i % 7 === 6) {
+      for (const r of roomIds.filter(() => rnd() < 0.25)) {
+        const room = await prisma.room.findUniqueOrThrow({ where: { id: r } });
+        const lines = [];
+        for (const [sku] of pars[room.roomType]!) {
+          const have = Number(await roomQty(prisma, H, r, pid[sku]!));
+          lines.push({ productId: pid[sku]!, countedQty: String(rnd() < 0.08 && have > 0 ? have - 1 : have) });
+        }
+        await countRoom(prisma, wh2, H, { roomId: r, countedAt: at(d, 15), lines });
+      }
+    }
+  }
+  console.log(`Buffet sessions closed: ${sessionsCreated}; minibar movements: ${await prisma.minibarMovement.count({ where: { hotelId: H } })}`);
 
   // ── A pending delete request (demonstrates §285 in the UI) ──
   const anyReceipt = await prisma.stockTransaction.findFirst({ where: { hotelId: H, type: "PURCHASE", productId: pid["HK-SHAMPOO"] } });

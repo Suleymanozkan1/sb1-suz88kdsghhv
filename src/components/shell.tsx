@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, FileSpreadsheet, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -20,6 +20,8 @@ const NAV = [
   { href: "/products", label: "Products", icon: Package, perm: "product:view" },
   { href: "/recipes", label: "Recipes", icon: ChefHat, perm: "recipe:view" },
   { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view" },
+  { href: "/buffet", label: "Buffet", icon: UtensilsCrossed, perm: "buffet:view" },
+  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view" },
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
   { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },

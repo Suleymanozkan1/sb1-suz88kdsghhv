@@ -63,7 +63,11 @@ describe("export contract", () => {
     for (const k of ["executiveSummary", "costDetail", "foodCost", "beverageCost", "recipeCost", "recipeSummary", "theoreticalConsumption", "actualConsumption", "consumptionVariance", "waste", "wasteSummary", "yield", "purchaseCost", "supplierPrice", "ppv", "inventoryValue", "monthlyStock", "stockVariance", "criticalStock", "stockAging", "reorder", "departmentCost", "outletCost", "costCenter", "pnl", "topCostDrivers", "topWaste", "topVariance", "unexplainedVariance", "missingData", "productSales", "costTrend"]) {
       expect(exp.sections[k], k).toBeDefined();
     }
-    for (const k of ["buffetCost", "minibarCost", "roomCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "costAllocation", "budgetVariance", "forecast", "costSaving"]) {
+    for (const k of ["buffetCost", "minibarCost"]) {
+      expect(exp.sections[k]!.status, k).toBe("OK"); // Phase 2 modules available
+      expect(exp.sections[k]!.rows, k).toHaveLength(0); // no sessions / rooms in this scenario
+    }
+    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "costAllocation", "budgetVariance", "forecast", "costSaving"]) {
       expect(exp.sections[k]!.status, k).toBe("NOT_AVAILABLE");
       expect(exp.sections[k]!.rows).toHaveLength(0);
     }
@@ -209,7 +213,7 @@ describe(".xlsm workbook (spec 1-7, 86-90, 105-120, 129)", () => {
     expect(pct.getColumn(ph.indexOf("Variance %")).numFmt).toBe("0.00%");
 
     for (const raw of ["RAW_PRODUCTS", "RAW_STOCK_TRANSACTIONS", "RAW_SALES", "RUN_LOG", "_LISTS"]) expect(wb.getWorksheet(raw)!.state, raw).toBe("hidden");
-    const na = wb.getWorksheet("14_BUFFET_COST")!;
+    const na = wb.getWorksheet("18_ROOM_COST")!;
     expect(String(na.getCell("A4").value)).toContain("NOT_AVAILABLE");
 
     const rec = wb.getWorksheet("46_RECONCILIATION")!;

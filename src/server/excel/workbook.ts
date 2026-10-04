@@ -44,10 +44,10 @@ export const SHEETS: SheetSpec[] = [
   { name: "11_WASTE_SUMMARY", title: "Waste Summary", sections: ["wasteSummary", "wasteByCategory", "wasteByDepartment"], description: "Waste KPIs, by category and by department", print: true },
   { name: "12_YIELD", title: "Yield", sections: ["yield"], description: "AP/EP yield tests and standard yields" },
   { name: "13_PORTION_VARIANCE", title: "Portion Variance", sections: ["portionVariance"], description: "Standard vs actual portion (capture planned)" },
-  { name: "14_BUFFET_COST", title: "Buffet Cost", sections: ["buffetCost"], description: "Buffet sessions (Phase 2)" },
-  { name: "15_BUFFET_SUMMARY", title: "Buffet Summary", sections: ["buffetSummary"], description: "Buffet by meal (Phase 2)" },
-  { name: "16_BUFFET_PRODUCT", title: "Buffet Product Cost", sections: ["buffetProduct"], description: "Buffet product flow (Phase 2)" },
-  { name: "17_MINIBAR_COST", title: "Minibar Cost", sections: ["minibarCost"], description: "Minibar by room (Phase 2)" },
+  { name: "14_BUFFET_COST", title: "Buffet Cost", sections: ["buffetCost"], description: "Buffet sessions: covers, production, refills, leftovers, waste, cost and waste per cover" },
+  { name: "15_BUFFET_SUMMARY", title: "Buffet Summary", sections: ["buffetSummary"], description: "Buffet cost per cover by meal" },
+  { name: "16_BUFFET_PRODUCT", title: "Buffet Product Cost", sections: ["buffetProduct"], description: "Buffet item flow: produced, refilled, consumed, waste, reusable" },
+  { name: "17_MINIBAR_COST", title: "Minibar Cost", sections: ["minibarCost"], description: "Minibar by room: restock, consumption, shrinkage, cost, revenue, contribution" },
   { name: "18_ROOM_COST", title: "Room Cost", sections: ["roomCost"], description: "Full room cost (Phase 3)" },
   { name: "19_ROOM_TYPE_COST", title: "Room Type Cost", sections: ["roomTypeCost"], description: "Room cost by type (Phase 3)" },
   { name: "20_HOUSEKEEPING_COST", title: "Housekeeping Cost", sections: ["housekeepingCost"], description: "Housekeeping (Phase 3)" },
@@ -534,8 +534,8 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     if (t === t.toUpperCase() && t.length > 3 && !t.includes("—")) c.font = { bold: true, color: { argb: BRAND } };
   });
   readme.getColumn(1).width = 160;
-  sheet("53_DASHBOARD_CHARTS").getCell("A5").value = "Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend.";
-  sheet("55_PIVOTS").getCell("A5").value = "Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock and recipe cost.";
+  sheet("53_DASHBOARD_CHARTS").getCell("A5").value = "Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.";
+  sheet("55_PIVOTS").getCell("A5").value = "Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.";
 
   // ── _LISTS ──
   const lst = sheet("_LISTS");

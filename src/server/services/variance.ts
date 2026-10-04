@@ -45,6 +45,11 @@ const BUCKET: Record<Exclude<StockTxType, "REVERSAL">, Bucket> = {
   ADJUSTMENT: "adjustment",
 };
 
+/** Consumption sources that are documented by their own sub-ledger rather than by POS sales. */
+const DOCUMENTED = ["BUFFET", "MINIBAR"] as const;
+type Documented = (typeof DOCUMENTED)[number];
+const isDocumented = (s: string): s is Documented => (DOCUMENTED as readonly string[]).includes(s);
+
 interface Pair {
   qty: Decimal;
   value: Decimal;
@@ -68,6 +73,9 @@ export interface ProductVarianceRow {
   waste: Pair;
   staffMeal: Pair;
   complimentary: Pair;
+  /** Documented consumption without a POS sale: buffet sessions (covers) and minibar room consumption. */
+  buffet: Pair;
+  minibar: Pair;
   countAdjustment: Pair;
   avgCost: Decimal | null;
   varianceQty: Decimal;
@@ -94,12 +102,13 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   const products = await db.product.findMany({ where: productWhere, include: { category: true } });
   const pIds = new Set(products.map((p) => p.id));
 
-  const [openingAgg, periodAgg, reversals, sales, wasteRecords] = await Promise.all([
+  const [openingAgg, periodAgg, reversals, sales, wasteRecords, documentedAgg] = await Promise.all([
     db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, txDate: { lt: q.from } }, _sum: { quantity: true, totalCost: true } }),
     db.stockTransaction.groupBy({ by: ["productId", "type"], where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: { not: "REVERSAL" } }, _sum: { quantity: true, totalCost: true } }),
-    db.stockTransaction.findMany({ where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: "REVERSAL" }, include: { reverses: { select: { type: true } } } }),
+    db.stockTransaction.findMany({ where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: "REVERSAL" }, include: { reverses: { select: { type: true, sourceType: true } } } }),
     db.saleLine.findMany({ where: { hotelId, saleDate: { gte: q.from, lt: q.to }, ...(departmentIds ? { departmentId: { in: departmentIds } } : {}) }, include: { recipeVersion: { select: { id: true, costSnapshot: true } } } }),
     db.wasteRecord.count({ where: { hotelId, wasteDate: { gte: q.from, lt: q.to }, status: "PENDING", ...(departmentIds ? { departmentId: { in: departmentIds } } : {}) } }),
+    db.stockTransaction.groupBy({ by: ["productId", "sourceType"], where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: "CONSUMPTION", sourceType: { in: [...DOCUMENTED] } }, _sum: { quantity: true, totalCost: true } }),
   ]);
 
   const rows = new Map<string, Record<Bucket, Pair>>();
@@ -110,6 +119,14 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       rows.set(pid, r);
     }
     return r;
+  };
+  const docs = new Map<string, { buffet: Pair; minibar: Pair }>();
+  const addDoc = (pid: string, src: Documented, qty: Decimal, value: Decimal) => {
+    if (!pIds.has(pid)) return;
+    const d = docs.get(pid) ?? { buffet: zp(), minibar: zp() };
+    const k = src === "BUFFET" ? "buffet" : "minibar";
+    d[k] = { qty: d[k].qty.plus(qty), value: d[k].value.plus(value) };
+    docs.set(pid, d);
   };
   const add = (pid: string, b: Bucket, qty: Decimal, value: Decimal) => {
     if (!pIds.has(pid)) return;
@@ -122,7 +139,9 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   for (const r of reversals) {
     const t = (r.reverses?.type ?? "ADJUSTMENT") as Exclude<StockTxType, "REVERSAL">;
     add(r.productId, BUCKET[t] ?? "adjustment", D(r.quantity.toString()), D(r.totalCost.toString()));
+    if (t === "CONSUMPTION" && r.reverses && isDocumented(r.reverses.sourceType)) addDoc(r.productId, r.reverses.sourceType, D(r.quantity.toString()), D(r.totalCost.toString()));
   }
+  for (const a of documentedAgg) if (isDocumented(a.sourceType)) addDoc(a.productId, a.sourceType, D(a._sum.quantity?.toString() ?? 0), D(a._sum.totalCost?.toString() ?? 0));
 
   // Theoretical quantities from frozen recipe-version requirements; theoretical cost frozen on the sale.
   const theoQty = new Map<string, Decimal>();
@@ -170,12 +189,14 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
     const staffMeal = neg(b.staffMeal);
     const complimentary = neg(b.complimentary);
     const countAdjustment = neg(b.countAdjustment);
+    const buffet = neg(docs.get(p.id)?.buffet ?? zp());
+    const minibar = neg(docs.get(p.id)?.minibar ?? zp());
     const avgCost = actual.qty.gt(0) ? actual.value.div(actual.qty) : (fallbackCosts.get(p.id)?.unitCost ?? null);
     const theoValue = avgCost ? tq.times(avgCost) : ZERO;
     const varianceQty = actual.qty.minus(tq);
     const varianceValue = actual.value.minus(theoValue);
-    const unexplainedQty = varianceQty.minus(waste.qty).minus(staffMeal.qty).minus(complimentary.qty);
-    const unexplainedValue = varianceValue.minus(waste.value).minus(staffMeal.value).minus(complimentary.value);
+    const unexplainedQty = varianceQty.minus(waste.qty).minus(staffMeal.qty).minus(complimentary.qty).minus(buffet.qty).minus(minibar.qty);
+    const unexplainedValue = varianceValue.minus(waste.value).minus(staffMeal.value).minus(complimentary.value).minus(buffet.value).minus(minibar.value);
     out.push({
       productId: p.id,
       sku: p.sku,
@@ -193,6 +214,8 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       waste,
       staffMeal,
       complimentary,
+      buffet,
+      minibar,
       countAdjustment,
       avgCost,
       varianceQty,
@@ -210,6 +233,8 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   const waste = tot((r) => r.waste.value);
   const staffMeal = tot((r) => r.staffMeal.value);
   const complimentary = tot((r) => r.complimentary.value);
+  const buffetConsumption = tot((r) => r.buffet.value);
+  const minibarConsumption = tot((r) => r.minibar.value);
   const variance = actualCost.minus(theoreticalCost);
   const priceComponent = theoreticalAtAvg.minus(theoreticalCost);
   const breakdown = explainVariance(variance, [
@@ -217,6 +242,8 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
     { cause: "WASTE", amount: waste, evidence: "Posted waste records" },
     { cause: "STAFF_MEAL", amount: staffMeal },
     { cause: "COMPLIMENTARY", amount: complimentary },
+    { cause: "BUFFET_CONSUMPTION", amount: buffetConsumption, evidence: "Buffet sessions: issued − returned leftovers (controlled by cost per cover, not POS)" },
+    { cause: "MINIBAR_CONSUMPTION", amount: minibarConsumption, evidence: "Minibar room consumption (room sub-ledger, charged to folio)" },
   ]);
 
   return {
@@ -237,6 +264,8 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       waste,
       staffMeal,
       complimentary,
+      buffetConsumption,
+      minibarConsumption,
       countAdjustment: tot((r) => r.countAdjustment.value),
       unexplained: breakdown.unexplained,
       unexplainedPct: pct(breakdown.unexplained, theoreticalCost),
