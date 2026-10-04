@@ -114,21 +114,23 @@ Each check recomputes its figure through an independent path:
 
 ## Volumes
 
-Measured from the generated databases:
+Measured from the generated databases. Staging was verified with `demo:verify`: 131 checks PASS, including every spec minimum.
 
-| | dev (≈2 months) | staging (12 months) | spec minimum |
+| | dev (≈2 months) | staging (13 months) | spec minimum |
 |---|---:|---:|---:|
 | Organizations / hotels | 5 / 10 | 5 / 10 | 5 / 10 |
-| Products | 2,004 | see PERFORMANCE.md | 2,000 |
-| Recipes (semi-finished) | 601 (100) | | 500 (100) |
-| Recipe versions | 909 | | 150 recipes × 2–4 |
-| Suppliers | 120 | | 100 |
-| Sale lines | 54,153 | | 500,000 |
-| Stock transactions | 136,595 | | 1,000,000 |
-| Consumption records | 56,791 | | 500,000 |
-| Waste records | 3,978 | | 50,000 |
-| Purchase lines / invoices | 8,172 / 4,285 | | 100,000 / 50,000 |
-| Minibar transactions | 5,897 | | 10,000 |
-| Buffet sessions | 200 | | 1,000 |
-| Rooms / employees | 1,020 / 5,000 | | 1,000 / 5,000 |
-| Expenses | 6,800 | | 100,000 |
+| Products | 2,004 | 2,004 | 2,000 |
+| Recipes (semi-finished) | 601 (100) | 601 (100) | 500 (100) |
+| Recipe versions | 909 | 902 | 150 recipes × 2–4 |
+| Suppliers | 120 | 120 | 100 |
+| Sale lines | 54,153 | 540,904 | 500,000 |
+| Stock transactions | 136,595 | 1,460,514 | 1,000,000 |
+| Consumption records | 56,791 | 530,992 | 500,000 |
+| Waste records | 3,978 | 69,448 | 50,000 |
+| Purchase lines / invoices | 8,172 / 4,285 | 122,769 / 67,470 | 100,000 / 50,000 |
+| Minibar transactions | 5,897 | 49,368 | 10,000 |
+| Buffet sessions | 200 | 1,000 | 1,000 |
+| Rooms / employees | 1,020 / 5,000 | 1,020 / 5,000 | 1,000 / 5,000 |
+| Expenses | 6,800 | 119,561 | 100,000 |
+
+Generation time on this container: dev ≈ 10 min, staging ≈ 64 min (including verification).

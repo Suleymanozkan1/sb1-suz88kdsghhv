@@ -1,11 +1,14 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { api } from "@/server/http/handler";
 import { prisma } from "@/server/db";
 import { rateLimit } from "@/server/auth/session";
 import { parseExportParams } from "@/server/excel";
-import { listExportJobs, queueExportJob, startExportJob } from "@/server/services/export-jobs";
+import { listExportJobs, queueExportJob, runExportJob } from "@/server/services/export-jobs";
 
 export const dynamic = "force-dynamic";
+// the workbook is built after the response is sent; serverless hosts keep the function alive for it
+export const maxDuration = 300;
 
 const body = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -22,7 +25,7 @@ export const POST = api(async ({ actor, hotelId, body: read, req }) => {
   const q = new URLSearchParams({ from: b.from, to: b.to, departmentId: b.departmentId, warehouseId: b.warehouseId, group: b.group });
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
   const job = await queueExportJob(prisma, actor, hotelId, parseExportParams(q), base);
-  startExportJob(prisma, job.id);
+  after(() => runExportJob(prisma, job.id));
   return job;
 });
 

@@ -5,6 +5,7 @@ import { parseExportParams } from "@/server/excel";
 import { rateLimit } from "@/server/auth/session";
 import { prisma } from "@/server/db";
 
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 /** Versioned full cost export (contract 1.x). JSON by default, TSV for the Excel VBA refresh. */

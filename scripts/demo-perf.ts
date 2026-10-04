@@ -71,7 +71,7 @@ async function main() {
   await time("Excel read-back (integrity)", () => wb.xlsx.load(x.buffer as unknown as ArrayBuffer), () => `${wb.worksheets.length} sheets`);
   const raw = wb.getWorksheet("59_RAW_SALES") ?? wb.worksheets.find((w) => /RAW_SALES/.test(w.name));
   const exported = x.export.sections.rawSales?.rows.length ?? 0;
-  console.log(`  raw sales rows: export ${exported}, workbook ${raw ? raw.actualRowCount - 5 : "n/a"}`);
+  console.log(`  raw sales rows: export ${exported}, workbook ${raw ? raw.actualRowCount - 6 : "n/a"}`);
   writeFileSync(process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? "/tmp/demo-perf.json", JSON.stringify({ dataset: { stockTx: totals[0], saleLines: totals[1] }, hotel: hotel.code, results: out }, null, 2));
 }
 

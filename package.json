@@ -2,7 +2,7 @@
   "name": "hotelcost",
   "version": "0.1.0",
   "private": true,
-  "description": "HotelCost — hotel cost intelligence & cost-control platform",
+  "description": "HotelCost \u2014 hotel cost intelligence & cost-control platform",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -37,7 +37,9 @@
     "demo:reset": "tsx scripts/demo.ts reset",
     "demo:verify": "tsx scripts/demo.ts verify",
     "test:reconciliation": "vitest run --project integration tests/integration/demo-dataset.test.ts tests/integration/demo-engine.test.ts",
-    "test:excel": "vitest run --project unit tests/unit/excel-bulk.test.ts tests/unit/vba-project.test.ts && vitest run --project integration tests/integration/excel-export.test.ts"
+    "test:excel": "vitest run --project unit tests/unit/excel-bulk.test.ts tests/unit/vba-project.test.ts && vitest run --project integration tests/integration/excel-export.test.ts",
+    "vercel-build": "prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && next build",
+    "setup:first-company": "tsx scripts/first-company.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

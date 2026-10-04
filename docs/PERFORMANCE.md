@@ -40,6 +40,33 @@ Single PostgreSQL 16 instance on the CI container; Node 22. Times are wall-clock
   - The 100k-row stress workbook was validated in LibreOffice: it loads, the VBA compiles and all 10 formula checks pass.
 - **Indexes:** the existing composite indexes on `(hotelId, productId, txDate)`, `(warehouseId, productId, txDate)` and `(hotelId, saleDate)` carry the hot queries. No sequential scans remain on the measured paths.
 
+## Multi-tenant staging dataset (spec 98, 127-130)
+
+`npm run seed:staging` generates the full dataset in 64 min on this container, then verifies it (131 checks PASS):
+- 5 companies, 10 hotels, 2,004 products, 601 recipes (100 semi-finished, 902 versions), 120 suppliers;
+- 1,460,514 stock transactions, 540,904 sale lines, 530,992 consumption records, 69,448 waste records;
+- 122,769 purchase lines, 67,470 invoices, 49,368 minibar transactions, 1,000 buffet sessions;
+- 1,020 rooms, 5,000 employees, 119,561 expenses.
+
+`npx tsx scripts/demo-perf.ts` ran on the busiest hotel (DHG-AYT: 155,884 stock transactions, 58,448 sale lines; month 2026-08):
+
+| Path | Time |
+|---|---:|
+| Dashboard (month) | 0.3 s |
+| Theoretical vs actual (month / full 13 months) | 0.13 s / 0.19 s |
+| Inventory valuation and status | 0.13 s |
+| Recipe cost (all recipes) | 0.11 s |
+| Department / operating cost (month) | 0.24 s |
+| Room cost (month) | 0.07 s |
+| Budget vs actual (month) | 0.21 s |
+| Integrity check (all ledgers of the hotel) | 5.9 s |
+| Monthly cost report: full export, 30,763 rows | 11.1 s |
+| Five month-end exports from five companies in parallel | 29.4 s |
+| Excel workbook, full 13 months, 36.3 MB | 66.2 s |
+| Excel read-back (61 sheets; raw sales 53,396 rows = export) | 27.1 s |
+
+The tables stay fast because the hot queries aggregate in SQL and the per-hotel indexes keep each tenant's slice small, whatever the total volume. Full-year Excel workbooks belong in background export (or on a server without a function time limit).
+
 ## Large periods: background export
 
 - On the Excel page, **Generate in background** (`POST /api/export/jobs`) queues the workbook. The server builds it while the user keeps working, and the list polls until the file is ready.

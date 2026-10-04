@@ -147,7 +147,7 @@ const SUPPLIER_PLAN: Array<{ kind: string; cats: string[]; schedule: "daily" | "
   { kind: "Kuru Gıda Toptan", cats: ["DRY", "OIL", "SPICE", "SAUCE"], schedule: "twice" },
   { kind: "Pastane ve Kahvaltılık", cats: ["PASTRY", "BRKF", "DRY"], schedule: "twice" },
   { kind: "İçecek Dağıtım", cats: ["BEV", "BAR", "COFFEE", "TEA"], schedule: "twice" },
-  { kind: "Temizlik Kimya Amenity", cats: ["CLEAN", "CHEM", "AMEN", "PACK"], schedule: "weekly" },
+  { kind: "Temizlik Kimya Amenity", cats: ["CLEAN", "CHEM", "AMEN", "PACK"], schedule: "twice" },
   { kind: "Teknik ve Tekstil", cats: ["TECH", "SPARE", "LINEN"], schedule: "weekly" },
   { kind: "Enerji Dağıtım", cats: [], schedule: "none" },
   { kind: "Teknik Servis", cats: [], schedule: "none" },
@@ -690,8 +690,8 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     const FRESH = new Set(["VEG", "FRUIT", "MEAT", "CHICKEN", "FISH", "SEAFOOD", "DAIRY", "CHEESE"]);
     // fresh goods arrive in lots with their own expiry date: one receipt line per lot (traceability, spec 79)
     const lotted = lines.flatMap(({ p, stockQty }) => {
-      // food carries batch / best-before dates: fresh goods and dry stores alike arrive in several lots
-      const lots = ctx.profile.freshByWeight && (FRESH.has(p.cat.code) || p.cat.group === "FOOD") && stockQty >= 1 ? 2 + (stockQty >= 6 ? 1 : 0) : 1;
+      // food, drinks, amenities and chemicals carry batch / best-before dates: they arrive in several lots
+      const lots = ctx.profile.freshByWeight && (FRESH.has(p.cat.code) || ["FOOD", "BEVERAGE", "HOUSEKEEPING"].includes(p.cat.group)) && stockQty >= 1 ? 2 + (stockQty >= 6 ? 1 : 0) : 1;
       return Array.from({ length: lots }, (_, k) => ({ p, stockQty: stockQty / lots, lot: lots > 1 ? k + 1 : 0 }));
     });
     const prepared = lotted.map(({ p, stockQty, lot }) => {
@@ -734,7 +734,9 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   scenario(ctx, "S06_DEAD_STOCK", "Products bought at go-live and never used", "EDGE_CASE", "Stock aging: dead stock; carrying cost in savings", "Product", deadStock.map((p) => p.id));
 
   // ── daily loop ──
-  const deliveryDay = (schedule: string, d: Date) => schedule === "daily" || (schedule === "twice" && (d.getUTCDay() === 1 || d.getUTCDay() === 4)) || (schedule === "weekly" && d.getUTCDay() === 1);
+  // dry / pastry / beverage suppliers: twice a week, or Mon-Wed-Fri for large operations (staging profile)
+  const busy = ctx.profile.freshByWeight;
+  const deliveryDay = (schedule: string, d: Date) => schedule === "daily" || (schedule === "twice" && (busy ? [1, 3, 5].includes(d.getUTCDay()) : d.getUTCDay() === 1 || d.getUTCDay() === 4)) || (schedule === "weekly" && d.getUTCDay() === 1);
   const nextDelivery = (schedule: string, i: number) => {
     for (let k = i + 1; k < ctx.days.length + 7; k++) {
       const d = new Date(ctx.start.getTime() + k * DAY);

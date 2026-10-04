@@ -7,6 +7,7 @@ import { DomainError } from "@/domain/errors";
 import { prisma } from "@/server/db";
 import { csvSafe } from "@/server/util/csv";
 
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 /** Domain sub-exports (spec 99) — subsets of the same versioned contract. */

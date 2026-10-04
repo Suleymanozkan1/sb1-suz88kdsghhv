@@ -7,8 +7,8 @@
 
 generator client {
   provider      = "prisma-client-js"
-  // "windows" is bundled by the on-premise Windows installer (installer/build-windows.sh)
-  binaryTargets = ["native", "windows"]
+  // "windows": on-premise installer (installer/build-windows.sh); "rhel-openssl-3.0.x": Vercel functions
+  binaryTargets = ["native", "windows", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
