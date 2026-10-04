@@ -59,7 +59,7 @@ beforeAll(async () => {
 
 describe("export contract", () => {
   it("is versioned and contains every section, unavailable modules flagged (no fake zeros)", () => {
-    expect(exp.exportVersion).toBe("1.0");
+    expect(exp.exportVersion).toBe("1.1");
     for (const k of ["executiveSummary", "costDetail", "foodCost", "beverageCost", "recipeCost", "recipeSummary", "theoreticalConsumption", "actualConsumption", "consumptionVariance", "waste", "wasteSummary", "yield", "purchaseCost", "supplierPrice", "ppv", "inventoryValue", "monthlyStock", "stockVariance", "criticalStock", "stockAging", "reorder", "departmentCost", "outletCost", "costCenter", "pnl", "topCostDrivers", "topWaste", "topVariance", "unexplainedVariance", "missingData", "productSales", "costTrend"]) {
       expect(exp.sections[k], k).toBeDefined();
     }
@@ -67,9 +67,15 @@ describe("export contract", () => {
       expect(exp.sections[k]!.status, k).toBe("OK"); // Phase 2 modules available
       expect(exp.sections[k]!.rows, k).toHaveLength(0); // no sessions / rooms in this scenario
     }
-    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "costAllocation", "budgetVariance", "forecast", "costSaving"]) {
+    // this hotel has no rooms division / housekeeping / laundry departments: not available, never zero-filled
+    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "budgetVariance", "forecast", "costSaving"]) {
       expect(exp.sections[k]!.status, k).toBe("NOT_AVAILABLE");
       expect(exp.sections[k]!.rows).toHaveLength(0);
+    }
+    // modules that exist but have no data in the period: PARTIAL with no rows
+    for (const k of ["laborCost", "energyCost", "engineeringCost", "costAllocation"]) {
+      expect(exp.sections[k]!.status, k).toBe("PARTIAL");
+      expect(exp.sections[k]!.rows, k).toHaveLength(0);
     }
     expect(exp.summary.totalLaborCost!.status).toBe("NOT_AVAILABLE");
     expect(exp.summary.totalLaborCost!.value).toBeNull();
@@ -100,7 +106,7 @@ describe("export contract", () => {
 
   it("server reconciliation has no FAIL and the key checks PASS", () => {
     expect(exp.checks.filter((c) => c.status === "FAIL")).toEqual([]);
-    for (const name of ["Actual Cost (variance engine) = Cost Detail ledger total", "Unexplained: Σ product unexplained = summary unexplained", "Department totals = hotel cost total", "Monthly stock: Σ closing value = Inventory closing"]) {
+    for (const name of ["Actual Cost (variance engine) = inventory postings in the cost ledger", "Unexplained: Σ product unexplained = summary unexplained", "Department totals = hotel cost total", "Monthly stock: Σ closing value = Inventory closing"]) {
       expect(exp.checks.find((c) => c.check === name)?.status, name).toBe("PASS");
     }
     expect(exp.score.errors).toBe(0);
@@ -108,7 +114,7 @@ describe("export contract", () => {
 
   it("TSV rendering carries the same data (column counts, row counts, end marker)", () => {
     const lines = toTsv(exp).split("\n");
-    expect(lines[0]).toMatch(/^##EXPORT\t1\.0\tEXP-/);
+    expect(lines[0]).toMatch(/^##EXPORT\t1\.1\tEXP-/);
     expect(lines.at(-1)).toBe("##END");
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i]!.startsWith("##SECTION")) continue;

@@ -117,6 +117,8 @@ enum WasteType {
   QUALITY_REJECTION
   UNKNOWN
   OTHER
+  LOST
+  DISCARDED
 }
 
 enum ApprovalStatus {
@@ -309,6 +311,12 @@ model Hotel {
   allocationRules   CostAllocationRule[]
   occupancy         OccupancyImport[]
   reports           Report[]
+  assets            Asset[]
+  meters            Meter[]
+  laundryLogs       LaundryLog[]
+  reservations      Reservation[]
+  importBatches     ImportBatch[]
+  allocationRuns    AllocationRun[]
 
   @@unique([organizationId, code])
 }
@@ -333,6 +341,12 @@ model Department {
   costTxs        CostTransaction[]
   recipes        Recipe[]
   buffetSessions BuffetSession[]
+  // allocation drivers (spec 145)
+  sqm            Decimal?               @db.Decimal(20, 6)
+  headcount      Int?
+  expenses       Expense[]
+  assets         Asset[]
+  meters         Meter[]
 
   @@unique([hotelId, code])
 }
@@ -1253,6 +1267,8 @@ model Room {
   active           Boolean           @default(true)
   minibarMovements MinibarMovement[]
   minibarPars      MinibarPar[]
+  reservations     Reservation[]
+  expenses         Expense[]
 
   @@unique([hotelId, number])
 }
@@ -1381,33 +1397,218 @@ model MinibarMovement {
   @@index([hotelId, movedAt, type])
 }
 
+// ───────────────────────── Operating costs (Phase 3) ─────────────────────────
+// Non-inventory costs (housekeeping, laundry, labor, energy, engineering, overhead). Every expense
+// posts one CostTransaction (kind EXPENSE, DIRECT); corrections are reversals, never edits.
+
 model Expense {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   hotelId       String
-  hotel         Hotel    @relation(fields: [hotelId], references: [id])
+  hotel         Hotel        @relation(fields: [hotelId], references: [id])
   expenseDate   DateTime
+  periodId      String?
   departmentId  String?
+  department    Department?  @relation(fields: [departmentId], references: [id])
   costCenterId  String?
+  // operating cost category: HOUSEKEEPING | LAUNDRY | AMENITIES | LABOR | ENERGY | ENGINEERING | ROOMS_OTHER | ADMINISTRATION | SALES_MARKETING | DISTRIBUTION | DEPRECIATION | RENT | INSURANCE | OTHER
   categoryGroup String
+  subCategory   String?
   description   String
-  amount        Decimal  @db.Decimal(20, 6)
-  taxAmount     Decimal  @default(0) @db.Decimal(20, 6)
-  costType      CostType @default(OPEX)
-  source        String
+  amount        Decimal      @db.Decimal(20, 6) // net, base currency
+  taxAmount     Decimal      @default(0) @db.Decimal(20, 6)
+  quantity      Decimal?     @db.Decimal(20, 6)
+  unit          String? // kWh, m3, kg, piece, hour, headcount
+  costType      CostType     @default(OPEX)
+  supplierName  String?
+  invoiceNo     String?
+  assetId       String?
+  asset         Asset?       @relation(fields: [assetId], references: [id])
+  roomId        String?
+  room          Room?        @relation(fields: [roomId], references: [id])
+  source        String // MANUAL | IMPORT | ACCOUNTING | SEED
   externalId    String?
+  importId      String?
+  import        ImportBatch? @relation(fields: [importId], references: [id])
+  status        String       @default("POSTED") // POSTED | REVERSED
+  costTxId      String?
+  reversedAt    DateTime?
+  reversedById  String?
+  reverseReason String?
+  createdById   String?
+  createdAt     DateTime     @default(now())
 
   @@unique([hotelId, source, externalId])
+  @@index([hotelId, expenseDate])
+  @@index([hotelId, categoryGroup, expenseDate])
 }
 
+/**
+ * Equipment / asset for cost-per-asset (spec 113).
+ */
+model Asset {
+  id           String      @id @default(cuid())
+  hotelId      String
+  hotel        Hotel       @relation(fields: [hotelId], references: [id])
+  code         String
+  name         String
+  kind         String // HVAC | KITCHEN | REFRIGERATOR | DISHWASHER | OVEN | LAUNDRY | ELEVATOR | OTHER
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  location     String?
+  installedAt  DateTime?
+  active       Boolean     @default(true)
+  expenses     Expense[]
+
+  @@unique([hotelId, code])
+}
+
+/**
+ * Utility meter (spec 110–111). Readings are cumulative; consumption = difference.
+ */
+model Meter {
+  id           String         @id @default(cuid())
+  hotelId      String
+  hotel        Hotel          @relation(fields: [hotelId], references: [id])
+  code         String
+  name         String
+  utility      String // ELECTRICITY | WATER | GAS | LPG | FUEL | STEAM | HEATING | COOLING
+  unit         String // kWh | m3 | l | ton
+  departmentId String?
+  department   Department?    @relation(fields: [departmentId], references: [id])
+  area         String?
+  active       Boolean        @default(true)
+  readings     MeterReading[]
+
+  @@unique([hotelId, code])
+}
+
+model MeterReading {
+  id          String   @id @default(cuid())
+  meterId     String
+  meter       Meter    @relation(fields: [meterId], references: [id])
+  readingDate DateTime @db.Date
+  value       Decimal  @db.Decimal(20, 6)
+  importId    String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([meterId, readingDate])
+}
+
+/**
+ * Laundry production volume (spec 107–108): unit costs per kg / piece.
+ */
+model LaundryLog {
+  id          String   @id @default(cuid())
+  hotelId     String
+  hotel       Hotel    @relation(fields: [hotelId], references: [id])
+  logDate     DateTime @db.Date
+  source      String // ROOMS | F_AND_B | SPA | GUEST | STAFF
+  kg          Decimal  @db.Decimal(20, 6)
+  pieces      Int
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([hotelId, logDate, source])
+}
+
+/**
+ * PMS reservation / stay (spec 103, 143, 207–209).
+ */
+model Reservation {
+  id                String       @id @default(cuid())
+  hotelId           String
+  hotel             Hotel        @relation(fields: [hotelId], references: [id])
+  externalId        String
+  roomId            String?
+  room              Room?        @relation(fields: [roomId], references: [id])
+  roomType          String
+  arrival           DateTime     @db.Date
+  departure         DateTime     @db.Date
+  nights            Int
+  guests            Int
+  channel           String // DIRECT | OTA | AGENCY | CORPORATE | TOUR_OPERATOR
+  boardBasis        String?
+  status            String       @default("CHECKED_OUT") // CONFIRMED | IN_HOUSE | CHECKED_OUT | CANCELLED | NO_SHOW
+  grossRoomRevenue  Decimal      @db.Decimal(20, 6)
+  commission        Decimal      @default(0) @db.Decimal(20, 6)
+  paymentFee        Decimal      @default(0) @db.Decimal(20, 6)
+  otherDistribution Decimal      @default(0) @db.Decimal(20, 6)
+  importId          String?
+  import            ImportBatch? @relation(fields: [importId], references: [id])
+  createdAt         DateTime     @default(now())
+
+  @@unique([hotelId, externalId])
+  @@index([hotelId, arrival, departure])
+}
+
+/**
+ * Import provenance + duplicate protection + rollback (spec 245–249).
+ */
+model ImportBatch {
+  id             String            @id @default(cuid())
+  hotelId        String
+  hotel          Hotel             @relation(fields: [hotelId], references: [id])
+  kind           String // EXPENSES | OCCUPANCY | RESERVATIONS | METER_READINGS | LAUNDRY | ...
+  fileName       String
+  fileHash       String
+  rowCount       Int
+  postedCount    Int               @default(0)
+  status         String            @default("POSTED") // POSTED | ROLLED_BACK
+  summary        Json?
+  createdById    String
+  createdAt      DateTime          @default(now())
+  rolledBackAt   DateTime?
+  rolledBackById String?
+  expenses       Expense[]
+  reservations   Reservation[]
+  occupancy      OccupancyImport[]
+
+  // duplicate protection is "no other POSTED batch with the same hash" (a rolled-back file may be re-imported)
+  @@index([hotelId, kind, fileHash])
+}
+
+/**
+ * Allocation rule (spec 188–191). targets: [{departmentId, weight?}] ; driver decides the split.
+ */
 model CostAllocationRule {
-  id                  String  @id @default(cuid())
+  id                  String    @id @default(cuid())
   hotelId             String
-  hotel               Hotel   @relation(fields: [hotelId], references: [id])
+  hotel               Hotel     @relation(fields: [hotelId], references: [id])
   name                String
-  sourceCategoryGroup String
-  driver              String // REVENUE | OCCUPIED_ROOMS | COVERS | SQM | HEADCOUNT | FIXED | MANUAL
+  sourceCategoryGroup String // expense category or ALL
+  sourceSubCategory   String?
+  sourceDepartmentId  String? // null = hotel-level (unassigned) costs
+  driver              String // REVENUE | OCCUPIED_ROOMS | COVERS | SQM | HEADCOUNT | METER | FIXED
   targets             Json
-  active              Boolean @default(true)
+  priority            Int       @default(100)
+  validFrom           DateTime?
+  validTo             DateTime?
+  active              Boolean   @default(true)
+  createdById         String?
+  createdAt           DateTime  @default(now())
+}
+
+/**
+ * One posted allocation per period; reversal restores the pre-allocation state.
+ */
+model AllocationRun {
+  id             String    @id @default(cuid())
+  hotelId        String
+  hotel          Hotel     @relation(fields: [hotelId], references: [id])
+  periodId       String
+  fromDate       DateTime
+  toDate         DateTime
+  status         String    @default("POSTED") // POSTED | REVERSED
+  lines          Json
+  totalAllocated Decimal   @db.Decimal(20, 6)
+  createdById    String
+  createdAt      DateTime  @default(now())
+  reversedById   String?
+  reversedAt     DateTime?
+  reverseReason  String?
+
+  @@index([hotelId, periodId, status])
 }
 
 model Budget {
@@ -1433,15 +1634,18 @@ model BudgetLine {
 }
 
 model OccupancyImport {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   hotelId        String
-  hotel          Hotel    @relation(fields: [hotelId], references: [id])
-  businessDate   DateTime @db.Date
+  hotel          Hotel        @relation(fields: [hotelId], references: [id])
+  businessDate   DateTime     @db.Date
   availableRooms Int
   occupiedRooms  Int
   guests         Int
-  roomRevenue    Decimal  @db.Decimal(20, 6)
+  roomRevenue    Decimal      @db.Decimal(20, 6)
+  outOfOrder     Int          @default(0)
   source         String
+  importId       String?
+  import         ImportBatch? @relation(fields: [importId], references: [id])
 
   @@unique([hotelId, businessDate])
 }

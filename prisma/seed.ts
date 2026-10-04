@@ -21,6 +21,10 @@ import { decideApproval } from "../src/server/services/approvals";
 import { requestStockDelete } from "../src/server/services/approvals";
 import { createSession, addLine, closeSession } from "../src/server/services/buffet";
 import { minibarSetup, setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../src/server/services/minibar";
+import { createAsset, createMeter, recordReading, recordLaundry, commitExpenseImport, createExpense } from "../src/server/services/opex";
+import { commitOccupancy, commitReservations } from "../src/server/services/pms";
+import { createRule, postAllocation } from "../src/server/services/allocation";
+import { periodFor } from "../src/server/services/period";
 
 const prisma = new PrismaClient();
 const PASSWORD = "HotelCost!2026";
@@ -43,6 +47,7 @@ const CATEGORY_TREE: Record<string, string[]> = {
   PACKAGING: ["Boxes", "Cups", "Lids", "Bags", "Napkins", "Straws", "Containers", "Takeaway packaging"],
   HOUSEKEEPING: ["Chemicals", "Amenities", "Cleaning supplies", "Guest supplies"],
   ENGINEERING: ["Spare parts", "Consumables"],
+  LINEN: ["Bed linen", "Towels", "Bathrobes"],
 };
 
 type P = { sku: string; name: string; cat: string; unit: string; purchaseUnit?: string; caseSize?: string; price: number; yieldPct?: number; supplier: number; reorder?: number; safety?: number; max?: number; fifo?: boolean };
@@ -162,6 +167,7 @@ async function main() {
     ["purchasing", "Burak Çelik (Purchasing)", "purchasing_manager", null, false],
     ["accounting", "Zeynep Arslan (Accounting)", "accounting_manager", null, true],
     ["warehouse", "Can Öztürk (Storekeeper)", "warehouse", null, false],
+    ["rooms", "Ayşe Koç (Rooms Division)", "rooms_division", ["ROOMS", "HK", "LAUN"], false],
   ];
   const actors: Record<string, Actor> = {};
   for (const [key, name, role, depts, both] of userDefs) {
@@ -441,6 +447,144 @@ async function main() {
     }
   }
   console.log(`Buffet sessions closed: ${sessionsCreated}; minibar movements: ${await prisma.minibarMovement.count({ where: { hotelId: H } })}`);
+
+  // ── Rooms & operating costs (Phase 3): 90 rooms, PMS stays, payroll, utilities, meters, laundry, linen, engineering, allocation ──
+  const deptMaster: Record<string, [number, number]> = { FB: [120, 2], REST: [600, 9], CAFE: [180, 4], BAR: [150, 4], BRKF: [450, 6], BANQ: [900, 4], KITCH: [520, 14], PAST: [90, 3], ROOMS: [3400, 6], HK: [260, 22], LAUN: [380, 6], ENG: [300, 7], ADM: [420, 10] };
+  for (const [code, [sqm, headcount]] of Object.entries(deptMaster)) await prisma.department.update({ where: { id: dept[code] }, data: { sqm, headcount } });
+  const sqmByType: Record<string, number> = { Standard: 26, Deluxe: 34, Suite: 55, Villa: 120 };
+  await prisma.room.updateMany({ where: { hotelId: H, roomType: "Standard" }, data: { sqm: sqmByType.Standard } });
+  await prisma.room.updateMany({ where: { hotelId: H, roomType: "Deluxe" }, data: { sqm: sqmByType.Deluxe } });
+  await prisma.room.updateMany({ where: { hotelId: H, roomType: "Suite" }, data: { sqm: sqmByType.Suite } });
+  const moreTypes: Record<string, string> = { "5": "Standard", "6": "Standard", "7": "Deluxe", "8": "Deluxe" };
+  for (const floor of ["5", "6", "7", "8"]) for (let n = 1; n <= 10; n++) await prisma.room.create({ data: { hotelId: H, number: `${floor}${String(n).padStart(2, "0")}`, roomType: moreTypes[floor]!, floor, area: "Main building", sqm: sqmByType[moreTypes[floor]!] } });
+  for (let n = 1; n <= 10; n++) await prisma.room.create({ data: { hotelId: H, number: `V${String(n).padStart(2, "0")}`, roomType: "Villa", floor: "G", area: "Villas", sqm: sqmByType.Villa } });
+  const allRooms = await prisma.room.findMany({ where: { hotelId: H }, orderBy: { number: "asc" } });
+  await prisma.hotel.update({ where: { id: H }, data: { totalRooms: allRooms.length } });
+
+  // PMS stays: each room fills its calendar with stays (≈ 75–85 % occupancy)
+  const rate: Record<string, number> = { Standard: 3200, Deluxe: 4300, Suite: 7600, Villa: 12500 };
+  const channels: Array<[string, number, number, number]> = [["DIRECT", 0.25, 0, 0.015], ["OTA", 0.4, 0.17, 0.015], ["AGENCY", 0.1, 0.1, 0], ["CORPORATE", 0.1, 0, 0.01], ["TOUR_OPERATOR", 0.15, 0.2, 0]];
+  const pickChannel = () => { let x = rnd(); for (const c of channels) { if ((x -= c[1]) <= 0) return c; } return channels[0]!; };
+  const windowEnd = new Date(days.at(-1)!.getTime() + 86_400_000);
+  const today0 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const resRows: Array<Record<string, string>> = [];
+  const nightly = new Map<string, { occ: number; guests: number; rev: number }>();
+  let resNo = 1000;
+  for (const r of allRooms) {
+    let cursor = new Date(days[0]!.getTime() + Math.floor(rnd() * 3) * 86_400_000);
+    while (cursor < windowEnd) {
+      const nights = 1 + Math.floor(rnd() * (r.roomType === "Villa" ? 9 : 6));
+      const dep = new Date(Math.min(cursor.getTime() + nights * 86_400_000, windowEnd.getTime() + 2 * 86_400_000));
+      const n = Math.round((dep.getTime() - cursor.getTime()) / 86_400_000);
+      const guests = r.roomType === "Villa" ? 3 + Math.floor(rnd() * 3) : r.roomType === "Suite" ? 2 + Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 2);
+      const [ch, , comm, fee] = pickChannel();
+      const adr = rate[r.roomType]! * between(0.85, 1.12) * (ch === "TOUR_OPERATOR" ? 0.8 : ch === "CORPORATE" ? 0.9 : 1);
+      const gross = Math.round(adr * n);
+      resRows.push({ external_id: `RES-${++resNo}`, room: r.number, room_type: r.roomType, arrival: cursor.toISOString().slice(0, 10), departure: dep.toISOString().slice(0, 10), guests: String(guests), channel: ch, board_basis: rnd() < 0.7 ? "BB" : "HB", status: dep <= today0 ? "CHECKED_OUT" : "IN_HOUSE", gross_room_revenue: String(gross), commission: (gross * comm).toFixed(2), payment_fee: (gross * fee).toFixed(2), other_distribution: "0" });
+      for (let k = 0; k < n; k++) {
+        const key = new Date(cursor.getTime() + k * 86_400_000).toISOString().slice(0, 10);
+        const cur = nightly.get(key) ?? { occ: 0, guests: 0, rev: 0 };
+        nightly.set(key, { occ: cur.occ + 1, guests: cur.guests + guests, rev: cur.rev + gross / n });
+      }
+      cursor = new Date(dep.getTime() + (rnd() < 0.55 ? 0 : 1 + Math.floor(rnd() * 3)) * 86_400_000);
+    }
+  }
+  const pmsUser = actors.rooms!;
+  await commitReservations(prisma, admin, H, "pms-reservations.csv", resRows);
+  const occRows = days.map((d) => { const k = d.toISOString().slice(0, 10); const v = nightly.get(k) ?? { occ: 0, guests: 0, rev: 0 }; return { business_date: k, available_rooms: String(allRooms.length), occupied_rooms: String(v.occ), out_of_order: "0", guests: String(v.guests), room_revenue: v.rev.toFixed(2) }; });
+  await commitOccupancy(prisma, pmsUser, H, "pms-daily-statistics.csv", occRows);
+
+  // housekeeping store (amenities issued per occupied room) and linen room
+  const hkProducts: Array<[string, string, string, string, number]> = [["HK-SOAP", "Guest Soap 25g", "Amenities", "pc", 4.2], ["HK-SLIPPER", "Guest Slippers", "Guest supplies", "pc", 18], ["HK-CHEM", "Multi-surface Cleaner", "Chemicals", "l", 85], ["LIN-SHEET", "Bed Sheet", "Bed linen", "pc", 420], ["LIN-TOWEL", "Bath Towel", "Towels", "pc", 260], ["LIN-ROBE", "Bathrobe", "Bathrobes", "pc", 780]];
+  for (const [sku, name, catName, unit] of hkProducts) pid[sku] = (await prisma.product.create({ data: { hotelId: H, sku, name, categoryId: cat[catName]!, defaultSupplierId: suppliers[3], purchaseUnit: unit, stockUnit: unit, recipeUnit: unit === "l" ? "ml" : unit, taxRatePct: "20" } })).id;
+  const hkStore = (await prisma.warehouse.create({ data: { hotelId: H, code: "HK", name: "Housekeeping Store", departmentId: dept.HK } })).id;
+  const linenRoom = (await prisma.warehouse.create({ data: { hotelId: H, code: "LINEN", name: "Linen Room", departmentId: dept.LAUN } })).id;
+  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: hkStore, receiptDate: at(days[0]!, 6), invoiceNo: "HK-OPEN", items: [["HK-SHAMPOO", 6000, 6.5], ["HK-SOAP", 6000, 4.2], ["HK-SLIPPER", 2500, 18], ["HK-CHEM", 300, 85]].map(([sku, q, pr]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: sku === "HK-CHEM" ? "l" : "pc", unitPrice: String(pr) })) });
+  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: linenRoom, receiptDate: at(days[0]!, 6), invoiceNo: "LINEN-OPEN", items: [["LIN-SHEET", 540, 420], ["LIN-TOWEL", 720, 260], ["LIN-ROBE", 200, 780]].map(([sku, q, pr]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: "pc", unitPrice: String(pr) })) });
+  for (const d of days) {
+    const occ = nightly.get(d.toISOString().slice(0, 10))?.occ ?? 0;
+    const g = nightly.get(d.toISOString().slice(0, 10))?.guests ?? 0;
+    for (const [sku, perUnit] of [["HK-SHAMPOO", g * 1.1], ["HK-SOAP", g * 1.2], ["HK-SLIPPER", g * 0.45], ["HK-CHEM", occ * 0.09]] as const) {
+      const q = Math.round(Number(perUnit) * between(0.95, 1.05) * 100) / 100;
+      if (q > 0) await postMovement(prisma, admin, { hotelId: H, warehouseId: hkStore, productId: pid[sku]!, type: "CONSUMPTION", quantity: -q, txDate: at(d, 14), departmentId: dept.HK, sourceType: "MANUAL", reason: "Daily housekeeping issue" });
+    }
+    await recordLaundry(prisma, pmsUser, H, { logDate: d, source: "ROOMS", kg: (occ * 3.4 * between(0.9, 1.1)).toFixed(1), pieces: Math.round(occ * 9.5) });
+    await recordLaundry(prisma, pmsUser, H, { logDate: d, source: "F_AND_B", kg: (between(35, 55)).toFixed(1), pieces: Math.round(between(220, 340)) });
+  }
+  // linen losses (spec 109): lost / damaged / discarded, plus a replacement purchase
+  for (const [i, d] of days.entries()) {
+    if (i % 5 !== 2) continue;
+    for (const [sku, type, q] of [["LIN-TOWEL", "LOST", 1 + Math.floor(rnd() * 2)], ["LIN-SHEET", "DAMAGED", 1], ["LIN-ROBE", "DISCARDED", rnd() < 0.4 ? 1 : 0]] as const) {
+      if (q > 0) await recordWaste(prisma, pmsUser, H, { departmentId: dept.LAUN, warehouseId: linenRoom, productId: pid[sku], wasteType: type, wasteDate: at(d, 16), quantity: q, unit: "pc", reason: type === "LOST" ? "Not returned from rooms" : type === "DAMAGED" ? "Torn in wash" : "Stained beyond recovery" });
+    }
+  }
+
+  // assets & meters
+  const assetDefs: Array<[string, string, string, string]> = [["HVAC-CH1", "Central chiller 1", "HVAC", "ENG"], ["HVAC-CH2", "Central chiller 2", "HVAC", "ENG"], ["KIT-OVEN1", "Combi oven", "OVEN", "KITCH"], ["KIT-DW1", "Flight dishwasher", "DISHWASHER", "KITCH"], ["KIT-CR1", "Cold room", "REFRIGERATOR", "KITCH"], ["LAU-WM1", "Washer extractor 60 kg", "LAUNDRY", "LAUN"], ["LAU-IR1", "Flatwork ironer", "LAUNDRY", "LAUN"], ["ELV-1", "Guest elevator A", "ELEVATOR", "ENG"], ["POOL-1", "Pool filtration", "POOL", "ENG"]];
+  const asset: Record<string, string> = {};
+  for (const [code, name, kind, dc] of assetDefs) asset[code] = (await createAsset(prisma, admin, H, { code, name, kind, departmentId: dept[dc] })).id;
+  const meterDefs: Array<[string, string, string, string, string, number]> = [["E-ROOMS", "Electricity — guest rooms", "ELECTRICITY", "kWh", "ROOMS", 2600], ["E-KITCH", "Electricity — kitchen", "ELECTRICITY", "kWh", "KITCH", 900], ["E-LAUN", "Electricity — laundry", "ELECTRICITY", "kWh", "LAUN", 700], ["E-REST", "Electricity — restaurant & bar", "ELECTRICITY", "kWh", "REST", 450], ["W-ROOMS", "Water — guest rooms", "WATER", "m3", "ROOMS", 38], ["W-LAUN", "Water — laundry", "WATER", "m3", "LAUN", 14], ["W-KITCH", "Water — kitchen", "WATER", "m3", "KITCH", 9], ["G-KITCH", "Natural gas — kitchen", "GAS", "m3", "KITCH", 160], ["G-LAUN", "Natural gas — laundry", "GAS", "m3", "LAUN", 120]];
+  const meterUse = new Map<string, number>();
+  for (const [code, name, utility, unit, dc, daily] of meterDefs) {
+    const m = await createMeter(prisma, admin, H, { code, name, utility, unit, departmentId: dept[dc] });
+    let value = 100000 + Math.floor(rnd() * 50000);
+    await recordReading(prisma, admin, H, { meterId: m.id, readingDate: new Date(days[0]!.getTime() - 86_400_000), value });
+    for (const d of days) {
+      const occ = nightly.get(d.toISOString().slice(0, 10))?.occ ?? 0;
+      const use = daily * (dc === "ROOMS" || dc === "LAUN" ? 0.4 + (0.6 * occ) / allRooms.length : 1) * between(0.9, 1.1);
+      value += use;
+      if (d.getUTCMonth() === days[0]!.getUTCMonth()) meterUse.set(utility, (meterUse.get(utility) ?? 0) + use);
+      await recordReading(prisma, admin, H, { meterId: m.id, readingDate: d, value: value.toFixed(1) });
+    }
+  }
+
+  // expenses for the complete month (accounting / payroll / utility imports + a few manual entries)
+  const firstMonth = days.filter((d) => d.getUTCMonth() === days[0]!.getUTCMonth());
+  const firstMonthEnd = firstMonth.at(-1)!;
+  const mEnd = firstMonthEnd.toISOString().slice(0, 10);
+  const mTag = mEnd.slice(0, 7);
+  const gl: Array<Record<string, string>> = [];
+  for (const [code, [, headcount]] of Object.entries(deptMaster)) {
+    const salary = headcount * between(30000, 36000);
+    gl.push({ date: mEnd, department: code, category: "LABOR", subcategory: "SALARY", description: `Payroll ${code} ${mTag}`, amount: salary.toFixed(2), quantity: String(headcount), unit: "headcount", external_id: `PAY-${code}-${mTag}` });
+    gl.push({ date: mEnd, department: code, category: "LABOR", subcategory: "EMPLOYER_COST", description: `SGK employer share ${code} ${mTag}`, amount: (salary * 0.2275).toFixed(2), external_id: `SGK-${code}-${mTag}` });
+    if (["KITCH", "REST", "HK", "BANQ"].includes(code)) gl.push({ date: mEnd, department: code, category: "LABOR", subcategory: "OVERTIME", description: `Overtime ${code} ${mTag}`, amount: (salary * between(0.03, 0.08)).toFixed(2), external_id: `OT-${code}-${mTag}` });
+  }
+  const meteredKwh = meterUse.get("ELECTRICITY") ?? 0;
+  const billKwh = meteredKwh * 1.18; // common areas, pool, lighting are not sub-metered
+  gl.push({ date: mEnd, department: "", category: "ENERGY", subcategory: "ELECTRICITY", description: `Electricity ${mTag}`, amount: (billKwh * 3.05).toFixed(2), quantity: billKwh.toFixed(0), unit: "kWh", supplier: "Akdeniz Elektrik", invoice_no: `EL-${mTag}`, external_id: `EL-${mTag}` });
+  const billWater = (meterUse.get("WATER") ?? 0) * 1.25;
+  gl.push({ date: mEnd, department: "", category: "ENERGY", subcategory: "WATER", description: `Water ${mTag}`, amount: (billWater * 46).toFixed(2), quantity: billWater.toFixed(0), unit: "m3", supplier: "ASAT", invoice_no: `SU-${mTag}`, external_id: `SU-${mTag}` });
+  const billGas = (meterUse.get("GAS") ?? 0) * 1.05;
+  gl.push({ date: mEnd, department: "", category: "ENERGY", subcategory: "GAS", description: `Natural gas ${mTag}`, amount: (billGas * 14.2).toFixed(2), quantity: billGas.toFixed(0), unit: "m3", supplier: "Antalya Gaz", invoice_no: `DG-${mTag}`, external_id: `DG-${mTag}` });
+  for (const [dc, cat_, sub, desc, amt] of [
+    ["HK", "HOUSEKEEPING", "OUTSOURCED", "Facade & window cleaning contract", 18500], ["HK", "AMENITIES", "WELCOME", "Welcome amenities (VIP)", 9600], ["LAUN", "LAUNDRY", "OUTSOURCING", "Dry cleaning — guest laundry", 12400], ["LAUN", "LAUNDRY", "CHEMICALS", "Laundry chemicals contract", 15800],
+    ["ROOMS", "ROOMS_OTHER", "FRONT_OFFICE", "Key cards & front office supplies", 6400], ["ADM", "ADMINISTRATION", "IT", "PMS / POS licences", 26000], ["ADM", "ADMINISTRATION", "AUDIT", "External audit fee (monthly accrual)", 15000], ["ADM", "ADMINISTRATION", "BANK", "Bank & POS charges", 8200],
+    ["ADM", "SALES_MARKETING", "ADVERTISING", "Online advertising", 42000], ["ENG", "ENGINEERING", "PREVENTIVE_MAINTENANCE", "Elevator maintenance contract", 9500], ["ENG", "ENGINEERING", "CONTRACTOR", "HVAC service contract", 14500],
+    ["", "RENT", "RENT", "Land lease", 250000], ["", "INSURANCE", "INSURANCE", "Property insurance (monthly)", 31000], ["", "DEPRECIATION", "DEPRECIATION", "Depreciation (monthly)", 185000],
+  ] as const) gl.push({ date: mEnd, department: dc, category: cat_, subcategory: sub, description: desc, amount: String(amt), external_id: `GL-${cat_}-${sub}-${mTag}` });
+  await commitExpenseImport(prisma, actors.accounting!, H, `gl-export-${mTag}.csv`, gl);
+  // engineering jobs during the month (spare parts on assets, emergency repairs in rooms)
+  for (const [i, d] of firstMonth.entries()) {
+    if (i % 4 === 1) {
+      const a = assetDefs[Math.floor(rnd() * assetDefs.length)]!;
+      await createExpense(prisma, admin, H, { expenseDate: at(d, 11), departmentId: dept.ENG, category: "ENGINEERING", subCategory: rnd() < 0.5 ? "SPARE_PARTS" : "EQUIPMENT_REPAIR", description: `${a[1]} — ${rnd() < 0.5 ? "bearing replacement" : "service parts"}`, amount: (between(1200, 9500)).toFixed(2), assetId: asset[a[0]], supplierName: "Teknik Yedek Parça" });
+    }
+    if (i % 6 === 3) {
+      const r = allRooms[Math.floor(rnd() * allRooms.length)]!;
+      await createExpense(prisma, admin, H, { expenseDate: at(d, 13), category: "ENGINEERING", subCategory: "EMERGENCY_REPAIR", description: `Room ${r.number} — ${rnd() < 0.5 ? "AC failure" : "water leak"}`, amount: (between(900, 4200)).toFixed(2), roomId: r.id });
+    }
+    if (i % 7 === 0) await createExpense(prisma, admin, H, { expenseDate: at(d, 10), departmentId: dept.HK, category: "HOUSEKEEPING", subCategory: "CHEMICALS", description: "Weekly cleaning chemicals", amount: (between(3800, 5200)).toFixed(2) });
+  }
+
+  // allocation rules (USALI style: utilities and engineering to operated departments; A&G and S&M stay undistributed)
+  const opDepts = ["ROOMS", "HK", "LAUN", "REST", "CAFE", "BAR", "BRKF", "BANQ", "KITCH", "PAST"];
+  await createRule(prisma, admin, H, { name: "Electricity by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "ELECTRICITY", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "KITCH", "LAUN", "REST"].map((c) => ({ departmentId: dept[c]! })) });
+  await createRule(prisma, admin, H, { name: "Water by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "WATER", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "LAUN", "KITCH"].map((c) => ({ departmentId: dept[c]! })) });
+  await createRule(prisma, admin, H, { name: "Natural gas by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "GAS", sourceDepartmentId: null, driver: "METER", targets: ["KITCH", "LAUN"].map((c) => ({ departmentId: dept[c]! })) });
+  await createRule(prisma, admin, H, { name: "Engineering department by m²", sourceCategoryGroup: "ALL", sourceDepartmentId: dept.ENG, driver: "SQM", targets: opDepts.map((c) => ({ departmentId: dept[c]! })) });
+  await postAllocation(prisma, admin, H, (await periodFor(prisma, H, firstMonthEnd)).id);
+  console.log(`Rooms: ${allRooms.length}; reservations: ${resRows.length}; expenses: ${await prisma.expense.count({ where: { hotelId: H } })}`);
 
   // ── A pending delete request (demonstrates §285 in the UI) ──
   const anyReceipt = await prisma.stockTransaction.findFirst({ where: { hotelId: H, type: "PURCHASE", productId: pid["HK-SHAMPOO"] } });

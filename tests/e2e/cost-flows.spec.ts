@@ -141,7 +141,7 @@ test("Excel export: page offers .xlsm download and one-time API token (spec 2, 1
   // the token authenticates the Excel refresh endpoint (TSV contract)
   const res = await page.request.get("/api/export/full-cost?format=tsv&from=2026-09-01&to=2026-09-30", { headers: { authorization: `Bearer ${token}` } });
   expect(res.status()).toBe(200);
-  expect((await res.text()).startsWith("##EXPORT\t1.0")).toBe(true);
+  expect((await res.text()).startsWith("##EXPORT\t1.1")).toBe(true);
   // chefs cannot export
   const chefCtx = await page.context().browser()!.newContext();
   const chef = await chefCtx.newPage();
