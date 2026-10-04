@@ -13,7 +13,7 @@ import { reverseExpenseTx, commitExpenseImport } from "@/server/services/opex";
 import { xlsxToObjects } from "@/server/util/xlsx";
 import { periodFor, setPeriodStatus, reopenPeriod, closeChecklist, reconciliationStatus } from "@/server/services/period";
 import { periodCloseSnapshot, verifyReproducibility, managementPack } from "@/server/services/reports";
-import { calendarView, completeTask, dueDates, weeklyReview } from "@/server/services/calendar";
+import { calendarView, canCompleteTask, completeTask, dueDates, weeklyReview } from "@/server/services/calendar";
 import type { Actor } from "@/server/auth/actor";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
@@ -139,6 +139,16 @@ describe("control calendar & weekly review (spec 257–258)", () => {
     const w = dueDates({ recurrence: "WEEKLY", weekday: 7, monthDay: null }, new Date("2026-09-01T00:00:00Z"), new Date("2026-10-01T00:00:00Z"));
     expect(w.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-09-06", "2026-09-13", "2026-09-20", "2026-09-27"]);
     expect(dueDates({ recurrence: "MONTHLY", weekday: null, monthDay: 0 }, new Date("2026-02-01T00:00:00Z"), new Date("2026-03-01T00:00:00Z"))[0]!.toISOString().slice(0, 10)).toBe("2026-02-28");
+  });
+
+  it("sign-off rights: owner role or period manager; tasks without an owner need a period manager; viewers never", () => {
+    const as = (roleKey: string, permissions: string[]) => ({ ...cc, roleKey, permissions: new Set(permissions) });
+    const purchasing = as("purchasing_manager", ["report:view", "purchase:manage"]);
+    expect(canCompleteTask(purchasing, "purchasing_manager")).toBe(true);
+    expect(canCompleteTask(purchasing, "warehouse")).toBe(false);
+    expect(canCompleteTask(purchasing, null)).toBe(false);
+    expect(canCompleteTask(as("cost_controller", ["report:view", "period:manage"]), null)).toBe(true);
+    expect(canCompleteTask(as("viewer", ["report:view", "cost:view"]), "viewer")).toBe(false);
   });
 
   it("standard tasks are installed; completion is recorded once and only on a due date", async () => {

@@ -77,7 +77,9 @@ async function crawlUser(browser: Browser, email: string, hotelNames: Map<string
     if (r.url().includes("/api/") && r.status() >= 500) findings.push({ user: email, ...current, kind: "api5xx", detail: `${r.status()} ${r.url()}` });
   });
 
-  const hotels = actor && actor.hotelIds.length ? [...actor.hotelIds] : [null];
+  // a hotel created after the hotel list was read is reported and skipped, not dereferenced
+  const known = (actor?.hotelIds ?? []).filter((h) => hotelNames.has(h) || (findings.push({ user: email, hotel: h, path: "-", kind: "unknown-hotel", detail: "hotel not in the crawl's hotel list" }), false));
+  const hotels = known.length ? known : [null];
   const own = new Set(hotels.filter(Boolean).map((h) => hotelNames.get(h!)!.org));
   const foreign = [...hotelNames.values()].filter((h) => !own.has(h.org)).flatMap((h) => [h.name, h.orgName]);
   // the platform operator lists tenants by design (/platform); everyone else must never see another company
