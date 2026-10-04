@@ -19,12 +19,12 @@ export default defineConfig({
           environment: "node",
           globalSetup: ["tests/integration/global-setup.ts"],
           setupFiles: ["tests/integration/env.ts"],
-          fileParallelism: false,
           testTimeout: 30000,
           hookTimeout: 60000,
         },
       },
     ],
+    fileParallelism: false,
     coverage: { provider: "v8", include: ["src/domain/**", "src/server/services/**"] },
   },
 });

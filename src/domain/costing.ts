@@ -38,7 +38,11 @@ export interface IssueResult {
   totalCost: Decimal;
 }
 
-/** Weighted average cost: issue at current average. */
+/**
+ * Weighted average cost: issue at current average.
+ * Issuing the entire remaining quantity releases the entire remaining value, so the
+ * ledger invariant Σ(totalCost) = balance value holds exactly with no rounding residue.
+ */
 export function wacIssue(pos: Position, qty: Numeric, opts: { allowNegative?: boolean } = {}): IssueResult {
   const q = D(qty);
   if (q.lte(0)) throw new DomainError("VALIDATION", "Issue quantity must be positive");
@@ -48,12 +52,13 @@ export function wacIssue(pos: Position, qty: Numeric, opts: { allowNegative?: bo
       requested: q.toString(),
     });
   }
-  const unitCost = pos.avgCost;
-  const total = q.times(unitCost);
   const newQty = pos.quantity.minus(q);
-  // Avoid residual value drift: when quantity reaches zero, value is zero.
-  const newValue = newQty.isZero() ? ZERO : pos.value.minus(total);
-  return { position: { quantity: newQty, value: newValue, avgCost: newQty.isZero() ? pos.avgCost : unitCost }, unitCost, totalCost: total };
+  if (newQty.isZero()) {
+    return { position: { quantity: ZERO, value: ZERO, avgCost: pos.avgCost }, unitCost: pos.value.div(q), totalCost: pos.value };
+  }
+  const unitCost = pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost;
+  const total = q.times(unitCost);
+  return { position: { quantity: newQty, value: pos.value.minus(total), avgCost: unitCost }, unitCost, totalCost: total };
 }
 
 export interface Layer {

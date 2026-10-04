@@ -678,10 +678,11 @@ model GoodsReceipt {
   landedTotal      Decimal                @db.Decimal(20, 6)
   postedAt         DateTime?
   postedById       String
-  idempotencyKey   String?                @unique
+  idempotencyKey   String?
   items            GoodsReceiptItem[]
 
   @@unique([hotelId, number])
+  @@unique([hotelId, idempotencyKey])
   @@index([hotelId, receiptDate])
 }
 
@@ -793,11 +794,12 @@ model StockTransaction {
   userId            String
   reason            String?
   origin            DataOrigin        @default(ACTUAL)
-  idempotencyKey    String?           @unique
+  idempotencyKey    String?
   createdAt         DateTime          @default(now())
   fifoConsumptions  FifoConsumption[]
   costTxs           CostTransaction[]
 
+  @@unique([hotelId, idempotencyKey])
   @@index([hotelId, productId, txDate])
   @@index([hotelId, periodId, type])
   @@index([warehouseId, productId, txDate])
