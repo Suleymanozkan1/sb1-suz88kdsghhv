@@ -1,0 +1,1352 @@
+// HotelCost domain model.
+// Rules:
+//  * Every money / quantity column is DECIMAL(20,6). No floats.
+//  * Every operational row carries hotelId (tenant isolation).
+//  * Posted ledger rows (StockTransaction, CostTransaction) are append-only:
+//    corrections happen through reversals, never UPDATE/DELETE.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum PeriodStatus {
+  OPEN
+  SOFT_CLOSED
+  CLOSED
+  REOPENED
+}
+
+enum UnitDimension {
+  MASS
+  VOLUME
+  COUNT
+  LENGTH
+  TIME
+}
+
+enum CostingMethod {
+  WEIGHTED_AVERAGE
+  FIFO
+  STANDARD
+  LAST_PURCHASE
+  CONTRACT
+}
+
+enum StockTxType {
+  OPENING
+  PURCHASE
+  TRANSFER_IN
+  TRANSFER_OUT
+  CONSUMPTION
+  WASTE
+  PRODUCTION_IN
+  PRODUCTION_OUT
+  RETURN
+  ADJUSTMENT
+  COUNT_ADJUSTMENT
+  STAFF_MEAL
+  COMPLIMENTARY
+  REVERSAL
+}
+
+enum CostNature {
+  DIRECT
+  ALLOCATED
+}
+
+enum CostType {
+  DIRECT
+  INDIRECT
+  FIXED
+  VARIABLE
+  SEMI_VARIABLE
+  OPERATING
+  NON_OPERATING
+  CAPEX
+  OPEX
+}
+
+enum RecipeType {
+  RESTAURANT
+  CAFE
+  BAR
+  BREAKFAST
+  PASTRY
+  BANQUET
+  ROOM_SERVICE
+  MINIBAR
+  STAFF_MEAL
+  COMPLIMENTARY
+  PRODUCTION
+  SEMI_FINISHED
+}
+
+enum RecipeVersionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SUPERSEDED
+  REJECTED
+}
+
+enum WasteType {
+  EXPIRED
+  SPOILED
+  DAMAGED
+  BROKEN
+  BURNED
+  OVERCOOKED
+  PREPARATION
+  TRIMMING
+  PEELING
+  OVERPRODUCTION
+  BUFFET_LEFTOVER
+  PLATE_WASTE
+  RETURNED_FOOD
+  DROPPED
+  SPILLED
+  STORAGE_DAMAGE
+  TEMPERATURE_LOSS
+  QUALITY_REJECTION
+  UNKNOWN
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalAction {
+  STOCK_DELETE
+  STOCK_ADJUSTMENT
+  WASTE
+  COST_OVERRIDE
+  RECIPE_APPROVAL
+  PERIOD_REOPEN
+  SUPPLIER_COST_OVERRIDE
+}
+
+enum POStatus {
+  DRAFT
+  APPROVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum RequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CONVERTED
+}
+
+enum LandedAllocationMethod {
+  BY_VALUE
+  BY_QUANTITY
+  BY_WEIGHT
+  MANUAL
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  HIGH
+  CRITICAL
+}
+
+enum AlertType {
+  CRITICAL_STOCK
+  EXPIRED_STOCK
+  UNEXPLAINED_VARIANCE
+  HIGH_WASTE
+  HIGH_RECIPE_COST
+  LOW_MARGIN
+  PRICE_INCREASE
+  YIELD_DETERIORATION
+  OVER_PORTIONING
+  OVERSTOCK
+  DEAD_STOCK
+  BUDGET_OVERRUN
+  MISSING_RECIPE
+  MISSING_COST
+  MISSING_STOCK_COUNT
+  SUPPLIER_PRICE_ANOMALY
+}
+
+enum CountStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  POSTED
+}
+
+enum CalcStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  PENDING_REPROCESS
+}
+
+enum DataOrigin {
+  ACTUAL
+  THEORETICAL
+  ESTIMATED
+  FORECAST
+  IMPORTED
+  MANUAL
+}
+
+enum CostCenterKind {
+  HOTEL
+  DEPARTMENT
+  SUBDEPARTMENT
+  OUTLET
+  KITCHEN
+  WAREHOUSE
+  ROOM
+  FLOOR
+  SERVICE_POINT
+  COST_CENTER
+}
+
+enum BuffetType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  ALL_INCLUSIVE
+  SPECIAL_EVENT
+  BANQUET
+  THEME_NIGHT
+  HOLIDAY
+}
+
+enum LeftoverClass {
+  SAFE_REUSE
+  MUST_DISCARD
+  RETURNED_TO_KITCHEN
+  REFRIGERATED
+  STAFF_MEAL
+  WASTE
+}
+
+// ──────────────────────── Tenancy & org ────────────────────────
+
+model Organization {
+  id         String     @id @default(cuid())
+  name       String
+  createdAt  DateTime   @default(now())
+  hotels     Hotel[]
+  users      User[]
+  roles      Role[]
+  currencies Currency[]
+}
+
+model Hotel {
+  id                      String       @id @default(cuid())
+  organizationId          String
+  organization            Organization @relation(fields: [organizationId], references: [id])
+  code                    String
+  name                    String
+  baseCurrency            String       @default("TRY")
+  timezone                String       @default("Europe/Istanbul")
+  totalRooms              Int          @default(0)
+  // configurable thresholds (never hard-coded in logic)
+  priceAlertPct           Decimal      @default(10) @db.Decimal(20, 6)
+  wasteApprovalValue      Decimal      @default(1000) @db.Decimal(20, 6)
+  adjustmentApprovalValue Decimal      @default(1000) @db.Decimal(20, 6)
+  marginTargetPct         Decimal      @default(65) @db.Decimal(20, 6)
+  createdAt               DateTime     @default(now())
+
+  departments       Department[]
+  costCenters       CostCenter[]
+  warehouses        Warehouse[]
+  products          Product[]
+  suppliers         Supplier[]
+  periods           CostPeriod[]
+  recipes           Recipe[]
+  stockTxs          StockTransaction[]
+  costTxs           CostTransaction[]
+  userAccess        UserHotelAccess[]
+  categories        ProductCategory[]
+  purchaseOrders    PurchaseOrder[]
+  goodsReceipts     GoodsReceipt[]
+  invoices          Invoice[]
+  wasteRecords      WasteRecord[]
+  stockCounts       StockCount[]
+  sales             SaleLine[]
+  approvals         Approval[]
+  auditLogs         AuditLog[]
+  alerts            Alert[]
+  rooms             Room[]
+  purchaseRequests  PurchaseRequest[]
+  productionBatches ProductionBatch[]
+  yieldRecords      YieldRecord[]
+  supplierPrices    SupplierPrice[]
+  balances          StockBalance[]
+  fifoLayers        FifoLayer[]
+  salesImports      SalesImport[]
+  costSnapshots     CostSnapshot[]
+  calcRuns          CalculationRun[]
+  buffetSessions    BuffetSession[]
+  expenses          Expense[]
+  budgets           Budget[]
+  allocationRules   CostAllocationRule[]
+  occupancy         OccupancyImport[]
+  reports           Report[]
+
+  @@unique([organizationId, code])
+}
+
+model Department {
+  id           String                 @id @default(cuid())
+  hotelId      String
+  hotel        Hotel                  @relation(fields: [hotelId], references: [id])
+  code         String
+  name         String
+  parentId     String?
+  parent       Department?            @relation("DeptTree", fields: [parentId], references: [id])
+  children     Department[]           @relation("DeptTree")
+  isOutlet     Boolean                @default(false)
+  active       Boolean                @default(true)
+  costCenters  CostCenter[]
+  warehouses   Warehouse[]
+  userAccess   UserDepartmentAccess[]
+  wasteRecords WasteRecord[]
+  sales        SaleLine[]
+  stockTxs     StockTransaction[]
+  costTxs      CostTransaction[]
+  recipes      Recipe[]
+
+  @@unique([hotelId, code])
+}
+
+model CostCenter {
+  id           String            @id @default(cuid())
+  hotelId      String
+  hotel        Hotel             @relation(fields: [hotelId], references: [id])
+  departmentId String?
+  department   Department?       @relation(fields: [departmentId], references: [id])
+  code         String
+  name         String
+  kind         CostCenterKind
+  parentId     String?
+  parent       CostCenter?       @relation("CCTree", fields: [parentId], references: [id])
+  children     CostCenter[]      @relation("CCTree")
+  costTxs      CostTransaction[]
+
+  @@unique([hotelId, code])
+}
+
+model Currency {
+  code           String         @id
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  name           String
+  rates          ExchangeRate[]
+}
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  currencyCode String
+  currency     Currency @relation(fields: [currencyCode], references: [code])
+  quoteCode    String
+  rate         Decimal  @db.Decimal(20, 8)
+  rateDate     DateTime @db.Date
+
+  @@unique([currencyCode, quoteCode, rateDate])
+}
+
+// ───────────────────────── Identity / RBAC ─────────────────────────
+
+model User {
+  id             String                 @id @default(cuid())
+  organizationId String
+  organization   Organization           @relation(fields: [organizationId], references: [id])
+  email          String                 @unique
+  name           String
+  passwordHash   String
+  active         Boolean                @default(true)
+  roleId         String
+  role           Role                   @relation(fields: [roleId], references: [id])
+  createdAt      DateTime               @default(now())
+  hotelAccess    UserHotelAccess[]
+  deptAccess     UserDepartmentAccess[]
+  sessions       Session[]
+}
+
+model Role {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  key            String
+  name           String
+  // when true the role sees every department of the hotels it can access
+  allDepartments Boolean      @default(false)
+  // permission keys, e.g. "recipe:view", "report:export"
+  permissions    String[]
+  users          User[]
+
+  @@unique([organizationId, key])
+}
+
+model UserHotelAccess {
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id])
+
+  @@id([userId, hotelId])
+}
+
+model UserDepartmentAccess {
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@id([userId, departmentId])
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── Periods ─────────────────────────
+
+model CostPeriod {
+  id         String             @id @default(cuid())
+  hotelId    String
+  hotel      Hotel              @relation(fields: [hotelId], references: [id])
+  code       String // e.g. 2026-10
+  startDate  DateTime           @db.Date
+  endDate    DateTime           @db.Date
+  status     PeriodStatus       @default(OPEN)
+  closedAt   DateTime?
+  closedById String?
+  stockTxs   StockTransaction[]
+  costTxs    CostTransaction[]
+  snapshots  CostSnapshot[]
+
+  @@unique([hotelId, code])
+  @@index([hotelId, startDate, endDate])
+}
+
+// ───────────────────────── Units ─────────────────────────
+
+model Unit {
+  id        String        @id @default(cuid())
+  code      String        @unique // kg, g, l, ml, pc, case ...
+  name      String
+  dimension UnitDimension
+  // factor to the dimension base unit (g for MASS, ml for VOLUME, piece for COUNT ...)
+  // null for packaging units whose size depends on the product (case, box, pack ...)
+  toBase    Decimal?      @db.Decimal(20, 9)
+}
+
+// Product-specific conversion: 1 fromUnit = factor toUnit (for that product only).
+model UnitConversion {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromUnit  String
+  toUnit    String
+  factor    Decimal @db.Decimal(20, 9)
+  note      String?
+
+  @@unique([productId, fromUnit, toUnit])
+}
+
+// ───────────────────────── Product master ─────────────────────────
+
+model ProductCategory {
+  id       String            @id @default(cuid())
+  hotelId  String
+  hotel    Hotel             @relation(fields: [hotelId], references: [id])
+  code     String
+  name     String
+  parentId String?
+  parent   ProductCategory?  @relation("CatTree", fields: [parentId], references: [id])
+  children ProductCategory[] @relation("CatTree")
+  // top-level group used by reports: FOOD, BEVERAGE, PACKAGING, HOUSEKEEPING ...
+  group    String
+  products Product[]
+
+  @@unique([hotelId, code])
+}
+
+model Product {
+  id                String          @id @default(cuid())
+  hotelId           String
+  hotel             Hotel           @relation(fields: [hotelId], references: [id])
+  sku               String
+  name              String
+  barcode           String?
+  brand             String?
+  categoryId        String
+  category          ProductCategory @relation(fields: [categoryId], references: [id])
+  defaultSupplierId String?
+  defaultSupplier   Supplier?       @relation(fields: [defaultSupplierId], references: [id])
+  purchaseUnit      String
+  stockUnit         String
+  recipeUnit        String
+  taxRatePct        Decimal         @default(0) @db.Decimal(20, 6)
+  currency          String          @default("TRY")
+  costingMethod     CostingMethod   @default(WEIGHTED_AVERAGE)
+  standardCost      Decimal?        @db.Decimal(20, 6) // per stock unit
+  minStock          Decimal?        @db.Decimal(20, 6)
+  maxStock          Decimal?        @db.Decimal(20, 6)
+  reorderPoint      Decimal?        @db.Decimal(20, 6)
+  safetyStock       Decimal?        @db.Decimal(20, 6)
+  leadTimeDays      Int?
+  shelfLifeDays     Int?
+  // default AP→EP yield (%). 100 = no loss.
+  yieldPct          Decimal         @default(100) @db.Decimal(20, 6)
+  isStockItem       Boolean         @default(true)
+  active            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  conversions    UnitConversion[]
+  supplierPrices SupplierPrice[]
+  stockTxs       StockTransaction[]
+  balances       StockBalance[]
+  fifoLayers     FifoLayer[]
+  recipeLines    RecipeIngredient[]
+  wasteRecords   WasteRecord[]
+  countLines     StockCountLine[]
+  poItems        PurchaseOrderItem[]
+  receiptItems   GoodsReceiptItem[]
+  invoiceItems   InvoiceItem[]
+  yieldRecords   YieldRecord[]
+  // a semi-finished product produced by a recipe
+  producedBy     Recipe[]              @relation("RecipeOutputProduct")
+  prItems        PurchaseRequestItem[]
+
+  @@unique([hotelId, sku])
+  @@index([hotelId, name])
+  @@index([hotelId, barcode])
+}
+
+// ───────────────────────── Suppliers & purchasing ─────────────────────────
+
+model Supplier {
+  id           String          @id @default(cuid())
+  hotelId      String
+  hotel        Hotel           @relation(fields: [hotelId], references: [id])
+  code         String
+  name         String
+  taxNumber    String?
+  email        String?
+  phone        String?
+  leadTimeDays Int?
+  currency     String          @default("TRY")
+  active       Boolean         @default(true)
+  products     Product[]
+  prices       SupplierPrice[]
+  orders       PurchaseOrder[]
+  receipts     GoodsReceipt[]
+  invoices     Invoice[]
+
+  @@unique([hotelId, code])
+}
+
+// Immutable price history. One row per observed price (receipt, contract, quote).
+model SupplierPrice {
+  id                String   @id @default(cuid())
+  hotelId           String
+  hotel             Hotel    @relation(fields: [hotelId], references: [id])
+  supplierId        String
+  supplier          Supplier @relation(fields: [supplierId], references: [id])
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id])
+  priceDate         DateTime
+  purchaseUnit      String
+  packPrice         Decimal  @db.Decimal(20, 6) // price per purchase unit, net of discount, excl. tax
+  unitPrice         Decimal  @db.Decimal(20, 6) // normalized per stock unit
+  previousUnitPrice Decimal? @db.Decimal(20, 6)
+  changePct         Decimal? @db.Decimal(20, 6)
+  quantity          Decimal? @db.Decimal(20, 6) // in stock unit
+  currency          String   @default("TRY")
+  source            String // RECEIPT | CONTRACT | QUOTE | IMPORT
+  sourceId          String?
+  invoiceNo         String?
+  createdAt         DateTime @default(now())
+
+  @@index([hotelId, productId, priceDate])
+  @@index([supplierId, productId, priceDate])
+}
+
+model PurchaseRequest {
+  id            String                @id @default(cuid())
+  hotelId       String
+  hotel         Hotel                 @relation(fields: [hotelId], references: [id])
+  number        String
+  status        RequestStatus         @default(DRAFT)
+  requestedById String
+  departmentId  String?
+  note          String?
+  createdAt     DateTime              @default(now())
+  items         PurchaseRequestItem[]
+
+  @@unique([hotelId, number])
+}
+
+model PurchaseRequestItem {
+  id        String          @id @default(cuid())
+  requestId String
+  request   PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product         @relation(fields: [productId], references: [id])
+  quantity  Decimal         @db.Decimal(20, 6)
+  unit      String
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  hotelId      String
+  hotel        Hotel               @relation(fields: [hotelId], references: [id])
+  number       String
+  supplierId   String
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  status       POStatus            @default(DRAFT)
+  orderDate    DateTime
+  expectedDate DateTime?
+  currency     String              @default("TRY")
+  createdById  String
+  approvedById String?
+  createdAt    DateTime            @default(now())
+  items        PurchaseOrderItem[]
+  receipts     GoodsReceipt[]
+
+  @@unique([hotelId, number])
+  @@index([hotelId, status])
+}
+
+model PurchaseOrderItem {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product       @relation(fields: [productId], references: [id])
+  quantity    Decimal       @db.Decimal(20, 6) // in `unit`
+  unit        String
+  unitPrice   Decimal       @db.Decimal(20, 6) // per `unit`
+  receivedQty Decimal       @default(0) @db.Decimal(20, 6) // in `unit`
+}
+
+model GoodsReceipt {
+  id               String                 @id @default(cuid())
+  hotelId          String
+  hotel            Hotel                  @relation(fields: [hotelId], references: [id])
+  number           String
+  supplierId       String
+  supplier         Supplier               @relation(fields: [supplierId], references: [id])
+  orderId          String?
+  order            PurchaseOrder?         @relation(fields: [orderId], references: [id])
+  warehouseId      String
+  warehouse        Warehouse              @relation(fields: [warehouseId], references: [id])
+  receiptDate      DateTime
+  invoiceNo        String?
+  currency         String                 @default("TRY")
+  exchangeRate     Decimal                @default(1) @db.Decimal(20, 8)
+  freight          Decimal                @default(0) @db.Decimal(20, 6)
+  shipping         Decimal                @default(0) @db.Decimal(20, 6)
+  customs          Decimal                @default(0) @db.Decimal(20, 6)
+  handling         Decimal                @default(0) @db.Decimal(20, 6)
+  otherCost        Decimal                @default(0) @db.Decimal(20, 6)
+  allocationMethod LandedAllocationMethod @default(BY_VALUE)
+  netTotal         Decimal                @db.Decimal(20, 6)
+  taxTotal         Decimal                @db.Decimal(20, 6)
+  landedTotal      Decimal                @db.Decimal(20, 6)
+  postedAt         DateTime?
+  postedById       String
+  idempotencyKey   String?                @unique
+  items            GoodsReceiptItem[]
+
+  @@unique([hotelId, number])
+  @@index([hotelId, receiptDate])
+}
+
+model GoodsReceiptItem {
+  id               String       @id @default(cuid())
+  receiptId        String
+  receipt          GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product      @relation(fields: [productId], references: [id])
+  poItemId         String?
+  quantity         Decimal      @db.Decimal(20, 6) // in `unit`
+  unit             String
+  stockQty         Decimal      @db.Decimal(20, 6) // converted to product stock unit
+  unitPrice        Decimal      @db.Decimal(20, 6) // per `unit`, document currency
+  discount         Decimal      @default(0) @db.Decimal(20, 6) // line amount
+  taxRatePct       Decimal      @default(0) @db.Decimal(20, 6)
+  netAmount        Decimal      @db.Decimal(20, 6) // base currency
+  taxAmount        Decimal      @db.Decimal(20, 6)
+  landedExtra      Decimal      @db.Decimal(20, 6) // allocated freight etc.
+  landedAmount     Decimal      @db.Decimal(20, 6) // net + extra (base currency)
+  landedUnitCost   Decimal      @db.Decimal(20, 6) // per stock unit
+  manualAllocation Decimal?     @db.Decimal(20, 6)
+  weight           Decimal?     @db.Decimal(20, 6)
+  expiryDate       DateTime?
+  lotNo            String?
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  hotelId     String
+  hotel       Hotel         @relation(fields: [hotelId], references: [id])
+  supplierId  String
+  supplier    Supplier      @relation(fields: [supplierId], references: [id])
+  number      String
+  invoiceDate DateTime
+  currency    String        @default("TRY")
+  netTotal    Decimal       @db.Decimal(20, 6)
+  taxTotal    Decimal       @db.Decimal(20, 6)
+  grossTotal  Decimal       @db.Decimal(20, 6)
+  receiptIds  String[]
+  createdAt   DateTime      @default(now())
+  items       InvoiceItem[]
+
+  @@unique([hotelId, supplierId, number])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  description String
+  quantity    Decimal  @db.Decimal(20, 6)
+  unit        String
+  unitPrice   Decimal  @db.Decimal(20, 6)
+  taxRatePct  Decimal  @default(0) @db.Decimal(20, 6)
+  netAmount   Decimal  @db.Decimal(20, 6)
+}
+
+// ───────────────────────── Inventory ledger ─────────────────────────
+
+model Warehouse {
+  id           String             @id @default(cuid())
+  hotelId      String
+  hotel        Hotel              @relation(fields: [hotelId], references: [id])
+  departmentId String?
+  department   Department?        @relation(fields: [departmentId], references: [id])
+  code         String
+  name         String
+  active       Boolean            @default(true)
+  stockTxs     StockTransaction[]
+  balances     StockBalance[]
+  fifoLayers   FifoLayer[]
+  receipts     GoodsReceipt[]
+  counts       StockCount[]
+  wasteRecords WasteRecord[]
+
+  @@unique([hotelId, code])
+}
+
+// Append-only stock ledger. quantity is signed in product stock unit (+in / -out).
+model StockTransaction {
+  id                String            @id @default(cuid())
+  hotelId           String
+  hotel             Hotel             @relation(fields: [hotelId], references: [id])
+  periodId          String
+  period            CostPeriod        @relation(fields: [periodId], references: [id])
+  warehouseId       String
+  warehouse         Warehouse         @relation(fields: [warehouseId], references: [id])
+  departmentId      String?
+  department        Department?       @relation(fields: [departmentId], references: [id])
+  productId         String
+  product           Product           @relation(fields: [productId], references: [id])
+  type              StockTxType
+  txDate            DateTime
+  quantity          Decimal           @db.Decimal(20, 6)
+  unitCost          Decimal           @db.Decimal(20, 6)
+  totalCost         Decimal           @db.Decimal(20, 6) // signed, same sign as quantity
+  balanceQtyAfter   Decimal           @db.Decimal(20, 6)
+  balanceValueAfter Decimal           @db.Decimal(20, 6)
+  avgCostAfter      Decimal           @db.Decimal(20, 6)
+  sourceType        String // GOODS_RECEIPT | SALE | WASTE | COUNT | TRANSFER | PRODUCTION | MANUAL | REVERSAL
+  sourceId          String?
+  reversesId        String?           @unique
+  reverses          StockTransaction? @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy        StockTransaction? @relation("Reversal")
+  transferGroup     String?
+  userId            String
+  reason            String?
+  origin            DataOrigin        @default(ACTUAL)
+  idempotencyKey    String?           @unique
+  createdAt         DateTime          @default(now())
+  fifoConsumptions  FifoConsumption[]
+  costTxs           CostTransaction[]
+
+  @@index([hotelId, productId, txDate])
+  @@index([hotelId, periodId, type])
+  @@index([warehouseId, productId, txDate])
+  @@index([sourceType, sourceId])
+}
+
+model StockBalance {
+  id          String    @id @default(cuid())
+  hotelId     String
+  hotel       Hotel     @relation(fields: [hotelId], references: [id])
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  quantity    Decimal   @default(0) @db.Decimal(20, 6)
+  value       Decimal   @default(0) @db.Decimal(20, 6)
+  avgCost     Decimal   @default(0) @db.Decimal(20, 6)
+  lastTxAt    DateTime?
+  lastCountAt DateTime?
+  version     Int       @default(0)
+
+  @@unique([warehouseId, productId])
+  @@index([hotelId, productId])
+}
+
+model FifoLayer {
+  id           String            @id @default(cuid())
+  hotelId      String
+  hotel        Hotel             @relation(fields: [hotelId], references: [id])
+  warehouseId  String
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id])
+  productId    String
+  product      Product           @relation(fields: [productId], references: [id])
+  sourceTxId   String
+  receivedAt   DateTime
+  originalQty  Decimal           @db.Decimal(20, 6)
+  remainingQty Decimal           @db.Decimal(20, 6)
+  unitCost     Decimal           @db.Decimal(20, 6)
+  expiryDate   DateTime?
+  consumptions FifoConsumption[]
+
+  @@index([warehouseId, productId, receivedAt])
+}
+
+model FifoConsumption {
+  id       String           @id @default(cuid())
+  layerId  String
+  layer    FifoLayer        @relation(fields: [layerId], references: [id])
+  txId     String
+  tx       StockTransaction @relation(fields: [txId], references: [id])
+  quantity Decimal          @db.Decimal(20, 6)
+  unitCost Decimal          @db.Decimal(20, 6)
+}
+
+model StockCount {
+  id           String           @id @default(cuid())
+  hotelId      String
+  hotel        Hotel            @relation(fields: [hotelId], references: [id])
+  warehouseId  String
+  warehouse    Warehouse        @relation(fields: [warehouseId], references: [id])
+  number       String
+  countDate    DateTime
+  status       CountStatus      @default(DRAFT)
+  countedById  String
+  approvedById String?
+  postedAt     DateTime?
+  note         String?
+  lines        StockCountLine[]
+
+  @@unique([hotelId, number])
+}
+
+model StockCountLine {
+  id            String     @id @default(cuid())
+  countId       String
+  count         StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product    @relation(fields: [productId], references: [id])
+  systemQty     Decimal    @db.Decimal(20, 6)
+  countedQty    Decimal    @db.Decimal(20, 6)
+  varianceQty   Decimal    @db.Decimal(20, 6)
+  unitCost      Decimal    @db.Decimal(20, 6)
+  varianceValue Decimal    @db.Decimal(20, 6)
+  reason        String?
+}
+
+// ───────────────────────── Cost ledger ─────────────────────────
+
+model CostTransaction {
+  id            String            @id @default(cuid())
+  hotelId       String
+  hotel         Hotel             @relation(fields: [hotelId], references: [id])
+  periodId      String
+  period        CostPeriod        @relation(fields: [periodId], references: [id])
+  txDate        DateTime
+  departmentId  String?
+  department    Department?       @relation(fields: [departmentId], references: [id])
+  costCenterId  String?
+  costCenter    CostCenter?       @relation(fields: [costCenterId], references: [id])
+  categoryGroup String // FOOD | BEVERAGE | ...
+  categoryId    String?
+  costType      CostType          @default(VARIABLE)
+  nature        CostNature        @default(DIRECT)
+  // classification of the posting: CONSUMPTION, WASTE, STAFF_MEAL, COMPLIMENTARY, COUNT_ADJUSTMENT, EXPENSE, ALLOCATION ...
+  kind          String
+  amount        Decimal           @db.Decimal(20, 6) // base currency, signed
+  quantity      Decimal?          @db.Decimal(20, 6)
+  currency      String            @default("TRY")
+  productId     String?
+  recipeId      String?
+  stockTxId     String?
+  stockTx       StockTransaction? @relation(fields: [stockTxId], references: [id])
+  sourceType    String
+  sourceId      String?
+  reversesId    String?           @unique
+  userId        String
+  origin        DataOrigin        @default(ACTUAL)
+  createdAt     DateTime          @default(now())
+
+  @@index([hotelId, periodId, kind])
+  @@index([hotelId, departmentId, txDate])
+}
+
+model CostSnapshot {
+  id          String     @id @default(cuid())
+  hotelId     String
+  hotel       Hotel      @relation(fields: [hotelId], references: [id])
+  periodId    String
+  period      CostPeriod @relation(fields: [periodId], references: [id])
+  kind        String // PERIOD_CLOSE | VARIANCE | ...
+  data        Json
+  dataVersion Int        @default(1)
+  createdById String
+  createdAt   DateTime   @default(now())
+
+  @@index([hotelId, periodId, kind])
+}
+
+model CalculationRun {
+  id         String     @id @default(cuid())
+  hotelId    String
+  hotel      Hotel      @relation(fields: [hotelId], references: [id])
+  kind       String
+  periodId   String?
+  status     CalcStatus @default(PENDING)
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+  error      String?
+  userId     String
+  details    Json?
+}
+
+// ───────────────────────── Recipes ─────────────────────────
+
+model Recipe {
+  id              String             @id @default(cuid())
+  hotelId         String
+  hotel           Hotel              @relation(fields: [hotelId], references: [id])
+  departmentId    String?
+  department      Department?        @relation(fields: [departmentId], references: [id])
+  code            String
+  name            String
+  type            RecipeType
+  // for semi-finished/production recipes: the stock product it produces
+  outputProductId String?
+  outputProduct   Product?           @relation("RecipeOutputProduct", fields: [outputProductId], references: [id])
+  posCode         String? // sales mapping key
+  active          Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  versions        RecipeVersion[]
+  usedAsSub       RecipeIngredient[] @relation("SubRecipe")
+  sales           SaleLine[]
+
+  @@unique([hotelId, code])
+  @@index([hotelId, posCode])
+}
+
+model RecipeVersion {
+  id                String              @id @default(cuid())
+  recipeId          String
+  recipe            Recipe              @relation(fields: [recipeId], references: [id])
+  version           Int
+  status            RecipeVersionStatus @default(DRAFT)
+  effectiveFrom     DateTime?
+  effectiveTo       DateTime?
+  batchYieldQty     Decimal             @db.Decimal(20, 6) // usable output of one batch, in yieldUnit
+  yieldUnit         String // portion, kg, l ...
+  portions          Decimal             @db.Decimal(20, 6) // usable portions per batch
+  portionSize       Decimal?            @db.Decimal(20, 6) // standard portion (g/ml)
+  portionUnit       String?
+  sellingPrice      Decimal?            @db.Decimal(20, 6) // net of tax
+  packagingCost     Decimal             @default(0) @db.Decimal(20, 6) // per batch
+  laborCost         Decimal             @default(0) @db.Decimal(20, 6)
+  energyCost        Decimal             @default(0) @db.Decimal(20, 6)
+  otherCost         Decimal             @default(0) @db.Decimal(20, 6)
+  productionLossPct Decimal             @default(0) @db.Decimal(20, 6)
+  reason            String?
+  createdById       String
+  approvedById      String?
+  approvedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  // frozen at approval: full explosion with costs; never mutated afterwards
+  costSnapshot      Json?
+  batchCost         Decimal?            @db.Decimal(20, 6)
+  ingredientCost    Decimal?            @db.Decimal(20, 6)
+  portionCost       Decimal?            @db.Decimal(20, 6)
+  lines             RecipeIngredient[]
+  sales             SaleLine[]
+
+  @@unique([recipeId, version])
+}
+
+model RecipeIngredient {
+  id          String        @id @default(cuid())
+  versionId   String
+  version     RecipeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  sortOrder   Int           @default(0)
+  productId   String?
+  product     Product?      @relation(fields: [productId], references: [id])
+  subRecipeId String?
+  subRecipe   Recipe?       @relation("SubRecipe", fields: [subRecipeId], references: [id])
+  quantity    Decimal       @db.Decimal(20, 6) // EP (net usable) quantity in `unit`
+  unit        String
+  // overrides product default yield when set
+  yieldPct    Decimal?      @db.Decimal(20, 6)
+  wastePct    Decimal       @default(0) @db.Decimal(20, 6)
+  note        String?
+}
+
+// ───────────────────────── Sales (cost input) ─────────────────────────
+
+model SalesImport {
+  id             String     @id @default(cuid())
+  hotelId        String
+  hotel          Hotel      @relation(fields: [hotelId], references: [id])
+  source         String // CSV | EXCEL | API | MANUAL
+  fileName       String?
+  fileHash       String?
+  mappingVersion String?
+  importedById   String
+  status         String // PREVIEW | POSTED | ROLLED_BACK | FAILED
+  rowCount       Int        @default(0)
+  validCount     Int        @default(0)
+  invalidCount   Int        @default(0)
+  duplicateCount Int        @default(0)
+  createdAt      DateTime   @default(now())
+  lines          SaleLine[]
+
+  @@unique([hotelId, fileHash])
+}
+
+model SaleLine {
+  id                  String         @id @default(cuid())
+  hotelId             String
+  hotel               Hotel          @relation(fields: [hotelId], references: [id])
+  importId            String?
+  import              SalesImport?   @relation(fields: [importId], references: [id])
+  sourceRow           Int?
+  externalId          String // POS ticket/line id → idempotency
+  saleDate            DateTime
+  departmentId        String
+  department          Department     @relation(fields: [departmentId], references: [id])
+  recipeId            String?
+  recipe              Recipe?        @relation(fields: [recipeId], references: [id])
+  recipeVersionId     String?
+  recipeVersion       RecipeVersion? @relation(fields: [recipeVersionId], references: [id])
+  posCode             String
+  quantity            Decimal        @db.Decimal(20, 6)
+  netRevenue          Decimal        @db.Decimal(20, 6)
+  // frozen theoretical cost at posting time
+  theoreticalUnitCost Decimal?       @db.Decimal(20, 6)
+  theoreticalCost     Decimal?       @db.Decimal(20, 6)
+  consumptionPosted   Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+
+  @@unique([hotelId, externalId])
+  @@index([hotelId, saleDate])
+  @@index([hotelId, departmentId, saleDate])
+}
+
+// ───────────────────────── Yield / Waste / Production ─────────────────────────
+
+model YieldRecord {
+  id               String   @id @default(cuid())
+  hotelId          String
+  hotel            Hotel    @relation(fields: [hotelId], references: [id])
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  recordDate       DateTime
+  apQty            Decimal  @db.Decimal(20, 6)
+  trimQty          Decimal  @default(0) @db.Decimal(20, 6)
+  prepLossQty      Decimal  @default(0) @db.Decimal(20, 6)
+  cookingLossQty   Decimal  @default(0) @db.Decimal(20, 6)
+  epQty            Decimal  @db.Decimal(20, 6)
+  yieldPct         Decimal  @db.Decimal(20, 6)
+  expectedYieldPct Decimal  @db.Decimal(20, 6)
+  unitCost         Decimal  @db.Decimal(20, 6)
+  varianceCost     Decimal  @db.Decimal(20, 6)
+  userId           String
+  note             String?
+}
+
+model WasteRecord {
+  id           String         @id @default(cuid())
+  hotelId      String
+  hotel        Hotel          @relation(fields: [hotelId], references: [id])
+  departmentId String
+  department   Department     @relation(fields: [departmentId], references: [id])
+  warehouseId  String
+  warehouse    Warehouse      @relation(fields: [warehouseId], references: [id])
+  productId    String
+  product      Product        @relation(fields: [productId], references: [id])
+  wasteType    WasteType
+  wasteDate    DateTime
+  quantity     Decimal        @db.Decimal(20, 6) // in `unit`
+  unit         String
+  stockQty     Decimal        @db.Decimal(20, 6)
+  unitCost     Decimal?       @db.Decimal(20, 6) // per stock unit, frozen at posting
+  costValue    Decimal?       @db.Decimal(20, 6)
+  reason       String?
+  notes        String?
+  status       ApprovalStatus @default(PENDING)
+  userId       String
+  approvedById String?
+  approvedAt   DateTime?
+  stockTxId    String?
+  createdAt    DateTime       @default(now())
+
+  @@index([hotelId, wasteDate])
+  @@index([hotelId, departmentId, wasteDate])
+}
+
+model ProductionBatch {
+  id              String   @id @default(cuid())
+  hotelId         String
+  hotel           Hotel    @relation(fields: [hotelId], references: [id])
+  batchNo         String
+  recipeVersionId String
+  productionDate  DateTime
+  operatorId      String
+  plannedQty      Decimal  @db.Decimal(20, 6)
+  outputQty       Decimal  @db.Decimal(20, 6)
+  inputCost       Decimal  @db.Decimal(20, 6)
+  outputUnitCost  Decimal  @db.Decimal(20, 6)
+  lossQty         Decimal  @default(0) @db.Decimal(20, 6)
+  status          String   @default("POSTED")
+
+  @@unique([hotelId, batchNo])
+}
+
+// ───────────────────────── Governance ─────────────────────────
+
+model Approval {
+  id            String         @id @default(cuid())
+  hotelId       String
+  hotel         Hotel          @relation(fields: [hotelId], references: [id])
+  action        ApprovalAction
+  entityType    String
+  entityId      String
+  status        ApprovalStatus @default(PENDING)
+  requestedById String
+  requestedAt   DateTime       @default(now())
+  reason        String
+  payload       Json?
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  resultRef     String?
+
+  @@index([hotelId, status])
+  @@index([entityType, entityId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  hotelId    String?
+  hotel      Hotel?   @relation(fields: [hotelId], references: [id])
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  source     String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([hotelId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model Alert {
+  id           String        @id @default(cuid())
+  hotelId      String
+  hotel        Hotel         @relation(fields: [hotelId], references: [id])
+  type         AlertType
+  severity     AlertSeverity
+  title        String
+  message      String
+  entityType   String?
+  entityId     String?
+  data         Json?
+  acknowledged Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  @@index([hotelId, acknowledged, createdAt])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  hotelId      String
+  entityType   String
+  entityId     String
+  fileName     String
+  mimeType     String
+  size         Int
+  storageKey   String
+  uploadedById String
+  createdAt    DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ─────────────── Later-phase entities (schema reserved, services in later phases) ───────────────
+
+model Room {
+  id       String   @id @default(cuid())
+  hotelId  String
+  hotel    Hotel    @relation(fields: [hotelId], references: [id])
+  number   String
+  roomType String
+  floor    String?
+  area     String?
+  sqm      Decimal? @db.Decimal(20, 6)
+
+  @@unique([hotelId, number])
+}
+
+model BuffetSession {
+  id             String       @id @default(cuid())
+  hotelId        String
+  hotel          Hotel        @relation(fields: [hotelId], references: [id])
+  departmentId   String
+  type           BuffetType
+  serviceDate    DateTime     @db.Date
+  startTime      DateTime?
+  endTime        DateTime?
+  expectedCovers Int?
+  actualCovers   Int?
+  boardBasis     String?
+  status         String       @default("OPEN")
+  lines          BuffetLine[]
+}
+
+model BuffetLine {
+  id            String         @id @default(cuid())
+  sessionId     String
+  session       BuffetSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind          String // PRODUCTION | REFILL | LEFTOVER
+  productId     String?
+  recipeId      String?
+  category      String?
+  quantity      Decimal        @db.Decimal(20, 6)
+  unit          String
+  unitCost      Decimal?       @db.Decimal(20, 6)
+  leftoverClass LeftoverClass?
+  recordedAt    DateTime       @default(now())
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  hotelId       String
+  hotel         Hotel    @relation(fields: [hotelId], references: [id])
+  expenseDate   DateTime
+  departmentId  String?
+  costCenterId  String?
+  categoryGroup String
+  description   String
+  amount        Decimal  @db.Decimal(20, 6)
+  taxAmount     Decimal  @default(0) @db.Decimal(20, 6)
+  costType      CostType @default(OPEX)
+  source        String
+  externalId    String?
+
+  @@unique([hotelId, source, externalId])
+}
+
+model CostAllocationRule {
+  id                  String  @id @default(cuid())
+  hotelId             String
+  hotel               Hotel   @relation(fields: [hotelId], references: [id])
+  name                String
+  sourceCategoryGroup String
+  driver              String // REVENUE | OCCUPIED_ROOMS | COVERS | SQM | HEADCOUNT | FIXED | MANUAL
+  targets             Json
+  active              Boolean @default(true)
+}
+
+model Budget {
+  id      String       @id @default(cuid())
+  hotelId String
+  hotel   Hotel        @relation(fields: [hotelId], references: [id])
+  year    Int
+  name    String
+  lines   BudgetLine[]
+
+  @@unique([hotelId, year, name])
+}
+
+model BudgetLine {
+  id            String   @id @default(cuid())
+  budgetId      String
+  budget        Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  month         Int
+  departmentId  String?
+  categoryGroup String
+  amount        Decimal  @db.Decimal(20, 6)
+  targetPct     Decimal? @db.Decimal(20, 6)
+}
+
+model OccupancyImport {
+  id             String   @id @default(cuid())
+  hotelId        String
+  hotel          Hotel    @relation(fields: [hotelId], references: [id])
+  businessDate   DateTime @db.Date
+  availableRooms Int
+  occupiedRooms  Int
+  guests         Int
+  roomRevenue    Decimal  @db.Decimal(20, 6)
+  source         String
+
+  @@unique([hotelId, businessDate])
+}
+
+model Report {
+  id            String   @id @default(cuid())
+  hotelId       String
+  hotel         Hotel    @relation(fields: [hotelId], references: [id])
+  reportType    String
+  periodId      String?
+  generatedById String
+  generatedAt   DateTime @default(now())
+  dataVersion   Int      @default(1)
+  data          Json
+}
