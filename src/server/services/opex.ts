@@ -10,7 +10,7 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { assertPostable } from "./period";
-import { finishBatch, openBatch } from "./imports";
+import { finishBatch, openBatch, type BatchMeta } from "./imports";
 import { divisionIds, ROOMS_DIVISION } from "./revenue";
 
 export const OPEX_CATEGORIES = {
@@ -69,7 +69,7 @@ export type ExpenseInput = z.input<typeof expenseInput>;
 const LABOR_FIXED = new Set(["SALARY", "EMPLOYER_COST", "BENEFITS"]);
 
 /** Post one expense + its cost-ledger row. Caller handles authorization. */
-async function postExpense(tx: Tx, actor: Actor, hotelId: string, input: z.infer<typeof expenseInput>, source: string, importId?: string | null) {
+async function postExpense(tx: Tx, actor: Actor, hotelId: string, input: z.infer<typeof expenseInput>, source: string, importId?: string | null, sourceRow?: number) {
   let v = input;
   const period = await assertPostable(tx, actor, hotelId, v.expenseDate);
   if (v.departmentId && !(await tx.department.findFirst({ where: { id: v.departmentId, hotelId } }))) throw new DomainError("NOT_FOUND", "Department not found");
@@ -94,7 +94,7 @@ async function postExpense(tx: Tx, actor: Actor, hotelId: string, input: z.infer
       categoryGroup: v.category, subCategory: v.subCategory ?? null, description: v.description, amount: amount.toString(),
       taxAmount: v.taxAmount ? toStorage(D(v.taxAmount)).toString() : "0", quantity: v.quantity ? toStorage(D(v.quantity)).toString() : null, unit: v.unit ?? null,
       costType, supplierName: v.supplierName ?? null, invoiceNo: v.invoiceNo ?? null, assetId: v.assetId ?? null, roomId: v.roomId ?? null,
-      source, externalId: v.externalId ?? null, importId: importId ?? null, createdById: actor.userId,
+      source, externalId: v.externalId ?? null, importId: importId ?? null, sourceRow: sourceRow ?? null, createdById: actor.userId,
     },
   });
   const ct = await tx.costTransaction.create({
@@ -200,20 +200,20 @@ export async function previewExpenseImport(db: Db, actor: Actor, hotelId: string
     return { row: i + 1, status: "VALID" as const, messages: [], data: parsed.data };
   });
   const valid = out.filter((r) => r.status === "VALID");
-  return { rows: out, counts: { total: out.length, valid: valid.length, invalid: out.filter((r) => r.status === "INVALID").length, duplicate: out.filter((r) => r.status === "DUPLICATE").length }, totalAmount: valid.reduce((a, r) => a.plus(D(r.data!.amount)), D(0)).toString() };
+  return { rows: out, counts: { total: out.length, valid: valid.length, invalid: out.filter((r) => r.status === "INVALID").length, duplicate: out.filter((r) => r.status === "DUPLICATE").length, warning: 0 }, totalAmount: valid.reduce((a, r) => a.plus(D(r.data!.amount)), D(0)).toString() };
 }
 
 /** All-or-nothing: if any row is invalid nothing is posted (the preview tells the user which). */
-export async function commitExpenseImport(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>) {
+export async function commitExpenseImport(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>, meta?: BatchMeta) {
   const p = await previewExpenseImport(db, actor, hotelId, rows);
   if (p.counts.invalid) throw new DomainError("VALIDATION", `${p.counts.invalid} invalid row(s); fix the file and preview again`, { rows: p.rows.filter((r) => r.status === "INVALID").slice(0, 50) });
   return inTx(db, async (tx) => {
-    const batch = await openBatch(tx, actor, hotelId, "EXPENSES", fileName, rows);
+    const batch = await openBatch(tx, actor, hotelId, "EXPENSES", fileName, rows, meta);
     let n = 0;
     for (const r of p.rows) {
       if (r.status !== "VALID") continue;
       requireDepartment(actor, r.data!.departmentId ?? null);
-      await postExpense(tx, actor, hotelId, r.data!, "IMPORT", batch.id);
+      await postExpense(tx, actor, hotelId, r.data!, "IMPORT", batch.id, r.row);
       n++;
     }
     const b = await finishBatch(tx, batch.id, n, { ...p.counts, totalAmount: p.totalAmount });

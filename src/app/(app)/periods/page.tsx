@@ -1,6 +1,6 @@
 import { pageContext } from "@/server/page";
 import { authorize, can } from "@/server/auth/actor";
-import { closeChecklist, periodFor } from "@/server/services/period";
+import { closeChecklist, periodFor, reconciliationStatus } from "@/server/services/period";
 import { prisma } from "@/server/db";
 import { Badge, Card, PageHeader, Table, Td, Th } from "@/components/ui";
 import { date } from "@/lib/format";
@@ -16,13 +16,13 @@ export default async function PeriodsPage() {
   const checks = await Promise.all(periods.map((p) => (p.status === "CLOSED" ? Promise.resolve(null) : closeChecklist(prisma, hotelId, p))));
   return (
     <>
-      <PageHeader title="Cost periods" subtitle="OPEN → SOFT CLOSED → CLOSED. Closing snapshots the period's figures; reopening requires authorization and is audited." />
+      <PageHeader title="Cost periods" subtitle="OPEN → SOFT CLOSED → CLOSED. Status: RED = critical gap (blocks closing unless overridden with a reason), YELLOW = non-critical gap, GREEN = complete. Closing snapshots the calculated metrics and archives a reproducible PERIOD_CLOSE report; reopening requires authorization and is audited." />
       <div className="space-y-4">
         {periods.map((p, i) => {
           const c = checks[i];
-          const failing = c?.filter((x) => x.critical && !x.ok).length ?? 0;
+          const status = c ? reconciliationStatus(c) : null;
           return (
-            <Card key={p.id} title={<span className="flex items-center gap-2">{p.code} · {date(p.startDate)} – {date(p.endDate)} <Badge tone={p.status === "CLOSED" ? "gray" : p.status === "SOFT_CLOSED" ? "amber" : p.status === "REOPENED" ? "violet" : "green"}>{p.status}</Badge>{c && <Badge tone={failing ? "red" : "green"}>{failing ? "RED" : "GREEN"}</Badge>}</span>} actions={<PeriodActions periodId={p.id} status={p.status} canReopen={can(actor, "period:reopen")} canOverride={can(actor, "period:close_override")} />}>
+            <Card key={p.id} title={<span className="flex items-center gap-2">{p.code} · {date(p.startDate)} – {date(p.endDate)} <Badge tone={p.status === "CLOSED" ? "gray" : p.status === "SOFT_CLOSED" ? "amber" : p.status === "REOPENED" ? "violet" : "green"}>{p.status}</Badge>{status && <Badge tone={status === "RED" ? "red" : status === "YELLOW" ? "amber" : "green"}>{status}</Badge>}</span>} actions={<PeriodActions periodId={p.id} status={p.status} canReopen={can(actor, "period:reopen")} canOverride={can(actor, "period:close_override")} />}>
               {c ? (
                 <Table>
                   <thead><tr><Th>Month-end check</Th><Th>Result</Th><Th>Detail</Th></tr></thead>

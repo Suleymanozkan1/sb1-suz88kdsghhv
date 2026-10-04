@@ -2,7 +2,7 @@
 
 Cost intelligence for hotels: **purchase → stock → recipe → yield → consumption → waste → actual vs theoretical → variance → department / product cost**, with every figure traceable to source transactions — plus a macro-enabled **Excel reporting layer** (`.xlsm`) that uses the same cost engine.
 
-> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar) + Phase 3 (rooms & operating costs) + Phase 4 (budget, forecast, what-if, menu engineering, savings)**. Report archive / PDF pack and hardening are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
+> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar) + Phase 3 (rooms & operating costs) + Phase 4 (budget, forecast, what-if, menu engineering, savings) + Phase 5 (reports, PDF management pack, import engine, month-end)**. Performance & hardening are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
 
 ## Quick start
 
@@ -89,6 +89,14 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 - **Savings** (`/savings`, `/api/savings/*`): opportunities (supplier price, waste, portion control, yield, recipe re-engineering, overstock carrying cost, energy, labor, OTA → direct) each with formula and stated assumption; actions with root cause, owner, due date, target vs realized saving, overdue flag.
 - **Excel**: sheets 39–41 filled, menu engineering on sheet 54, department / cost-center budget columns; export contract `exportVersion` 1.2.
 
+## Reports, imports and month-end (Phase 5)
+
+- **Management cost pack** (`/reports`, `GET /api/reports/management-pack?from=&to=`): PDF with executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, budget / P&L, recommended actions and the month-end checklist — rendered from the full-cost export (same engine as screens and Excel), DejaVu font for Turkish text.
+- **Archive & reproducibility**: every export, pack and period close is stored with period, parameters, author, data version, content hash and a *period hash* over period-bound sections. `POST /api/reports/{id}/verify` rebuilds it and lists the sections that changed (only possible after a reopen).
+- **Month-end**: checklist extended to buffets, minibar, invoices, production, POS / PMS coverage, payroll, utilities and allocation; status GREEN / YELLOW / RED; critical gaps block closing unless overridden with a reason; closing archives a PERIOD_CLOSE snapshot.
+- **Import engine** (`/imports`): CSV or Excel (.xlsx, first sheet) or JSON rows for expenses, PMS occupancy, reservations, product master, supplier price lists / contracts (price-change warnings) and go-live opening stock. Preview shows valid / invalid / duplicate / warning; commits are all-or-nothing with file hash, format, mapping version and source row; rollbacks reverse ledger postings (expenses, opening stock) or remove statistics; used products are deactivated, never deleted.
+- **Control calendar** (`/calendar`) with the standard recurring controls, due status, system evidence and audited completions; **weekly review** (`/review`) of top cost increases, waste, variance, critical / high stock, price and recipe changes. CSV download of any export table: `/api/export/{group}?format=csv&table=<key>`.
+
 ## Excel Full Cost Report (.xlsm)
 
 Web app → **Excel Export** → *Download .xlsm* (`GET /api/export/workbook?from=YYYY-MM-DD&to=YYYY-MM-DD[&departmentId&warehouseId&group]`).
@@ -128,5 +136,5 @@ npm run build
 | 2 ✅ | Buffet sessions (production/refill/leftover, cost & waste per cover, forecast), minibar (par, room sub-ledger, shrinkage, contribution) |
 | 3 ✅ | Rooms, housekeeping, laundry, labor, energy, engineering, allocation engine, PMS & accounting import |
 | 4 ✅ | Budget, targets, forecast, scenarios, what-if, saving opportunities & actions, menu engineering |
-| 5 | Report archive/PDF pack, Excel/CSV import engine, month-end management pack |
+| 5 ✅ | Report archive & reproducibility, PDF management pack, Excel/CSV import engine, month-end checklist, control calendar, weekly review |
 | 6 | Performance at 100k+ volumes, security hardening, full E2E simulation |

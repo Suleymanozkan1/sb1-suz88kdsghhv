@@ -5,6 +5,7 @@ import { parseExportParams } from "@/server/excel";
 import { rateLimit } from "@/server/auth/session";
 import { DomainError } from "@/domain/errors";
 import { prisma } from "@/server/db";
+import { csvSafe } from "@/server/util/csv";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +18,9 @@ const GROUPS: Record<string, string[]> = {
   purchasing: ["purchaseCost", "supplierPrice", "ppv", "priceTrend"],
   buffet: ["buffetCost", "buffetSummary", "buffetProduct"],
   minibar: ["minibarCost"],
-  rooms: ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost"],
+  rooms: ["roomCost", "roomTypeCost", "roomFloorCost", "roomChannelCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost"],
   departments: ["departmentCost", "outletCost", "costCenter", "costAllocation"],
-  pnl: ["pnl", "budgetVariance", "forecast", "costSaving"],
+  pnl: ["pnl", "budgetVariance", "forecast", "costSaving", "menuEngineering"],
 };
 
 export const GET = api(async ({ actor, hotelId, query, params }) => {
@@ -27,5 +28,13 @@ export const GET = api(async ({ actor, hotelId, query, params }) => {
   if (!keys) throw new DomainError("NOT_FOUND", `Unknown export '${params.section}'. Available: ${Object.keys(GROUPS).join(", ")}, full-cost, workbook`);
   rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const e = await buildFullCostExport(prisma, actor, hotelId, parseExportParams(query));
+  // CSV (spec 250): one section at a time (?format=csv&table=<section key>), formula-injection safe
+  if (query.get("format") === "csv") {
+    const table = query.get("table") ?? keys[0]!;
+    const s = keys.includes(table) ? e.sections[table] : undefined;
+    if (!s) throw new DomainError("NOT_FOUND", `Unknown table '${table}' in '${params.section}'. Available: ${keys.join(", ")}`);
+    const lines = [s.columns.map((c) => csvSafe(c.header)).join(","), ...s.rows.map((r) => s.columns.map((c) => csvSafe(r[c.key] ?? "")).join(","))];
+    return new NextResponse(`\uFEFF${lines.join("\r\n")}\r\n`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="HotelCost_${table}_${e.meta.period.from}_${e.meta.period.to}.csv"`, "cache-control": "no-store" } });
+  }
   return NextResponse.json({ exportVersion: e.exportVersion, exportId: e.exportId, meta: e.meta, sections: Object.fromEntries(keys.map((k) => [k, e.sections[k]])) }, { headers: { "cache-control": "no-store" } });
 });

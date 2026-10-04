@@ -47,6 +47,8 @@ const BUCKET: Record<Exclude<StockTxType, "REVERSAL">, Bucket> = {
 
 /** Consumption sources that are documented by their own sub-ledger rather than by POS sales. */
 const DOCUMENTED = ["BUFFET", "MINIBAR"] as const;
+/** Product groups that are never on a recipe: their departmental consumption is not compared with POS sales. */
+const OPERATING_SUPPLY_GROUPS = new Set(["HOUSEKEEPING", "ENGINEERING", "LINEN"]);
 type Documented = (typeof DOCUMENTED)[number];
 const isDocumented = (s: string): s is Documented => (DOCUMENTED as readonly string[]).includes(s);
 
@@ -76,6 +78,8 @@ export interface ProductVarianceRow {
   /** Documented consumption without a POS sale: buffet sessions (covers) and minibar room consumption. */
   buffet: Pair;
   minibar: Pair;
+  /** Operating supplies issued to departments (housekeeping, engineering, linen): no recipe, so no theoretical usage. */
+  operatingSupplies: Pair;
   countAdjustment: Pair;
   avgCost: Decimal | null;
   varianceQty: Decimal;
@@ -191,12 +195,14 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
     const countAdjustment = neg(b.countAdjustment);
     const buffet = neg(docs.get(p.id)?.buffet ?? zp());
     const minibar = neg(docs.get(p.id)?.minibar ?? zp());
+    // non-recipe groups: departmental consumption is the documented use (controlled per occupied room, not by POS)
+    const operatingSupplies = OPERATING_SUPPLY_GROUPS.has(p.category.group) && tq.isZero() ? { qty: b.consumption.qty.neg().minus(buffet.qty).minus(minibar.qty), value: b.consumption.value.neg().minus(buffet.value).minus(minibar.value) } : zp();
     const avgCost = actual.qty.gt(0) ? actual.value.div(actual.qty) : (fallbackCosts.get(p.id)?.unitCost ?? null);
     const theoValue = avgCost ? tq.times(avgCost) : ZERO;
     const varianceQty = actual.qty.minus(tq);
     const varianceValue = actual.value.minus(theoValue);
-    const unexplainedQty = varianceQty.minus(waste.qty).minus(staffMeal.qty).minus(complimentary.qty).minus(buffet.qty).minus(minibar.qty);
-    const unexplainedValue = varianceValue.minus(waste.value).minus(staffMeal.value).minus(complimentary.value).minus(buffet.value).minus(minibar.value);
+    const unexplainedQty = varianceQty.minus(waste.qty).minus(staffMeal.qty).minus(complimentary.qty).minus(buffet.qty).minus(minibar.qty).minus(operatingSupplies.qty);
+    const unexplainedValue = varianceValue.minus(waste.value).minus(staffMeal.value).minus(complimentary.value).minus(buffet.value).minus(minibar.value).minus(operatingSupplies.value);
     out.push({
       productId: p.id,
       sku: p.sku,
@@ -216,6 +222,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       complimentary,
       buffet,
       minibar,
+      operatingSupplies,
       countAdjustment,
       avgCost,
       varianceQty,
@@ -235,6 +242,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   const complimentary = tot((r) => r.complimentary.value);
   const buffetConsumption = tot((r) => r.buffet.value);
   const minibarConsumption = tot((r) => r.minibar.value);
+  const operatingSupplies = tot((r) => r.operatingSupplies.value);
   const variance = actualCost.minus(theoreticalCost);
   const priceComponent = theoreticalAtAvg.minus(theoreticalCost);
   const breakdown = explainVariance(variance, [
@@ -244,6 +252,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
     { cause: "COMPLIMENTARY", amount: complimentary },
     { cause: "BUFFET_CONSUMPTION", amount: buffetConsumption, evidence: "Buffet sessions: issued − returned leftovers (controlled by cost per cover, not POS)" },
     { cause: "MINIBAR_CONSUMPTION", amount: minibarConsumption, evidence: "Minibar room consumption (room sub-ledger, charged to folio)" },
+    { cause: "OPERATING_SUPPLIES", amount: operatingSupplies, evidence: "Housekeeping / engineering / linen supplies issued to departments (no recipe; controlled per occupied room)" },
   ]);
 
   return {
@@ -266,6 +275,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       complimentary,
       buffetConsumption,
       minibarConsumption,
+      operatingSupplies,
       countAdjustment: tot((r) => r.countAdjustment.value),
       unexplained: breakdown.unexplained,
       unexplainedPct: pct(breakdown.unexplained, theoreticalCost),

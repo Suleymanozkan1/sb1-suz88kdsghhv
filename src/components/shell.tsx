@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -25,7 +25,7 @@ const NAV = [
   { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view" },
   { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
   { href: "/allocation", label: "Cost Allocation", icon: Split, perm: "opex:view" },
-  { href: "/imports", label: "Imports", icon: FileUp, perm: "opex:view" },
+  { href: "/imports", label: "Imports", icon: FileUp, perm: "report:view" },
   { href: "/budget", label: "Budget & Targets", icon: Target, perm: "budget:view" },
   { href: "/forecast", label: "Forecast & What-if", icon: TrendingUp, perm: "budget:view" },
   { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
@@ -33,6 +33,9 @@ const NAV = [
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
   { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
+  { href: "/review", label: "Weekly Review", icon: ListChecks, perm: "report:view" },
+  { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view" },
+  { href: "/reports", label: "Reports & Pack", icon: FileText, perm: "report:view" },
   { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },
   { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
   { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },

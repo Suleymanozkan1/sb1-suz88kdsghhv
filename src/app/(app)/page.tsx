@@ -9,7 +9,7 @@ import { money, pct, qty, dateTime } from "@/lib/format";
 
 export const metadata = { title: "Dashboard" };
 
-const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "Complimentary", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", UNEXPLAINED: "Unexplained" };
+const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "Complimentary", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
 const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", INSUFFICIENT_DATA: "red" } as const;
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {

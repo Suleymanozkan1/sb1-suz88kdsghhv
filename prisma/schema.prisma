@@ -319,6 +319,7 @@ model Hotel {
   allocationRuns    AllocationRun[]
   costTargets       CostTarget[]
   savingActions     SavingAction[]
+  calendarTasks     CalendarTask[]
 
   @@unique([organizationId, code])
 }
@@ -540,6 +541,7 @@ model Product {
   yieldPct          Decimal         @default(100) @db.Decimal(20, 6)
   isStockItem       Boolean         @default(true)
   active            Boolean         @default(true)
+  importId          String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -609,6 +611,8 @@ model SupplierPrice {
   currency          String   @default("TRY")
   source            String // RECEIPT | CONTRACT | QUOTE | IMPORT
   sourceId          String?
+  importId          String?
+  sourceRow         Int?
   invoiceNo         String?
   createdAt         DateTime @default(now())
 
@@ -1431,6 +1435,7 @@ model Expense {
   externalId    String?
   importId      String?
   import        ImportBatch? @relation(fields: [importId], references: [id])
+  sourceRow     Int?
   status        String       @default("POSTED") // POSTED | REVERSED
   costTxId      String?
   reversedAt    DateTime?
@@ -1538,6 +1543,7 @@ model Reservation {
   otherDistribution Decimal      @default(0) @db.Decimal(20, 6)
   importId          String?
   import            ImportBatch? @relation(fields: [importId], references: [id])
+  sourceRow         Int?
   createdAt         DateTime     @default(now())
 
   @@unique([hotelId, externalId])
@@ -1553,6 +1559,8 @@ model ImportBatch {
   hotel          Hotel             @relation(fields: [hotelId], references: [id])
   kind           String // EXPENSES | OCCUPANCY | RESERVATIONS | METER_READINGS | LAUNDRY | ...
   fileName       String
+  sourceFormat   String            @default("CSV") // CSV | XLSX | API
+  mappingVersion String            @default("v1")
   fileHash       String
   rowCount       Int
   postedCount    Int               @default(0)
@@ -1709,18 +1717,62 @@ model OccupancyImport {
   source         String
   importId       String?
   import         ImportBatch? @relation(fields: [importId], references: [id])
+  sourceRow      Int?
 
   @@unique([hotelId, businessDate])
 }
 
+/**
+ * Report archive (spec 251–253): every generated report with its parameters and hashes.
+ */
 model Report {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   hotelId       String
-  hotel         Hotel    @relation(fields: [hotelId], references: [id])
-  reportType    String
+  hotel         Hotel     @relation(fields: [hotelId], references: [id])
+  reportType    String // FULL_COST_EXPORT | MANAGEMENT_PACK | PERIOD_CLOSE
   periodId      String?
+  periodFrom    DateTime?
+  periodTo      DateTime?
+  params        Json?
   generatedById String
-  generatedAt   DateTime @default(now())
-  dataVersion   Int      @default(1)
+  generatedAt   DateTime  @default(now())
+  dataVersion   Int       @default(1)
+  contentHash   String? // hash of the full report body
+  periodHash    String? // hash of the period-bound data only (reproducibility of closed months)
   data          Json
+
+  @@index([hotelId, reportType, generatedAt])
+}
+
+/**
+ * Cost control calendar (spec 257): recurring control tasks and their completions.
+ */
+model CalendarTask {
+  id          String               @id @default(cuid())
+  hotelId     String
+  hotel       Hotel                @relation(fields: [hotelId], references: [id])
+  kind        String // WEEKLY_STOCK_COUNT | MONTHLY_INVENTORY | RECIPE_REVIEW | SUPPLIER_PRICE_REVIEW | WASTE_REVIEW | BUFFET_REVIEW | COST_CLOSING | MANAGEMENT_REPORT | OTHER
+  title       String
+  recurrence  String // WEEKLY | MONTHLY
+  weekday     Int? // 1 = Monday … 7 = Sunday (WEEKLY)
+  monthDay    Int? // 1–28, or 0 = last day of month (MONTHLY)
+  ownerRole   String?
+  active      Boolean              @default(true)
+  createdById String?
+  createdAt   DateTime             @default(now())
+  completions CalendarCompletion[]
+
+  @@index([hotelId, active])
+}
+
+model CalendarCompletion {
+  id            String       @id @default(cuid())
+  taskId        String
+  task          CalendarTask @relation(fields: [taskId], references: [id])
+  dueDate       DateTime     @db.Date
+  completedAt   DateTime     @default(now())
+  completedById String
+  note          String?
+
+  @@unique([taskId, dueDate])
 }

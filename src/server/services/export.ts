@@ -87,6 +87,9 @@ export interface FullCostExport {
     generatedBy: string;
     dataThrough: string | null;
     contentHash: string;
+    /** hash over period-bound sections only — equal for the same closed period regardless of later activity (spec 252) */
+    periodHash: string;
+    sectionHashes: Record<string, string>;
   };
   summary: Record<string, { value: string | null; status: "ACTUAL" | "THEORETICAL" | "ESTIMATED" | "NOT_AVAILABLE" | "INSUFFICIENT_DATA"; note?: string }>;
   sections: Record<string, Section>;
@@ -109,7 +112,18 @@ function unavailable(key: string, title: string, columns: Column[], phase: strin
 
 const monthStart = (d: Date, back = 0) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1));
 
-export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string, p: ExportParams): Promise<FullCostExport> {
+/**
+ * Sections whose content depends only on the period's ledger, PMS and sales data (plus master data).
+ * Live sections (stock now, reorder, forecast, savings, recipe cost today, trends, budget) are excluded.
+ */
+export const PERIOD_BOUND_SECTIONS = [
+  "costDetail", "foodCost", "beverageCost", "theoreticalConsumption", "actualConsumption", "consumptionVariance", "unexplainedVariance", "topVariance",
+  "waste", "wasteSummary", "wasteByCategory", "wasteByDepartment", "topWaste", "yield", "buffetCost", "buffetSummary", "buffetProduct", "minibarCost",
+  "roomCost", "roomTypeCost", "roomFloorCost", "roomChannelCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings",
+  "engineeringCost", "assetCost", "costAllocation", "pnl", "purchaseCost", "ppv", "monthlyStock", "stockVariance", "productSales", "rawStockTransactions", "rawSales",
+];
+
+export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string, p: ExportParams, opts: { noArchive?: boolean } = {}): Promise<FullCostExport> {
   authorize(actor, "report:export", { hotelId });
   if (p.departmentId) requireDepartment(actor, p.departmentId);
   if (!(p.to > p.from)) throw new Error("Invalid period");
@@ -497,7 +511,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     })), buffet ? "OK" : "NOT_AVAILABLE", `${buffetNote} Quantities mix units across items; see BUFFET_PRODUCT for per-item units.`));
   add(section("buffetSummary", "Buffet Summary", "BuffetCostService.periodReport", [col("meal", "Meal"), money("cost", "Cost"), money("costPerCover", "Cost per Cover"), money("wastePerCover", "Waste per Cover"), col("foodCostPct", "Food Cost %", "pct")],
     buffet ? [...buffet.byType.map((t) => ({ meal: `${t.type} (${t.sessions} sessions, ${t.covers} covers)`, cost: s4(t.cost), costPerCover: s4(t.costPerCover), wastePerCover: s4(t.wastePerCover), foodCostPct: null })), { meal: `TOTAL (${buffet.totals.sessions} sessions, ${buffet.totals.covers} covers)`, cost: s4(buffet.totals.cost), costPerCover: s4(buffet.totals.costPerCover), wastePerCover: s4(buffet.totals.wastePerCover), foodCostPct: null }] : [],
-    buffet ? "PARTIAL" : "NOT_AVAILABLE", "Food Cost % needs buffet revenue (board-basis revenue allocation, Phase 3); cost per cover is ACTUAL."));
+    buffet ? "PARTIAL" : "NOT_AVAILABLE", "Food Cost % needs buffet revenue (board-basis revenue split from PMS packages is not available); cost per cover is ACTUAL."));
   add(section("buffetProduct", "Buffet Product Cost", "BuffetCostService.periodReport (by item)", [col("product", "Product"), col("opening", "Opening", "qty"), col("produced", "Produced", "qty"), col("refilled", "Refilled", "qty"), col("estimatedConsumed", "Estimated Consumed", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost")],
     buffet ? buffet.byItem.map((i) => ({ product: `${i.name} (${i.unit})`, opening: "0", produced: s4(i.produced), refilled: s4(i.refilled), estimatedConsumed: s4(i.consumed), waste: s4(i.waste), closing: s4(i.reusable), cost: s4(i.cost) })) : [],
     buffet ? "OK" : "NOT_AVAILABLE", "Opening = 0 (each session starts from production); Closing = reusable leftovers."));
@@ -730,6 +744,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   const counts_ = Object.fromEntries(Object.values(sections).map((s) => [s.key, s.rows.length]));
   const body = { summary, sections, checks };
   const contentHash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  const sectionHashes = Object.fromEntries(PERIOD_BOUND_SECTIONS.filter((k) => sections[k]).map((k) => [k, createHash("sha256").update(JSON.stringify({ c: sections[k]!.columns, r: sections[k]!.rows, s: sections[k]!.status })).digest("hex").slice(0, 16)]));
+  const periodHash = createHash("sha256").update(JSON.stringify(sectionHashes)).digest("hex");
   const exportId = `EXP-${new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14)}-${contentHash.slice(0, 8)}`;
   const result: FullCostExport = {
     exportVersion: EXPORT_VERSION,
@@ -744,6 +760,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
       generatedBy: actor.name,
       dataThrough: lastTx ? lastTx.txDate.toISOString() : null,
       contentHash,
+      periodHash,
+      sectionHashes,
     },
     summary,
     sections,
@@ -754,8 +772,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
 
   // Export snapshot + archive (spec §96, §251)
   const period = await db.costPeriod.findFirst({ where: { hotelId, startDate: { lte: p.from }, endDate: { gte: p.from } } });
-  await db.report.create({ data: { hotelId, reportType: "FULL_COST_EXPORT", periodId: period?.id ?? null, generatedById: actor.userId, dataVersion: 1, data: { exportId, exportVersion: EXPORT_VERSION, meta: result.meta, summary, checks, score: result.score, counts: counts_ } as never } });
-  await audit(db, actor, { hotelId, action: "EXPORT_FULL_COST", entityType: "Report", entityId: exportId, after: { period: result.meta.period, filters: result.meta.filters, counts: counts_, reconciliation: result.score.reconciliation } });
+  if (!opts.noArchive) await db.report.create({ data: { hotelId, reportType: "FULL_COST_EXPORT", periodId: period?.id ?? null, periodFrom: p.from, periodTo: p.to, params: { departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null }, generatedById: actor.userId, dataVersion: 1, contentHash, periodHash, data: { exportId, exportVersion: EXPORT_VERSION, meta: result.meta, summary, checks, score: result.score, counts: counts_ } as never } });
+  if (!opts.noArchive) await audit(db, actor, { hotelId, action: "EXPORT_FULL_COST", entityType: "Report", entityId: exportId, after: { period: result.meta.period, filters: result.meta.filters, counts: counts_, reconciliation: result.score.reconciliation } });
   return result;
 }
 
@@ -766,7 +784,7 @@ export function toTsv(e: FullCostExport): string {
   out.push(`##EXPORT\t${e.exportVersion}\t${e.exportId}`);
   out.push("##META");
   const m = e.meta;
-  for (const [k, v] of Object.entries({ hotelId: m.hotel.id, hotelCode: m.hotel.code, hotel: m.hotel.name, currency: m.hotel.currency, periodFrom: m.period.from, periodTo: m.period.to, periodLabel: m.period.label, department: m.filters.department ?? "All in scope", warehouse: m.filters.warehouse ?? "All", category: m.filters.categoryGroup ?? "All", generatedAt: m.generatedAt, generatedBy: m.generatedBy, dataThrough: m.dataThrough ?? "", contentHash: m.contentHash, appVersion: e.appVersion, dataQuality: e.score.dataQuality ?? "", reconciliation: e.score.reconciliation, warnings: String(e.score.warnings), errors: String(e.score.errors) })) out.push(`${k}\t${clean(v)}`);
+  for (const [k, v] of Object.entries({ hotelId: m.hotel.id, hotelCode: m.hotel.code, hotel: m.hotel.name, currency: m.hotel.currency, periodFrom: m.period.from, periodTo: m.period.to, periodLabel: m.period.label, department: m.filters.department ?? "All in scope", warehouse: m.filters.warehouse ?? "All", category: m.filters.categoryGroup ?? "All", generatedAt: m.generatedAt, generatedBy: m.generatedBy, dataThrough: m.dataThrough ?? "", contentHash: m.contentHash, periodHash: m.periodHash, appVersion: e.appVersion, dataQuality: e.score.dataQuality ?? "", reconciliation: e.score.reconciliation, warnings: String(e.score.warnings), errors: String(e.score.errors) })) out.push(`${k}\t${clean(v)}`);
   out.push("##SUMMARY");
   for (const [k, v] of Object.entries(e.summary)) out.push(`${k}\t${clean(v.value)}\t${v.status}\t${clean(v.note)}`);
   out.push("##CHECKS");

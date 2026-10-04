@@ -9,7 +9,7 @@ import { nightsInRange } from "@/domain/rooms";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
-import { finishBatch, openBatch } from "./imports";
+import { finishBatch, openBatch, type BatchMeta } from "./imports";
 
 export const CHANNELS = ["DIRECT", "OTA", "AGENCY", "CORPORATE", "TOUR_OPERATOR"] as const;
 export const STAY_STATUSES = ["CONFIRMED", "IN_HOUSE", "CHECKED_OUT", "CANCELLED", "NO_SHOW"] as const;
@@ -94,13 +94,13 @@ export async function previewOccupancy(db: Db, actor: Actor, hotelId: string, ro
   return { rows: out, counts: counts(out) };
 }
 
-export async function commitOccupancy(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>) {
+export async function commitOccupancy(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>, meta?: BatchMeta) {
   const p = await previewOccupancy(db, actor, hotelId, rows);
   if (p.counts.invalid) throw new DomainError("VALIDATION", `${p.counts.invalid} invalid row(s); fix the file and preview again`, { rows: p.rows.filter((r) => r.status === "INVALID").slice(0, 50) });
   return inTx(db, async (tx) => {
-    const batch = await openBatch(tx, actor, hotelId, "OCCUPANCY", fileName, rows);
-    const valid = p.rows.filter((r) => r.status === "VALID").map((r) => r.data!);
-    await tx.occupancyImport.createMany({ data: valid.map((d) => ({ hotelId, businessDate: d.businessDate, availableRooms: d.availableRooms, occupiedRooms: d.occupiedRooms, outOfOrder: d.outOfOrder, guests: d.guests, roomRevenue: toStorage(D(d.roomRevenue)).toString(), source: "PMS_IMPORT", importId: batch.id })) });
+    const batch = await openBatch(tx, actor, hotelId, "OCCUPANCY", fileName, rows, meta);
+    const valid = p.rows.filter((r) => r.status === "VALID").map((r) => ({ ...r.data!, sourceRow: r.row }));
+    await tx.occupancyImport.createMany({ data: valid.map((d) => ({ sourceRow: d.sourceRow, hotelId, businessDate: d.businessDate, availableRooms: d.availableRooms, occupiedRooms: d.occupiedRooms, outOfOrder: d.outOfOrder, guests: d.guests, roomRevenue: toStorage(D(d.roomRevenue)).toString(), source: "PMS_IMPORT", importId: batch.id })) });
     const b = await finishBatch(tx, batch.id, valid.length, p.counts);
     await audit(tx, actor, { hotelId, action: "IMPORT_POST", entityType: "ImportBatch", entityId: b.id, after: { kind: "OCCUPANCY", fileName, posted: valid.length, skippedDuplicates: p.counts.duplicate } });
     return { batch: b, posted: valid.length, duplicates: p.counts.duplicate };
@@ -130,14 +130,14 @@ export async function previewReservations(db: Db, actor: Actor, hotelId: string,
   return { rows: out, counts: counts(out) };
 }
 
-export async function commitReservations(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>) {
+export async function commitReservations(db: Db, actor: Actor, hotelId: string, fileName: string, rows: Array<Record<string, string>>, meta?: BatchMeta) {
   const p = await previewReservations(db, actor, hotelId, rows);
   if (p.counts.invalid) throw new DomainError("VALIDATION", `${p.counts.invalid} invalid row(s); fix the file and preview again`, { rows: p.rows.filter((r) => r.status === "INVALID").slice(0, 50) });
   return inTx(db, async (tx) => {
-    const batch = await openBatch(tx, actor, hotelId, "RESERVATIONS", fileName, rows);
-    const valid = p.rows.filter((r) => r.status === "VALID").map((r) => r.data!);
+    const batch = await openBatch(tx, actor, hotelId, "RESERVATIONS", fileName, rows, meta);
+    const valid = p.rows.filter((r) => r.status === "VALID").map((r) => ({ ...r.data!, sourceRow: r.row }));
     await tx.reservation.createMany({
-      data: valid.map((d) => ({
+      data: valid.map((d) => ({ sourceRow: d.sourceRow,
         hotelId, externalId: d.externalId, roomId: d.roomId, roomType: d.roomType, arrival: d.arrival, departure: d.departure, nights: d.nights, guests: d.guests, channel: d.channel,
         boardBasis: d.boardBasis ?? null, status: d.status, grossRoomRevenue: toStorage(D(d.grossRoomRevenue)).toString(), commission: toStorage(D(d.commission)).toString(),
         paymentFee: toStorage(D(d.paymentFee)).toString(), otherDistribution: toStorage(D(d.otherDistribution)).toString(), importId: batch.id,
@@ -150,7 +150,7 @@ export async function commitReservations(db: Db, actor: Actor, hotelId: string, 
 }
 
 function counts(rows: { status: string }[]) {
-  return { total: rows.length, valid: rows.filter((r) => r.status === "VALID").length, invalid: rows.filter((r) => r.status === "INVALID").length, duplicate: rows.filter((r) => r.status === "DUPLICATE").length };
+  return { total: rows.length, valid: rows.filter((r) => r.status === "VALID").length, invalid: rows.filter((r) => r.status === "INVALID").length, duplicate: rows.filter((r) => r.status === "DUPLICATE").length, warning: 0 };
 }
 
 export interface OccupancyStats {

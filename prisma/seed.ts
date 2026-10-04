@@ -596,7 +596,8 @@ async function main() {
   const season = [0.78, 0.8, 0.86, 0.94, 1.02, 1.12, 1.2, 1.22, 1.0, 0.92, 0.82, 0.86]; // resort seasonality (budget assumption)
   const budgetLines: Array<{ month: number; departmentId: string | null; categoryGroup: string; amount: string; targetPct?: string | null }> = [];
   const fixedish = new Set(["LABOR", "RENT", "INSURANCE", "DEPRECIATION", "ADMINISTRATION", "SALES_MARKETING"]);
-  for (let mth = 1; mth <= 12; mth++) {
+  // the hotel's cost history starts this month: budget the rest of the year (no fake YTD gap for earlier months)
+  for (let mth = firstMonthEnd.getUTCMonth() + 1; mth <= 12; mth++) {
     const f = season[mth - 1]! / season[firstMonthEnd.getUTCMonth()]!;
     for (const x of byDeptCat) {
       const amt = Number(x._sum.amount?.toString() ?? 0);
@@ -624,6 +625,11 @@ async function main() {
   await updateAction(prisma, admin, H, sa2.id, { status: "DONE", actualSaving: "14500" });
   await createAction(prisma, admin, H, { driver: "ENERGY", problem: "Laundry gas consumption above plan", action: "Heat-recovery check on washer extractors", ownerName: "Engineering chief", targetSaving: "6000", dueDate: new Date(firstMonthEnd.getTime() - 2 * 86_400_000), departmentId: dept.LAUN });
   console.log(`Budget lines: ${merged.size}; targets: 10; saving actions: 3`);
+  // control calendar (Phase 5): standard tasks with a realistic completion history
+  const { ensureDefaultTasks, calendarView, completeTask } = await import("../src/server/services/calendar");
+  await ensureDefaultTasks(prisma, H);
+  const cal = await calendarView(prisma, admin, H, days[0]!, new Date(days.at(-1)!.getTime() + 86_400_000));
+  for (const [i, it] of cal.items.entries()) if (it.status === "OVERDUE" && i % 4 !== 0) await completeTask(prisma, admin, H, { taskId: it.taskId, dueDate: it.dueDate, note: it.evidence ? `Checked — ${it.evidence}` : "Checked" });
 
 
   // ── A pending delete request (demonstrates §285 in the UI) ──

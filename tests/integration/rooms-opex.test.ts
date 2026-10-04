@@ -82,7 +82,7 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
       { date: "2026-09-30", department: "ADM", category: "RENT", subcategory: "RENT", description: "Land lease", amount: "8000", external_id: "RENT-9" },
     ];
     const preview = await previewExpenseImport(prisma, cc, h.hotel.id, [...rows, { date: "2026-09-30", department: "NOPE", category: "ENERGY", description: "x", amount: "1" }]);
-    expect(preview.counts).toEqual({ total: 5, valid: 4, invalid: 1, duplicate: 0 });
+    expect(preview.counts).toEqual({ total: 5, valid: 4, invalid: 1, duplicate: 0, warning: 0 });
     await expect(commitExpenseImport(prisma, cc, h.hotel.id, "gl.csv", [...rows, { date: "2026-09-30", department: "NOPE", category: "ENERGY", description: "x", amount: "1" }])).rejects.toThrow(/invalid row/);
     const ok = await commitExpenseImport(prisma, cc, h.hotel.id, "gl.csv", rows);
     expect(ok.posted).toBe(4);
