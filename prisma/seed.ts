@@ -7,7 +7,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { ROLE_TEMPLATES } from "../src/server/auth/permissions";
+import { ROLE_TEMPLATES, SUPER_ADMIN_TEMPLATE } from "../src/server/auth/permissions";
 import type { Actor } from "../src/server/auth/actor";
 import { D, Decimal, ZERO } from "../src/domain/money";
 import { costRecipe } from "../src/domain/recipe-cost";
@@ -100,7 +100,18 @@ const PRODUCTS: P[] = [
   { sku: "HK-SHAMPOO", name: "Guest Shampoo 30ml", cat: "Amenities", unit: "pc", price: 6.5, supplier: 3 },
 ];
 
+/** Development-only platform operator (spec 11, 29): manages tenants, sees no tenant data. */
+async function ensurePlatformAdmin() {
+  if (process.env.NODE_ENV === "production") return;
+  if (await prisma.user.findUnique({ where: { email: "superadmin@hotelcost.test" } })) return;
+  const org = (await prisma.organization.findFirst({ where: { isPlatform: true } })) ?? (await prisma.organization.create({ data: { name: "HotelCost Platform", isPlatform: true } }));
+  const role = (await prisma.role.findFirst({ where: { organizationId: org.id, key: SUPER_ADMIN_TEMPLATE.key } })) ?? (await prisma.role.create({ data: { organizationId: org.id, key: SUPER_ADMIN_TEMPLATE.key, name: SUPER_ADMIN_TEMPLATE.name, allDepartments: true, permissions: SUPER_ADMIN_TEMPLATE.permissions } }));
+  await prisma.user.create({ data: { organizationId: org.id, email: "superadmin@hotelcost.test", name: "Platform Super Admin", passwordHash: await bcrypt.hash(PASSWORD, 10), roleId: role.id } });
+  console.log("Platform super admin: superadmin@hotelcost.test");
+}
+
 async function main() {
+  await ensurePlatformAdmin();
   if (await prisma.organization.findFirst({ where: { name: ORG } })) {
     console.log("Seed data already present — skipping (seed never duplicates data).");
     return;

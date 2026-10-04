@@ -18,6 +18,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // the Windows installer ships a self-contained server (installer/build-windows.sh sets this)
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

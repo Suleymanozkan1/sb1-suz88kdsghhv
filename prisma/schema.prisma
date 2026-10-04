@@ -6,7 +6,9 @@
 //    corrections happen through reversals, never UPDATE/DELETE.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "windows" is bundled by the on-premise Windows installer (installer/build-windows.sh)
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -1868,4 +1870,22 @@ model Employee {
 
   @@unique([hotelId, code])
   @@index([hotelId, departmentId])
+}
+
+/// Demo / QA dataset catalogue (spec 66–67, 83): which records belong to which scenario and whether they
+/// are NORMAL, an EDGE_CASE or an INTENTIONAL_ERROR the system must detect. Only demo tenants have rows.
+model DemoScenario {
+  id                String   @id @default(cuid())
+  organizationId    String
+  hotelId           String?
+  key               String
+  title             String
+  status            String // NORMAL | EDGE_CASE | INTENTIONAL_ERROR
+  expectedDetection String?
+  entityType        String?
+  entityIds         String[]
+  createdAt         DateTime @default(now())
+
+  @@index([organizationId, status])
+  @@index([hotelId])
 }

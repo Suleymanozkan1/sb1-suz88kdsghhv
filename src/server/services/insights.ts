@@ -2,6 +2,7 @@
  * Dashboard, inventory status and data-quality center (spec §167–§178, §216–§222).
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
+import { defaultConverter } from "@/domain/uom";
 import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
 import { stockLevel, daysOfStock } from "@/domain/costing";
@@ -98,6 +99,14 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
     db.product.count({ where: { hotelId, active: true, yieldPct: 100, category: { group: "FOOD" } } }),
   ]);
   const unmappedCount = await db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null } });
+  // master-data plausibility (spec 66, 113): implausible yields, purchase units without a conversion, future-dated records
+  const [badYield, convProducts, futureSales, futureWaste] = await Promise.all([
+    db.product.findMany({ where: { hotelId, active: true, OR: [{ yieldPct: { lt: 30 } }, { yieldPct: { gt: 100 } }] }, select: { id: true, name: true, yieldPct: true } }),
+    db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, select: { id: true, name: true, purchaseUnit: true, stockUnit: true, conversions: { select: { fromUnit: true, toUnit: true } } } }),
+    db.saleLine.count({ where: { hotelId, saleDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
+    db.wasteRecord.count({ where: { hotelId, wasteDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
+  ]);
+  const missingConversion = convProducts.filter((p) => p.purchaseUnit !== p.stockUnit && !defaultConverter.canConvert(p.purchaseUnit, p.stockUnit, p.conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: "1" }))));
   const resolver = await buildResolver(db, hotelId);
   const missingCost = products.filter((p) => p.isStockItem && (resolver.products.get(p.id)?.unitCost ?? null) === null);
   let complete = 0;
@@ -151,6 +160,9 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
       { key: "no_supplier", label: "Stock products without default supplier", count: noSupplier, items: [] },
       { key: "missing_yield", label: "Food products using default 100% yield", count: missingYield, items: [] },
       { key: "unclosed_periods", label: "Past periods not closed", count: openPeriods, items: [] },
+      { key: "implausible_yield", label: "Products with an implausible yield (< 30 % or > 100 %)", count: badYield.length, items: badYield.slice(0, 50).map((p) => ({ id: p.id, name: `${p.name}: ${p.yieldPct.toString()} %` })) },
+      { key: "missing_conversion", label: "Purchase unit without a conversion to the stock unit", count: missingConversion.length, items: missingConversion.slice(0, 50).map((p) => ({ id: p.id, name: `${p.name}: 1 ${p.purchaseUnit} = ? ${p.stockUnit}` })) },
+      { key: "future_dated", label: "Sales or waste dated in the future", count: futureSales + futureWaste, items: [] },
     ],
   };
 }

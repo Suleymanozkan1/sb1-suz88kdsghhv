@@ -6,7 +6,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { DomainError } from "@/domain/errors";
 import type { Actor } from "./actor";
@@ -64,38 +63,9 @@ export async function logout(token: string | undefined) {
   await prisma.session.deleteMany({ where: { id: hash(token) } });
 }
 
-const ACCESS_INCLUDE = { role: true, organization: { select: { active: true } }, hotelAccess: { include: { hotel: { select: { active: true } } } }, deptAccess: true } as const;
-type UserWithAccess = Prisma.UserGetPayload<{ include: typeof ACCESS_INCLUDE }>;
-function toActor(u: UserWithAccess): Actor {
-  return {
-    userId: u.id,
-    organizationId: u.organizationId,
-    name: u.name,
-    email: u.email,
-    roleKey: u.role.key,
-    roleName: u.role.name,
-    permissions: new Set(u.role.permissions),
-    // a suspended hotel disappears from every user's context (spec 13, 35)
-    hotelIds: u.hotelAccess.filter((h) => h.hotel.active).map((h) => h.hotelId),
-    departmentIds: u.role.allDepartments ? "ALL" : u.deptAccess.map((d) => d.departmentId),
-  };
-}
-
-export async function actorFromToken(token: string | undefined): Promise<Actor | null> {
-  if (!token) return null;
-  const s = await prisma.session.findUnique({
-    where: { id: hash(token) },
-    include: { user: { include: ACCESS_INCLUDE } },
-  });
-  if (!s || s.expiresAt < new Date() || !s.user.active || !s.user.organization.active) return null;
-  return toActor(s.user);
-}
-
-/** Actor for work done on a user's behalf outside a request (background jobs); null if deactivated. */
-export async function actorForUser(userId: string): Promise<Actor | null> {
-  const u = await prisma.user.findUnique({ where: { id: userId }, include: ACCESS_INCLUDE });
-  return u && u.active && u.organization.active ? toActor(u) : null;
-}
+// actor loading lives in ./actors (no Next.js dependency: also used by background jobs and scripts)
+import { actorFromToken, actorForUser } from "./actors";
+export { actorFromToken, actorForUser };
 
 /** Request-scoped current actor (server components / route handlers). */
 export const currentActor = cache(async (): Promise<Actor | null> => {

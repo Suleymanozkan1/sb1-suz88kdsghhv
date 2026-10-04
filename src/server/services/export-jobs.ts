@@ -7,7 +7,7 @@
 import type { Db } from "../db";
 import type { Actor } from "../auth/actor";
 import { authorize } from "../auth/actor";
-import { actorForUser } from "../auth/session";
+import { actorForUser } from "../auth/actors";
 import { DomainError } from "@/domain/errors";
 import type { ExportParams } from "./export";
 
