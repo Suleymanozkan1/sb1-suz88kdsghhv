@@ -106,11 +106,14 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   const products = await db.product.findMany({ where: productWhere, include: { category: true } });
   const pIds = new Set(products.map((p) => p.id));
 
-  const [openingAgg, periodAgg, reversals, sales, wasteRecords, documentedAgg] = await Promise.all([
+  const saleWhere = { hotelId, saleDate: { gte: q.from, lt: q.to }, ...(departmentIds ? { departmentId: { in: departmentIds } } : {}) };
+  const [openingAgg, periodAgg, reversals, mappedSales, unmappedSales, wasteRecords, documentedAgg] = await Promise.all([
     db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, txDate: { lt: q.from } }, _sum: { quantity: true, totalCost: true } }),
     db.stockTransaction.groupBy({ by: ["productId", "type"], where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: { not: "REVERSAL" } }, _sum: { quantity: true, totalCost: true } }),
     db.stockTransaction.findMany({ where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: "REVERSAL" }, include: { reverses: { select: { type: true, sourceType: true } } } }),
-    db.saleLine.findMany({ where: { hotelId, saleDate: { gte: q.from, lt: q.to }, ...(departmentIds ? { departmentId: { in: departmentIds } } : {}) }, include: { recipeVersion: { select: { id: true, costSnapshot: true } } } }),
+    // sales are aggregated per frozen recipe version in SQL (100k lines → one row per version)
+    db.saleLine.groupBy({ by: ["recipeVersionId"], where: { ...saleWhere, recipeVersionId: { not: null }, theoreticalUnitCost: { not: null } }, _sum: { quantity: true, netRevenue: true, theoreticalCost: true }, _count: true }),
+    db.saleLine.aggregate({ where: { ...saleWhere, OR: [{ recipeVersionId: null }, { theoreticalUnitCost: null }] }, _sum: { netRevenue: true }, _count: true }),
     db.wasteRecord.count({ where: { hotelId, wasteDate: { gte: q.from, lt: q.to }, status: "PENDING", ...(departmentIds ? { departmentId: { in: departmentIds } } : {}) } }),
     db.stockTransaction.groupBy({ by: ["productId", "sourceType"], where: { hotelId, warehouseId: { in: whIds }, txDate: { gte: q.from, lt: q.to }, type: "CONSUMPTION", sourceType: { in: [...DOCUMENTED] } }, _sum: { quantity: true, totalCost: true } }),
   ]);
@@ -150,18 +153,20 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
   // Theoretical quantities from frozen recipe-version requirements; theoretical cost frozen on the sale.
   const theoQty = new Map<string, Decimal>();
   let theoreticalFrozen = ZERO;
-  let revenue = ZERO;
-  let unmappedLines = 0;
-  let unmappedRevenue = ZERO;
-  for (const s of sales) {
-    revenue = revenue.plus(D(s.netRevenue.toString()));
-    const snap = s.recipeVersion ? snapshotOf(s.recipeVersion.costSnapshot) : null;
-    if (!snap || s.theoreticalUnitCost === null) {
-      unmappedLines++;
-      unmappedRevenue = unmappedRevenue.plus(D(s.netRevenue.toString()));
+  let unmappedLines: number = unmappedSales._count;
+  let unmappedRevenue = D(unmappedSales._sum.netRevenue?.toString() ?? 0);
+  let revenue = unmappedRevenue;
+  const versionSnaps = new Map((await db.recipeVersion.findMany({ where: { id: { in: mappedSales.map((m) => m.recipeVersionId!) } }, select: { id: true, costSnapshot: true } })).map((v) => [v.id, snapshotOf(v.costSnapshot)]));
+  for (const s of mappedSales) {
+    const lineRevenue = D(s._sum.netRevenue?.toString() ?? 0);
+    revenue = revenue.plus(lineRevenue);
+    const snap = versionSnaps.get(s.recipeVersionId!) ?? null;
+    if (!snap) {
+      unmappedLines += s._count;
+      unmappedRevenue = unmappedRevenue.plus(lineRevenue);
       continue;
     }
-    const perPortion = D(s.quantity.toString()).div(D(snap.portions));
+    const perPortion = D(s._sum.quantity?.toString() ?? 0).div(D(snap.portions));
     for (const [pid, req] of Object.entries(snap.requirements)) {
       if (!pIds.has(pid)) continue;
       theoQty.set(pid, (theoQty.get(pid) ?? ZERO).plus(D(req).times(perPortion)));
@@ -170,7 +175,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       // frozen cost is food+beverage combined; when filtering by category, value theoretical at as-of costs below instead
       continue;
     }
-    theoreticalFrozen = theoreticalFrozen.plus(D(s.theoreticalCost?.toString() ?? 0));
+    theoreticalFrozen = theoreticalFrozen.plus(D(s._sum.theoreticalCost?.toString() ?? 0));
   }
 
   const fallbackCosts = await productCostTable(db, hotelId);

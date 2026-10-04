@@ -1309,6 +1309,7 @@ model BuffetSession {
   closedById     String?
   lines          BuffetLine[]
 
+  @@unique([hotelId, departmentId, type, serviceDate])
   @@index([hotelId, serviceDate])
   @@index([hotelId, departmentId, serviceDate])
 }

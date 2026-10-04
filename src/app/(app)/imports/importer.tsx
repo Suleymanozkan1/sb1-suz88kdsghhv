@@ -88,7 +88,7 @@ export function Importer({ allowed }: { allowed: Kind[] }) {
           }} />
         </div>
       </div>
-      <details className="text-sm"><summary className="cursor-pointer text-ink-600">Template</summary><pre className="mt-2 overflow-x-auto rounded bg-ink-50 p-2 text-xs">{KINDS[kind].template}</pre></details>
+      <details className="text-sm"><summary className="cursor-pointer text-ink-600">Template</summary><pre tabIndex={0} className="mt-2 overflow-x-auto rounded bg-ink-50 p-2 text-xs">{KINDS[kind].template}</pre></details>
       {xlsx ? <p className="text-sm text-ink-600">Excel file loaded: {fileName}</p> : <textarea aria-label="CSV content" className="h-28 w-full rounded-lg border border-ink-200 p-2 font-mono text-xs" placeholder="…or paste CSV here" value={csv} onChange={(e) => setCsv(e.target.value)} />}
       <div className="flex gap-2">
         <Button variant="secondary" disabled={(!csv && !xlsx) || busy} onClick={() => doPreview()}>Preview</Button>

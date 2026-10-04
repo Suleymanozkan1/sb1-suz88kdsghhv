@@ -117,6 +117,30 @@ export async function previewSales(db: Db, actor: Actor, hotelId: string, rows: 
   return { rows: parsed, summary: { rows: parsed.length, valid: count("VALID") + count("WARNING"), invalid: count("INVALID"), duplicates: count("DUPLICATE"), warnings: count("WARNING") } };
 }
 
+/**
+ * Recipe version effective on the sale date and its theoretical unit cost, valued with product costs
+ * as of that day (frozen on the sale line, spec §31, §36). Shared by import and reprocessing.
+ */
+export async function theoreticalFor(
+  db: Db,
+  hotelId: string,
+  recipeId: string,
+  saleDate: Date,
+  versions: Array<{ id: string; recipeId: string; version: number; effectiveFrom: Date | null; effectiveTo: Date | null; costSnapshot: unknown }>,
+  costCache: Map<string, Map<string, Decimal>>,
+): Promise<{ versionId: string | null; unitCost: Decimal | null }> {
+  const v = versions.filter((x) => x.recipeId === recipeId && (!x.effectiveFrom || x.effectiveFrom <= saleDate) && (!x.effectiveTo || x.effectiveTo > saleDate)).sort((a, b) => b.version - a.version)[0];
+  const snap = v ? snapshotOf(v.costSnapshot) : null;
+  if (!v || !snap) return { versionId: null, unitCost: null };
+  const dayKey = saleDate.toISOString().slice(0, 10);
+  let costs = costCache.get(dayKey);
+  if (!costs) {
+    costs = await costTableAsOf(db, hotelId, new Date(`${dayKey}T23:59:59.999Z`));
+    costCache.set(dayKey, costs);
+  }
+  return { versionId: v.id, unitCost: Object.entries(snap.requirements).reduce((acc, [pid, q]) => acc.plus(D(q).times(costs!.get(pid) ?? ZERO)), ZERO).div(D(snap.portions)) };
+}
+
 /** Commit an import: idempotent per file hash and per POS line id (spec §249, §296). */
 export async function commitSales(db: Db, actor: Actor, hotelId: string, input: { rows: unknown[]; source: "CSV" | "EXCEL" | "API" | "MANUAL"; fileName?: string; rawContent?: string; mappingVersion?: string }) {
   const preview = await previewSales(db, actor, hotelId, input.rows);
@@ -149,24 +173,7 @@ export async function commitSales(db: Db, actor: Actor, hotelId: string, input: 
       for (const r of good) {
         const d = r.data!;
         await assertPostable(tx, actor, hotelId, d.saleDate);
-        let versionId: string | null = null;
-        let unitCost: Decimal | null = null;
-        if (d.recipeId) {
-          const v = versions
-            .filter((x) => x.recipeId === d.recipeId && (!x.effectiveFrom || x.effectiveFrom <= d.saleDate) && (!x.effectiveTo || x.effectiveTo > d.saleDate))
-            .sort((a, b) => b.version - a.version)[0];
-          const snap = v ? snapshotOf(v.costSnapshot) : null;
-          if (v && snap) {
-            versionId = v.id;
-            const dayKey = d.saleDate.toISOString().slice(0, 10);
-            let costs = costCache.get(dayKey);
-            if (!costs) {
-              costs = await costTableAsOf(tx, hotelId, new Date(`${dayKey}T23:59:59.999Z`));
-              costCache.set(dayKey, costs);
-            }
-            unitCost = Object.entries(snap.requirements).reduce((acc, [pid, q]) => acc.plus(D(q).times(costs!.get(pid) ?? ZERO)), ZERO).div(D(snap.portions));
-          }
-        }
+        const { versionId, unitCost } = d.recipeId ? await theoreticalFor(tx, hotelId, d.recipeId, d.saleDate, versions, costCache) : { versionId: null, unitCost: null };
         const qty = D(d.quantity);
         const theo = unitCost ? qty.times(unitCost) : null;
         if (theo) theoreticalTotal = theoreticalTotal.plus(theo);

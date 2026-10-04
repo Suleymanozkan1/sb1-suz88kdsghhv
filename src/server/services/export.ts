@@ -173,16 +173,38 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
         theoreticalVsActual(db, actor, hotelId, { from: p.from, to: p.to, departmentId: p.departmentId ?? null, categoryGroup: "BEVERAGE" }),
       ]);
 
-  const [products, costTx, receipts, sales, waste, counts, txs, yields] = await Promise.all([
+  // Large detail queries load plain rows; relations are attached from in-memory maps instead of
+  // per-relation IN-queries (spec 292–293: 100k-row periods stay fast).
+  const [products, costTxRaw, receiptItemsRaw, salesRaw, waste, counts, txsRaw, yields, costCenters, suppliers] = await Promise.all([
     db.product.findMany({ where: { hotelId, ...(p.categoryGroup ? { category: { group: p.categoryGroup } } : {}) }, include: { category: true, defaultSupplier: true, conversions: true }, orderBy: { sku: "asc" } }),
-    db.costTransaction.findMany({ where: { hotelId, txDate: range, ...deptWhere, ...(p.categoryGroup ? { categoryGroup: p.categoryGroup } : {}) }, include: { department: true, costCenter: true, stockTx: { include: { warehouse: true } } }, orderBy: [{ txDate: "asc" }, { id: "asc" }] }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { hotelId, receiptDate: range, ...(p.warehouseId ? { warehouseId: p.warehouseId } : {}) }, ...(p.categoryGroup ? { product: { category: { group: p.categoryGroup } } } : {}) }, include: { receipt: { include: { supplier: true } }, product: { include: { category: true } } }, orderBy: [{ receipt: { receiptDate: "asc" } }, { id: "asc" }] }),
-    db.saleLine.findMany({ where: { hotelId, saleDate: range, ...deptWhere }, include: { recipe: true, recipeVersion: { select: { id: true, version: true, costSnapshot: true } } }, orderBy: [{ saleDate: "asc" }, { externalId: "asc" }] }),
+    db.costTransaction.findMany({ where: { hotelId, txDate: range, ...deptWhere, ...(p.categoryGroup ? { categoryGroup: p.categoryGroup } : {}) }, orderBy: [{ txDate: "asc" }, { id: "asc" }] }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { hotelId, receiptDate: range, ...(p.warehouseId ? { warehouseId: p.warehouseId } : {}) }, ...(p.categoryGroup ? { product: { category: { group: p.categoryGroup } } } : {}) }, orderBy: [{ receiptId: "asc" }, { id: "asc" }] }),
+    db.saleLine.findMany({ where: { hotelId, saleDate: range, ...deptWhere }, orderBy: [{ saleDate: "asc" }, { externalId: "asc" }] }),
     db.wasteRecord.findMany({ where: { hotelId, wasteDate: range, ...deptWhere }, include: { product: { include: { category: true } }, department: true, warehouse: true }, orderBy: [{ wasteDate: "asc" }, { id: "asc" }] }),
     db.stockCountLine.findMany({ where: { count: { hotelId, countDate: range, status: "POSTED", warehouseId: { in: scopedWh } } }, include: { count: { include: { warehouse: true } }, product: true }, orderBy: { id: "asc" } }),
-    db.stockTransaction.findMany({ where: { hotelId, txDate: range, warehouseId: { in: scopedWh } }, include: { product: true, warehouse: true }, orderBy: [{ txDate: "asc" }, { createdAt: "asc" }], take: 200_000 }),
+    db.stockTransaction.findMany({ where: { hotelId, txDate: range, warehouseId: { in: scopedWh } }, orderBy: [{ txDate: "asc" }, { createdAt: "asc" }], take: 200_000 }),
     db.yieldRecord.findMany({ where: { hotelId, recordDate: range }, include: { product: true } }),
+    db.costCenter.findMany({ where: { hotelId } }),
+    db.supplier.findMany({ where: { hotelId } }),
   ]);
+  const prodById = new Map(products.map((x) => [x.id, x]));
+  const deptById = new Map(departments.map((d) => [d.id, d]));
+  const whById = new Map(warehouses.map((w) => [w.id, w]));
+  const ccById = new Map(costCenters.map((c) => [c.id, c]));
+  const supById = new Map(suppliers.map((x) => [x.id, x]));
+  const stockWh = new Map((costTxRaw.some((c) => c.stockTxId) ? await db.stockTransaction.findMany({ where: { id: { in: costTxRaw.flatMap((c) => (c.stockTxId ? [c.stockTxId] : [])) } }, select: { id: true, warehouseId: true } }) : []).map((t) => [t.id, t.warehouseId]));
+  const costTx = costTxRaw.map((c) => ({ ...c, department: c.departmentId ? deptById.get(c.departmentId) ?? null : null, costCenter: c.costCenterId ? ccById.get(c.costCenterId) ?? null : null, stockTx: c.stockTxId ? { warehouse: whById.get(stockWh.get(c.stockTxId) ?? "") ?? null } : null }));
+  const receiptRows = await db.goodsReceipt.findMany({ where: { id: { in: [...new Set(receiptItemsRaw.map((i) => i.receiptId))] } } });
+  const receiptById = new Map(receiptRows.map((r) => [r.id, { ...r, supplier: supById.get(r.supplierId)! }]));
+  const allProducts = receiptItemsRaw.some((i) => !prodById.has(i.productId)) ? new Map((await db.product.findMany({ where: { hotelId }, include: { category: true } })).map((x) => [x.id, x])) : prodById;
+  const receipts = receiptItemsRaw.map((i) => ({ ...i, receipt: receiptById.get(i.receiptId)!, product: (prodById.get(i.productId) ?? allProducts.get(i.productId))! })).sort((a, b) => a.receipt.receiptDate.getTime() - b.receipt.receiptDate.getTime() || a.id.localeCompare(b.id));
+  const recipeIds = [...new Set(salesRaw.flatMap((x) => (x.recipeId ? [x.recipeId] : [])))];
+  const versionIds = [...new Set(salesRaw.flatMap((x) => (x.recipeVersionId ? [x.recipeVersionId] : [])))];
+  const [recipeRows, versionRows] = await Promise.all([db.recipe.findMany({ where: { id: { in: recipeIds } } }), db.recipeVersion.findMany({ where: { id: { in: versionIds } }, select: { id: true, version: true, costSnapshot: true } })]);
+  const recipeById = new Map(recipeRows.map((r) => [r.id, r]));
+  const versionById = new Map(versionRows.map((v) => [v.id, v]));
+  const sales = salesRaw.map((x) => ({ ...x, recipe: x.recipeId ? recipeById.get(x.recipeId) ?? null : null, recipeVersion: x.recipeVersionId ? versionById.get(x.recipeVersionId) ?? null : null }));
+  const txs = txsRaw.filter((t) => prodById.has(t.productId)).map((t) => ({ ...t, product: prodById.get(t.productId)!, warehouse: whById.get(t.warehouseId)! }));
   const users = new Map((await db.user.findMany({ where: { organizationId: actor.organizationId }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const productIds = new Set(products.map((x) => x.id));
   const pMap = new Map(products.map((x) => [x.id, x]));
@@ -742,9 +764,17 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   const fails = checks.filter((c) => c.status === "FAIL").length;
   const warns = checks.filter((c) => c.status === "WARNING").length;
   const counts_ = Object.fromEntries(Object.values(sections).map((s) => [s.key, s.rows.length]));
-  const body = { summary, sections, checks };
-  const contentHash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
-  const sectionHashes = Object.fromEntries(PERIOD_BOUND_SECTIONS.filter((k) => sections[k]).map((k) => [k, createHash("sha256").update(JSON.stringify({ c: sections[k]!.columns, r: sections[k]!.rows, s: sections[k]!.status })).digest("hex").slice(0, 16)]));
+  // hashes are computed over a canonical form (rows sorted) so that ties in display order — which the
+  // database may return differently under concurrent load — never change the fingerprint
+  // each section is hashed once over its canonical form; the content hash combines the section hashes
+  const hashOf = (v: unknown) => createHash("sha256").update(typeof v === "string" ? v : JSON.stringify(v)).digest("hex");
+  const allSectionHashes = Object.fromEntries(Object.entries(sections).map(([k, v]) => {
+    const h = createHash("sha256").update(JSON.stringify({ c: v.columns, s: v.status }));
+    for (const r of v.rows.map((x) => JSON.stringify(x)).sort()) h.update(r).update("\n");
+    return [k, h.digest("hex")];
+  }));
+  const contentHash = hashOf({ summary, checks: [...checks].map((c) => JSON.stringify(c)).sort(), sections: allSectionHashes });
+  const sectionHashes = Object.fromEntries(PERIOD_BOUND_SECTIONS.filter((k) => allSectionHashes[k]).map((k) => [k, allSectionHashes[k]!.slice(0, 16)]));
   const periodHash = createHash("sha256").update(JSON.stringify(sectionHashes)).digest("hex");
   const exportId = `EXP-${new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14)}-${contentHash.slice(0, 8)}`;
   const result: FullCostExport = {

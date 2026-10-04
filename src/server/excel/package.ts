@@ -10,8 +10,8 @@
 import JSZip from "jszip";
 import { buildVbaProject, type VbaModule } from "./vba-project";
 import { VBA_SOURCES } from "./vba-sources.generated";
-import type { DefinedName } from "./workbook";
-import { CONTROL_SHEET } from "./workbook";
+import type { BulkTable, DefinedName } from "./workbook";
+import { CONTROL_SHEET, cellValue, colLetter } from "./workbook";
 
 const MACRO_MAIN = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
 const XLSX_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
@@ -31,7 +31,77 @@ function buttonShape(id: number, name: string, macro: string, col: [number, numb
   return `<xdr:twoCellAnchor editAs="absolute"><xdr:from><xdr:col>${col[0]}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row[0]}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>${col[1]}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row[1]}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:sp macro="[0]!${macro}" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${id}" name="${name}" descr="${esc(line2)}"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="${col[0] * 1000000}" y="${row[0] * 200000}"/><a:ext cx="${(col[1] - col[0]) * 1000000}" cy="${(row[1] - row[0]) * 200000}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:ln><a:noFill/></a:ln></xdr:spPr><xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" rtlCol="0" anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="tr-TR" sz="1600" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>${esc(line1)}</a:t></a:r></a:p><a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" sz="1000"><a:solidFill><a:srgbClr val="E6F7EE"/></a:solidFill></a:rPr><a:t>${esc(line2)}</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>`;
 }
 
-export async function toXlsm(xlsx: Buffer, definedNames: DefinedName[]): Promise<Buffer> {
+const xmlText = (s: string) =>
+  // eslint-disable-next-line no-control-regex
+  s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+/** Serialises the deferred rows of one large table straight into SpreadsheetML, reusing ExcelJS's cell styles. */
+function bulkRowsXml(b: BulkTable, styles: Map<string, string>): string {
+  const firstRow = b.headerRow + 2;
+  const letters = b.columns.map((_, i) => colLetter(b.startCol + i));
+  const span = `${b.startCol}:${b.startCol + b.columns.length - 1}`;
+  const out: string[] = [];
+  b.rows.forEach((r, i) => {
+    const rn = firstRow + i;
+    let cells = "";
+    b.columns.forEach((c, j) => {
+      const v = cellValue(r[c.key], c.type);
+      if (v === null) return;
+      const ref = `${letters[j]}${rn}`;
+      const st = styles.get(letters[j]!);
+      const sAttr = st ? ` s="${st}"` : "";
+      if (typeof v === "number") cells += `<c r="${ref}"${sAttr}><v>${v}</v></c>`;
+      else if (v instanceof Date) cells += `<c r="${ref}"${sAttr}><v>${(v.getTime() - EXCEL_EPOCH_MS) / 86400000}</v></c>`;
+      else cells += `<c r="${ref}"${sAttr} t="inlineStr"><is><t xml:space="preserve">${xmlText(String(v))}</t></is></c>`;
+    });
+    out.push(`<row r="${rn}" spans="${span}">${cells}</row>`);
+  });
+  return out.join("");
+}
+
+async function injectBulk(zip: JSZip, sheets: Array<{ name: string; part: string }>, bulk: BulkTable[]) {
+  if (!bulk.length) return;
+  const tableParts = Object.keys(zip.files).filter((f) => /^xl\/tables\/[^/]+\.xml$/.test(f));
+  const tableXml = new Map<string, { path: string; xml: string }>();
+  for (const path of tableParts) {
+    const xml = await zip.file(path)!.async("string");
+    const m = /<table\b[^>]*\bname="([^"]+)"/.exec(xml);
+    if (m) tableXml.set(m[1]!, { path, xml });
+  }
+  for (const b of bulk) {
+    const sheet = sheets.find((s) => s.name === b.sheet);
+    const t = tableXml.get(b.table);
+    if (!sheet || !t) throw new Error(`bulk target missing: ${b.sheet}/${b.table}`);
+    let xml = await zip.file(sheet.part)!.async("string");
+    const dataRow = b.headerRow + 1;
+    const rowRe = new RegExp(`<row r="${dataRow}"[^>]*>([\\s\\S]*?)</row>`);
+    const rowM = rowRe.exec(xml);
+    if (!rowM) throw new Error(`bulk: first data row ${dataRow} missing on ${b.sheet}`);
+    const later = [...xml.matchAll(/<row r="(\d+)"/g)].some((m) => Number(m[1]) > dataRow);
+    if (later) throw new Error(`bulk: ${b.sheet} has content below row ${dataRow}; fast path needs a single-table sheet`);
+    const styles = new Map<string, string>();
+    // column default styles first (cells empty in the first row), then the first row's own cell styles
+    for (const c of xml.matchAll(/<col\b[^>]*\bmin="(\d+)"[^>]*\bmax="(\d+)"[^>]*?\bstyle="(\d+)"/g)) {
+      for (let k = Math.max(Number(c[1]), b.startCol); k <= Math.min(Number(c[2]), b.startCol + b.columns.length - 1); k++) styles.set(colLetter(k), c[3]!);
+    }
+    for (const c of rowM[1]!.matchAll(/<c r="([A-Z]+)\d+"([^>]*?)\/?>/g)) {
+      const s = /\bs="(\d+)"/.exec(c[2]!);
+      if (s) styles.set(c[1]!, s[1]!);
+    }
+    const end = rowM.index + rowM[0].length;
+    xml = xml.slice(0, end) + bulkRowsXml(b, styles) + xml.slice(end);
+    const lastRow = dataRow + b.rows.length;
+    xml = xml.replace(/<dimension ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/, (_m, c1: string, r1: string, c2: string, r2: string) => `<dimension ref="${c1}${r1}:${c2}${Math.max(Number(r2), lastRow)}"/>`);
+    zip.file(sheet.part, xml);
+    const endRef = `${colLetter(b.startCol + b.columns.length - 1)}${lastRow}`;
+    const startRef = `${colLetter(b.startCol)}${b.headerRow}`;
+    const tx = t.xml.replace(/\bref="[A-Z]+\d+:[A-Z]+\d+"/g, `ref="${startRef}:${endRef}"`);
+    zip.file(t.path, tx);
+  }
+}
+
+export async function toXlsm(xlsx: Buffer, definedNames: DefinedName[], bulk: BulkTable[] = []): Promise<Buffer> {
   const zip = await JSZip.loadAsync(xlsx);
   const read = async (p: string) => {
     const f = zip.file(p);
@@ -44,6 +114,9 @@ export async function toXlsm(xlsx: Buffer, definedNames: DefinedName[]): Promise
   const wbRels = await read("xl/_rels/workbook.xml.rels");
   const relTarget = new Map([...wbRels.matchAll(/<Relationship [^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1]!, m[2]!]));
   const sheets = [...workbook.matchAll(/<sheet [^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g)].map((m) => ({ name: m[1]!.replace(/&amp;/g, "&"), part: `xl/${relTarget.get(m[2]!)!.replace(/^\/?xl\//, "")}` }));
+
+  // 0) large tables (fast path): rows written as XML instead of through ExcelJS
+  await injectBulk(zip, sheets, bulk);
 
   // 1) VBA project
   zip.file("xl/vbaProject.bin", buildVbaProject(vbaModules(sheets.length)));

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -39,6 +39,7 @@ const NAV = [
   { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },
   { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
   { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },
+  { href: "/integrity", label: "Calculation Integrity", icon: ShieldAlert, perm: "audit:view" },
 ];
 
 export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; pendingApprovals: number; children: React.ReactNode }) {
@@ -62,7 +63,7 @@ export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, ch
     <nav aria-label="Main" className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
       {items.map((n) => (
         <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={isActive(n.href) ? "page" : undefined} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition", isActive(n.href) ? "bg-brand-600/15 text-white" : "text-ink-300 hover:bg-white/5 hover:text-white")}>
-          <n.icon className={cn("h-4 w-4", isActive(n.href) ? "text-brand-300" : "text-ink-400")} aria-hidden />
+          <n.icon className={cn("h-4 w-4", isActive(n.href) ? "text-brand-300" : "text-ink-300")} aria-hidden />
           <span className="flex-1">{n.label}</span>
           {n.href === "/approvals" && pendingApprovals > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-ink-950">{pendingApprovals}</span>}
         </Link>
@@ -88,9 +89,9 @@ export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, ch
         <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-white">{user.name}</p>
-            <p className="truncate text-xs text-ink-400">{user.role}</p>
+            <p className="truncate text-xs text-ink-300">{user.role}</p>
           </div>
-          <button onClick={signOut} className="rounded-md p-1.5 text-ink-400 hover:bg-white/10 hover:text-white" aria-label="Sign out" title="Sign out">
+          <button onClick={signOut} className="rounded-md p-1.5 text-ink-300 hover:bg-white/10 hover:text-white" aria-label="Sign out" title="Sign out">
             <LogOut className="h-4 w-4" />
           </button>
         </div>

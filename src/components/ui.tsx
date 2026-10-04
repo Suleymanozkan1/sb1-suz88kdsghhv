@@ -96,9 +96,10 @@ export function Select({ className, children, ...p }: SelectHTMLAttributes<HTMLS
   );
 }
 
-export function Table({ children, className }: { children: ReactNode; className?: string }) {
+export function Table({ children, className, label = "Scrollable table" }: { children: ReactNode; className?: string; label?: string }) {
+  // focusable scroll container: wide tables can be scrolled with the keyboard (WCAG 2.1.1)
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div className={cn("overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500", className)} tabIndex={0} role="region" aria-label={label}>
       <table className="min-w-full divide-y divide-ink-100 text-sm">{children}</table>
     </div>
   );

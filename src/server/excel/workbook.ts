@@ -117,7 +117,7 @@ function numFmt(type: Column["type"], cur: string): string | undefined {
   }
 }
 
-function cellValue(v: string | null | undefined, type: Column["type"]): ExcelJS.CellValue {
+export function cellValue(v: string | null | undefined, type: Column["type"]): ExcelJS.CellValue {
   if (v === null || v === undefined || v === "") return null;
   switch (type) {
     case "money":
@@ -137,7 +137,7 @@ function cellValue(v: string | null | undefined, type: Column["type"]): ExcelJS.
   }
 }
 
-const colLetter = (n: number) => {
+export const colLetter = (n: number) => {
   let s = "";
   while (n > 0) {
     const m = (n - 1) % 26;
@@ -157,6 +157,19 @@ export interface BuiltWorkbook {
   definedNames: DefinedName[];
   sheetOrder: string[];
   tableLocations: Record<string, { sheet: string; ref: string }>;
+  /** rows of large tables written directly as sheet XML by the packager (fast path, spec 292–293) */
+  bulk: BulkTable[];
+}
+
+/** Tables above this size get only their first data row from ExcelJS; the packager streams the rest. */
+export const BULK_THRESHOLD = 2000;
+export interface BulkTable {
+  sheet: string;
+  table: string;
+  headerRow: number;
+  startCol: number;
+  columns: Column[];
+  rows: Array<Record<string, string | null>>;
 }
 
 function title(ws: ExcelJS.Worksheet, text: string, sub: string) {
@@ -168,15 +181,19 @@ function title(ws: ExcelJS.Worksheet, text: string, sub: string) {
   ws.getCell("A3").font = { color: { argb: BRAND }, underline: true, size: 10 };
 }
 
-function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"]) {
+function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[]) {
   const status = ws.getCell(headerRow - 2, startCol);
   status.value = `Data status: ${sec.status}${sec.note ? ` - ${sec.note}` : ""}  |  rows: ${sec.rows.length}`;
   status.font = { size: 9, italic: true, color: { argb: sec.status === "NOT_AVAILABLE" ? "FFB45309" : MUTED } };
   const sub = ws.getCell(headerRow - 1, startCol);
   sub.value = sec.title;
   sub.font = { bold: true, size: 11, color: { argb: INK } };
-  const rows = sec.rows.length
-    ? sec.rows.map((r) => sec.columns.map((c) => cellValue(r[c.key], c.type)))
+  // large tables: ExcelJS writes the first data row (it fixes every column's cell style); the rest is streamed
+  const deferred = bulk && sec.rows.length > BULK_THRESHOLD;
+  const sourceRows = deferred ? sec.rows.slice(0, 1) : sec.rows;
+  if (deferred) bulk!.push({ sheet: ws.name, table: `tbl_${sec.key}`, headerRow, startCol, columns: sec.columns, rows: sec.rows.slice(1) });
+  const rows = sourceRows.length
+    ? sourceRows.map((r) => sec.columns.map((c) => cellValue(r[c.key], c.type)))
     : [sec.columns.map(() => null)];
   ws.addTable({
     name: `tbl_${sec.key}`,
@@ -204,12 +221,12 @@ function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, heade
     });
   }
   const end = colLetter(startCol + sec.columns.length - 1);
-  locations[sec.key] = { sheet: ws.name, ref: `${colLetter(startCol)}${headerRow}:${end}${headerRow + rows.length}` };
+  locations[sec.key] = { sheet: ws.name, ref: `${colLetter(startCol)}${headerRow}:${end}${headerRow + Math.max(rows.length, sec.rows.length)}` };
   // status colouring for status-like columns
   sec.columns.forEach((c, i) => {
     if (!/status|impact/i.test(c.key)) return;
     const L = colLetter(startCol + i);
-    const ref = `${L}${headerRow + 1}:${L}${headerRow + 100000}`;
+    const ref = `${L}${headerRow + 1}:${L}${headerRow + Math.max(100000, sec.rows.length + 10)}`;
     ws.addConditionalFormatting({
       ref,
       rules: [
@@ -276,6 +293,7 @@ const FORMULAS: Array<[string, string, string]> = [
 ];
 
 export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: string; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
+  const bulk: BulkTable[] = [];
   const wb = new ExcelJS.Workbook();
   wb.creator = "HotelCost";
   wb.lastModifiedBy = e.meta.generatedBy;
@@ -410,7 +428,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     for (const key of spec.sections) {
       const sec = e.sections[key];
       if (!sec) continue;
-      col = writeTable(ws, sec, col, spec.headerRow ?? HEADER_ROW, cur, locations);
+      col = writeTable(ws, sec, col, spec.headerRow ?? HEADER_ROW, cur, locations, spec.sections.length === 1 ? bulk : undefined);
       sectionSheet[key] = spec.name;
     }
     if (spec.print) ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: `${spec.headerRow ?? HEADER_ROW}:${spec.headerRow ?? HEADER_ROW}` };
@@ -573,5 +591,5 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   }
 
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
-  return { buffer, definedNames: names, sheetOrder: wb.worksheets.map((w) => w.name), tableLocations: locations };
+  return { buffer, definedNames: names, sheetOrder: wb.worksheets.map((w) => w.name), tableLocations: locations, bulk };
 }

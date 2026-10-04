@@ -28,14 +28,19 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
     }),
   ]);
   const lastOut = await db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, quantity: { lt: 0 } }, _max: { txDate: true } });
+  // index once (10k products × 10k balances must not be a nested scan)
+  const balByProduct = new Map<string, typeof balances>();
+  for (const b of balances) balByProduct.set(b.productId, [...(balByProduct.get(b.productId) ?? []), b]);
+  const usageBy = new Map(usage.map((u) => [u.productId, u]));
+  const lastOutBy = new Map(lastOut.map((u) => [u.productId, u._max.txDate]));
   const rows = products
     .map((p) => {
-      const bs = balances.filter((b) => b.productId === p.id);
+      const bs = balByProduct.get(p.id) ?? [];
       const qty = sum(bs.map((b) => b.quantity.toString()));
       const value = sum(bs.map((b) => b.value.toString()));
-      const used30 = D(usage.find((u) => u.productId === p.id)?._sum.quantity?.toString() ?? 0).neg();
+      const used30 = D(usageBy.get(p.id)?._sum.quantity?.toString() ?? 0).neg();
       const avgDaily = used30.div(30);
-      const last = lastOut.find((u) => u.productId === p.id)?._max.txDate ?? null;
+      const last = lastOutBy.get(p.id) ?? null;
       const daysIdle = last ? Math.trunc((Date.now() - last.getTime()) / 86400000) : null;
       return {
         productId: p.id,

@@ -36,6 +36,8 @@ export function contentHash(rows: unknown[]): string {
 /** Open a batch inside the caller's transaction; throws DUPLICATE when the same content is already posted. */
 export async function openBatch(tx: Tx, actor: Actor, hotelId: string, kind: ImportKind, fileName: string, rows: unknown[], meta?: BatchMeta) {
   const fileHash = contentHash(rows);
+  // serialize concurrent imports of the same file (spec 249, 295): the check below cannot race
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${hotelId}|${kind}|${fileHash}`}, 0))`;
   const dup = await tx.importBatch.findFirst({ where: { hotelId, kind, fileHash, status: "POSTED" } });
   if (dup) throw new DomainError("DUPLICATE", `This ${kind.toLowerCase()} file was already imported on ${dup.createdAt.toISOString().slice(0, 10)} (${dup.fileName}). Roll that import back first to re-import.`, { batchId: dup.id });
   return tx.importBatch.create({ data: { hotelId, kind, fileName: fileName.slice(0, 200), fileHash, rowCount: rows.length, createdById: actor.userId, sourceFormat: meta?.sourceFormat ?? "CSV", mappingVersion: MAPPING_VERSION[kind] } });

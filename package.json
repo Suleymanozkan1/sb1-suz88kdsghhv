@@ -23,7 +23,12 @@
     "prebuild": "tsx scripts/gen-vba.ts",
     "excel:sample": "tsx scripts/excel-smoke.ts",
     "excel:validate": "python3 scripts/lo-validate.py",
-    "pack:sample": "tsx scripts/pack-sample.ts"
+    "pack:sample": "tsx scripts/pack-sample.ts",
+    "ops:backup": "bash scripts/ops/backup.sh",
+    "ops:restore": "bash scripts/ops/restore.sh",
+    "ops:verify-restore": "tsx scripts/ops/verify-restore.ts",
+    "stress:seed": "tsx scripts/stress.ts --seed",
+    "stress:measure": "tsx scripts/stress.ts --measure"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -44,6 +49,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.56.1",
     "@types/bcryptjs": "^2.4.6",

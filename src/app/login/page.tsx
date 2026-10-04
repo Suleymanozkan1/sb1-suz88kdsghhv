@@ -17,7 +17,7 @@ export default async function LoginPage() {
           <p className="text-3xl font-semibold leading-tight">Know where every unit of cost came from — and why it changed.</p>
           <p className="mt-4 text-ink-300">Purchase → stock → recipe → yield → consumption → waste → theoretical vs actual → variance. One shared cost engine, fully traceable.</p>
         </div>
-        <p className="text-xs text-ink-400">Ledger-based · Audited · Decimal-precise</p>
+        <p className="text-xs text-ink-300">Ledger-based · Audited · Decimal-precise</p>
       </div>
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-sm">

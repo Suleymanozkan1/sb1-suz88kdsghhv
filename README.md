@@ -2,7 +2,7 @@
 
 Cost intelligence for hotels: **purchase → stock → recipe → yield → consumption → waste → actual vs theoretical → variance → department / product cost**, with every figure traceable to source transactions — plus a macro-enabled **Excel reporting layer** (`.xlsm`) that uses the same cost engine.
 
-> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar) + Phase 3 (rooms & operating costs) + Phase 4 (budget, forecast, what-if, menu engineering, savings) + Phase 5 (reports, PDF management pack, import engine, month-end)**. Performance & hardening are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
+> Status: **all six phases are implemented**: core cost engine, Excel layer, buffet & minibar, rooms & operating costs, planning, reports/imports/month-end, plus performance, hardening and full E2E. Wherever source data is missing, screens, exports and Excel show the figure as `NOT_AVAILABLE` / `INSUFFICIENT_DATA`, never as zero. Spec ↔ implementation ↔ tests: [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md).
 
 ## Quick start
 
@@ -97,6 +97,35 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 - **Import engine** (`/imports`): CSV or Excel (.xlsx, first sheet) or JSON rows for expenses, PMS occupancy, reservations, product master, supplier price lists / contracts (price-change warnings) and go-live opening stock. Preview shows valid / invalid / duplicate / warning; commits are all-or-nothing with file hash, format, mapping version and source row; rollbacks reverse ledger postings (expenses, opening stock) or remove statistics; used products are deactivated, never deleted.
 - **Control calendar** (`/calendar`) with the standard recurring controls, due status, system evidence and audited completions; **weekly review** (`/review`) of top cost increases, waste, variance, critical / high stock, price and recipe changes. CSV download of any export table: `/api/export/{group}?format=csv&table=<key>`.
 
+## Performance, hardening and operations (Phase 6)
+
+- **Volume:** measured with 10k products, 5k recipes, 100k stock transactions, 100k sales and 50k purchase lines.
+  - Interactive screens respond in under 3.6 s; the integrity check runs in 0.35 s.
+  - The full Excel workbook takes 82 s (it was 448 s): large tables are streamed directly into the sheet XML.
+  - Details: [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+- **Concurrency:**
+  - balance row locks;
+  - advisory lock against the same import file being posted twice at once;
+  - a unique buffet session key;
+  - one allocation run per period;
+  - idempotency keys.
+  - All of these are proven by parallel tests in `tests/integration/hardening.test.ts`.
+- **Calculation integrity** (`/integrity`, `/api/integrity/*`):
+  - ledger ↔ balance, FIFO, cost ledger, expense, allocation, recipe snapshot, minibar and run checks;
+  - an audited rebuild of the derived balances from the immutable ledger;
+  - interrupted runs flagged `PENDING_REPROCESS`;
+  - reprocessing of late-mapped sales; closed periods are left untouched.
+- **Security:**
+  - authorize before validate on every service; IDOR tests cover Phase 3–5 objects;
+  - a deactivated user's session is refused;
+  - production CSP without `'unsafe-eval'`, plus `object-src 'none'`;
+  - formula-injection-safe exports.
+- **Accessibility:** axe-core WCAG 2 A/AA scan of the main screens and the login screen (`tests/e2e/hardening.spec.ts`): no serious or critical violations. Muted text colours were darkened to at least 4.5:1, and tables are keyboard-scrollable.
+- **Backup and restore:**
+  - `npm run ops:backup`, then `ops:restore`, then `ops:verify-restore`;
+  - the verification compares per-table row counts, ledger totals, triggers and the export content hash, then runs the integrity check on the restored copy.
+  - Runbook: [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ## Excel Full Cost Report (.xlsm)
 
 Web app → **Excel Export** → *Download .xlsm* (`GET /api/export/workbook?from=YYYY-MM-DD&to=YYYY-MM-DD[&departmentId&warehouseId&group]`).
@@ -137,4 +166,4 @@ npm run build
 | 3 ✅ | Rooms, housekeeping, laundry, labor, energy, engineering, allocation engine, PMS & accounting import |
 | 4 ✅ | Budget, targets, forecast, scenarios, what-if, saving opportunities & actions, menu engineering |
 | 5 ✅ | Report archive & reproducibility, PDF management pack, Excel/CSV import engine, month-end checklist, control calendar, weekly review |
-| 6 | Performance at 100k+ volumes, security hardening, full E2E simulation |
+| 6 ✅ | Performance at 100k+ volumes, concurrency & idempotency, integrity check / rebuild / reprocess, security & accessibility hardening, backup/restore verification, full E2E |

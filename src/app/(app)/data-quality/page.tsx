@@ -26,7 +26,7 @@ export default async function DataQualityPage() {
         {checks.map((c) => (
           <Card key={c.key} title={<span className="flex items-center gap-2">{c.label} <Badge tone={c.count === 0 ? "green" : "amber"}>{c.count < 0 ? "never" : c.count}</Badge></span>}>
             {c.items.length === 0 ? <p className="text-sm text-ink-500">{c.count === 0 ? "All good." : "See related screen."}</p> : (
-              <ul className="max-h-48 space-y-1 overflow-auto text-sm">{c.items.map((i) => <li key={i.id} className="truncate">{i.name}{"problem" in i ? <span className="block text-xs text-ink-500">{String((i as { problem: string }).problem)}</span> : null}</li>)}</ul>
+              <ul className="max-h-48 space-y-1 overflow-auto text-sm" tabIndex={0}>{c.items.map((i) => <li key={i.id} className="truncate">{i.name}{"problem" in i ? <span className="block text-xs text-ink-500">{String((i as { problem: string }).problem)}</span> : null}</li>)}</ul>
             )}
           </Card>
         ))}

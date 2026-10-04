@@ -1,5 +1,6 @@
 /** Excel (.xlsx) import: first worksheet → rows keyed by normalized header (same shape as csvToObjects). */
 import ExcelJS from "exceljs";
+import { DomainError } from "@/domain/errors";
 
 const norm = (h: string) => h.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
@@ -17,7 +18,11 @@ function cellText(v: ExcelJS.CellValue): string {
 
 export async function xlsxToObjects(base64: string, maxRows = 50_000): Promise<Array<Record<string, string>>> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(Buffer.from(base64, "base64") as unknown as ArrayBuffer);
+  try {
+    await wb.xlsx.load(Buffer.from(base64, "base64") as unknown as ArrayBuffer);
+  } catch {
+    throw new DomainError("VALIDATION", "The file is not a readable Excel workbook (.xlsx). Save it as .xlsx or CSV and try again.");
+  }
   const ws = wb.worksheets[0];
   if (!ws) return [];
   const header: string[] = [];

@@ -91,7 +91,7 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
 
       <Card title={`Rooms (${r.lines.length})`} className="mt-4" padded={false}>
         {r.lines.length === 0 ? <div className="p-4"><Empty title="No rooms defined" /></div> : (
-          <div className="max-h-[32rem] overflow-auto">
+          <div className="max-h-[32rem] overflow-auto" tabIndex={0} role="region" aria-label="Rooms">
             <Table>
               <thead className="sticky top-0 bg-white"><tr><Th>Room</Th><Th>Type</Th><Th>Floor</Th><Th align="right">Nights</Th><Th align="right">Revenue</Th>{ROOM_COMPONENTS.map((c) => <Th key={c} align="right">{LABEL[c]}</Th>)}<Th align="right">Full cost</Th><Th align="right">Cost / night</Th><Th align="right">Contribution</Th></tr></thead>
               <tbody className="divide-y divide-ink-100">
