@@ -9,7 +9,7 @@ export const maxDuration = 120;
 
 /** One-click Excel: the whole cost operation in a single .xlsm (spec 123). */
 export const GET = api(async ({ actor, hotelId, query, req }) => {
-  rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
+  await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
   const r = await buildExcelReport(prisma, actor, hotelId, parseExportParams(query), base);
   return new NextResponse(new Uint8Array(r.buffer), {

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Versioned full cost export (contract 1.x). JSON by default, TSV for the Excel VBA refresh. */
 export const GET = api(async ({ actor, hotelId, query }) => {
-  rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
+  await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const e = await buildFullCostExport(prisma, actor, hotelId, parseExportParams(query));
   if (query.get("format") === "tsv") {
     return new NextResponse(toTsv(e), { headers: { "content-type": "text/tab-separated-values; charset=utf-8", "cache-control": "no-store", "x-export-id": e.exportId } });

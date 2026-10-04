@@ -66,7 +66,7 @@ Tested end to end on the seeded database: 72 tables and 28,722 rows, with identi
 
 - Sessions are httpOnly, SameSite=Lax cookies (`secure` in production). Only token hashes are stored, and a deactivated user's session is refused at once.
 - Excel/API bearer tokens are personal, expire after 30 days and are stored as hashes. No credentials are stored in the `.xlsm`.
-- Rate limits apply to login (per IP and per e-mail) and to exports (30 per hour per user).
+- Rate limits apply to login (per IP and per e-mail) and to exports (30 per hour per user). They are stored in PostgreSQL, so they hold across instances and restarts; responses use HTTP 429 with `Retry-After`.
 - Every service authorizes before validating. Hotel and department scope is checked on every object, so cross-hotel IDs are refused (IDOR tests in `tests/integration/hardening.test.ts`).
 - Security headers:
   - CSP without `'unsafe-eval'` in production, plus `object-src 'none'` and `frame-ancestors 'none'`;
@@ -78,6 +78,6 @@ Tested end to end on the seeded database: 72 tables and 28,722 rows, with identi
 
 1. Backup (`ops:backup`).
 2. `npx prisma migrate deploy` (non-interactive; never `migrate reset` in production).
-3. `npm run build && npm start` behind TLS. Allow request timeouts of at least 120 s for `/api/export/workbook`.
+3. `npm run build && npm start` behind TLS. Allow request timeouts of at least 120 s for `/api/export/workbook`, or use background export for large months.
 4. Smoke test: `/api/health`, log in, run an integrity check.
 5. Monitor: failed calculation runs (`/integrity`), the export error log in the workbook, and the audit trail.

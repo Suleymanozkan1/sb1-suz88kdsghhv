@@ -24,6 +24,7 @@ const STATUS: Record<DomainErrorCode, number> = {
   APPROVAL_REQUIRED: 202,
   IMMUTABLE: 409,
   DUPLICATE: 409,
+  RATE_LIMITED: 429,
 };
 
 /** JSON replacer: Decimal → string (never float), Map → object. */
@@ -40,7 +41,10 @@ export function toJson(value: unknown): unknown {
 }
 
 export function errorResponse(e: unknown) {
-  if (isDomainError(e)) return NextResponse.json({ error: { code: e.code, message: e.message, details: toJson(e.details ?? null) } }, { status: STATUS[e.code] });
+  if (isDomainError(e)) {
+    const retry = e.code === "RATE_LIMITED" ? (e.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds : undefined;
+    return NextResponse.json({ error: { code: e.code, message: e.message, details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
+  }
   if (e instanceof ZodError) return NextResponse.json({ error: { code: "VALIDATION", message: "Invalid input", details: e.issues } }, { status: 422 });
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") return NextResponse.json({ error: { code: "DUPLICATE", message: "Duplicate record" } }, { status: 409 });

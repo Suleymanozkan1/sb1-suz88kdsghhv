@@ -40,8 +40,16 @@ Single PostgreSQL 16 instance on the CI container; Node 22. Times are wall-clock
   - The 100k-row stress workbook was validated in LibreOffice: it loads, the VBA compiles and all 10 formula checks pass.
 - **Indexes:** the existing composite indexes on `(hotelId, productId, txDate)`, `(warehouseId, productId, txDate)` and `(hotelId, saleDate)` carry the hot queries. No sequential scans remain on the measured paths.
 
+## Large periods: background export
+
+- On the Excel page, **Generate in background** (`POST /api/export/jobs`) queues the workbook. The server builds it while the user keeps working, and the list polls until the file is ready.
+- The download (`GET /api/export/jobs/{id}/download`) is kept for `EXPORT_JOB_TTL_HOURS` (default 24) and is visible only to the user who queued it.
+- Jobs are claimed atomically, so they never run twice. Each user can have at most 2 active jobs.
+- A job's user is re-checked when it runs: a deactivated user's job fails.
+- Jobs interrupted by a restart are marked `FAILED` after 30 minutes, never left hanging.
+- The synchronous `GET /api/export/workbook` remains for normal months. Reverse proxies should allow at least 120 s for it.
+
 ## Limits and recommendations
 
-- A 100k-line month takes about 80 s to export to Excel. For hotels at this volume, schedule the workbook overnight (cron calling `GET /api/export/workbook`) or use the TSV/CSV endpoints. The request is synchronous; reverse proxies must allow at least 120 s.
-- The rate limiter is in memory, per Node process. Behind several instances, put the limits in the proxy (or in Redis).
+- Rate limits (login per IP and per e-mail, exports per user) are fixed-window counters in PostgreSQL (`RateLimitBucket`). They hold across any number of app instances. Login limits are configurable with `RATE_LIMIT_LOGIN_PER_IP` and `RATE_LIMIT_LOGIN_PER_EMAIL`.
 - Measurements come from one container. Production sizing should be re-measured on the target hardware with `npm run stress:measure`.

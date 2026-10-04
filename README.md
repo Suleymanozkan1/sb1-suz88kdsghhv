@@ -102,6 +102,7 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 - **Volume:** measured with 10k products, 5k recipes, 100k stock transactions, 100k sales and 50k purchase lines.
   - Interactive screens respond in under 3.6 s; the integrity check runs in 0.35 s.
   - The full Excel workbook takes 82 s (it was 448 s): large tables are streamed directly into the sheet XML.
+  - Large months can be generated in the background from the Excel page.
   - Details: [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 - **Concurrency:**
   - balance row locks;

@@ -12,7 +12,8 @@ export type DomainErrorCode =
   | "MISSING_COST"
   | "APPROVAL_REQUIRED"
   | "IMMUTABLE"
-  | "DUPLICATE";
+  | "DUPLICATE"
+  | "RATE_LIMITED";
 
 export class DomainError extends Error {
   constructor(

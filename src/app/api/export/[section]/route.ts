@@ -26,7 +26,7 @@ const GROUPS: Record<string, string[]> = {
 export const GET = api(async ({ actor, hotelId, query, params }) => {
   const keys = GROUPS[params.section ?? ""];
   if (!keys) throw new DomainError("NOT_FOUND", `Unknown export '${params.section}'. Available: ${Object.keys(GROUPS).join(", ")}, full-cost, workbook`);
-  rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
+  await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const e = await buildFullCostExport(prisma, actor, hotelId, parseExportParams(query));
   // CSV (spec 250): one section at a time (?format=csv&table=<section key>), formula-injection safe
   if (query.get("format") === "csv") {

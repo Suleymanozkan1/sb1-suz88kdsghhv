@@ -50,12 +50,12 @@ Report archive with content and period hashes, reproducibility check, PDF manage
 | 274 Tenant isolation (IDOR) | Hotel scope on every object | `integration/hardening` › tenant isolation, `integration/security` |
 | Security headers / CSP | `next.config.ts` | `e2e/hardening` (no CSP violations on the production build) |
 | Accessibility | Contrast palette; keyboard-scrollable tables | `e2e/hardening` (axe-core WCAG 2 A/AA, 11 screens) |
+| Background export; shared rate limits | `services/export-jobs.ts`, `RateLimitBucket` | `integration/export-jobs`, `e2e/hardening` |
 | Backup and restore | `scripts/ops/*` | `npm run ops:verify-restore`: identical counts, ledger totals and export hash |
 
 ## Known limitations (honest)
 
 - **Excel:** there is no Microsoft Excel in CI. The `.xlsm` is validated structurally (oletools) and in LibreOffice (load, VBA compile and execution of pure routines, formula checks). The first refresh in Windows Excel is the final acceptance step. Mac Excel can open the prefilled workbook but cannot refresh it.
 - **Browsers:** Playwright runs on Chromium (desktop + Pixel 7 mobile). Firefox/WebKit projects exist (`E2E_ALL_BROWSERS=1`) but are not installed in this environment.
-- **Large exports:** a 100k-line month takes about 80 s to export to Excel, synchronously. Schedule it at night or use CSV/TSV at that volume.
-- **Rate limiting:** the rate limiter is in memory, per process.
+- **Large exports:** a 100k-line month takes about 80 s to build. Use background export for such months; the synchronous download remains for normal months.
 - **External integrations:** POS, PMS and accounting data arrive through file and API imports. There are no live vendor connectors.

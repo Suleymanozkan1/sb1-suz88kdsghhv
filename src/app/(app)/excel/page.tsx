@@ -5,6 +5,7 @@ import { prisma } from "@/server/db";
 import { Badge, Card, Empty, Label, PageHeader, Select, Input, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { TokenPanel } from "./token-panel";
+import { BackgroundExport } from "./background-export";
 
 export const metadata = { title: "Excel Export" };
 
@@ -23,7 +24,7 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
       <PageHeader title="Excel full cost report (.xlsm)" subtitle="The whole cost operation in one macro-enabled workbook — same cost engine as this application, reconciled, audited and refreshable from Excel." />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Generate workbook" className="lg:col-span-2">
-          <form method="get" action="/api/export/workbook" className="grid gap-3 md:grid-cols-3">
+          <form id="xl-form" method="get" action="/api/export/workbook" className="grid gap-3 md:grid-cols-3">
             <div><Label htmlFor="x-from">Start date</Label><Input id="x-from" name="from" type="date" defaultValue={range.fromStr} required /></div>
             <div><Label htmlFor="x-to">End date</Label><Input id="x-to" name="to" type="date" defaultValue={range.toStr} required /></div>
             <div><Label htmlFor="x-group">Category</Label><Select id="x-group" name="group" defaultValue=""><option value="">All</option>{["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING"].map((g) => <option key={g}>{g}</option>)}</Select></div>
@@ -36,6 +37,7 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
               </button>
             </div>
           </form>
+          <BackgroundExport formId="xl-form" />
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink-600">
             <li>Opens on <strong>01_CONTROL</strong> with the <strong>TÜM COST RAPORLARINI OLUŞTUR</strong> button; all report sheets are already filled for {hotel.name}.</li>
             <li>Enable macros to refresh from Excel (Windows): the macro calls this server&apos;s <code>/api/export/full-cost</code> with your API token, rebuilds pivots and charts and re-runs reconciliation.</li>

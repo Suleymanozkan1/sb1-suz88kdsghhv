@@ -303,6 +303,7 @@ model Hotel {
   salesImports      SalesImport[]
   costSnapshots     CostSnapshot[]
   calcRuns          CalculationRun[]
+  exportJobs        ExportJob[]
   buffetSessions    BuffetSession[]
   minibarPars       MinibarPar[]
   minibarMovements  MinibarMovement[]
@@ -406,6 +407,7 @@ model User {
   hotelAccess    UserHotelAccess[]
   deptAccess     UserDepartmentAccess[]
   sessions       Session[]
+  exportJobs     ExportJob[]
 }
 
 model Role {
@@ -1776,4 +1778,41 @@ model CalendarCompletion {
   note          String?
 
   @@unique([taskId, dueDate])
+}
+
+// ───────────────────────── Phase 6: background exports & shared rate limits ─────────────────────────
+
+/// Large workbooks are generated in the background; the finished file is kept for download (spec 292–293).
+model ExportJob {
+  id             String     @id @default(cuid())
+  hotelId        String
+  hotel          Hotel      @relation(fields: [hotelId], references: [id])
+  userId         String
+  user           User       @relation(fields: [userId], references: [id])
+  kind           String     @default("XLSM")
+  params         Json
+  status         CalcStatus @default(PENDING)
+  createdAt      DateTime   @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  error          String?
+  fileName       String?
+  file           Bytes?
+  size           Int?
+  exportId       String?
+  reconciliation String?
+  expiresAt      DateTime?
+
+  @@index([hotelId, userId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Fixed-window counters shared by every app instance (login and export limits).
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
 }

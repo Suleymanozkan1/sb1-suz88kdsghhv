@@ -49,3 +49,15 @@ test("a11y: login screen", async ({ page }) => {
   const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
 });
+
+test("background Excel export: queue, wait, download (spec 292–293)", async ({ page }) => {
+  test.setTimeout(180_000);
+  await login(page, "controller");
+  await page.goto("/excel");
+  await page.getByRole("button", { name: "Generate in background" }).click();
+  const row = page.getByRole("region", { name: "Background exports" }).getByRole("row").nth(1);
+  await expect(row.getByText("COMPLETED")).toBeVisible({ timeout: 150_000 });
+  const download = page.waitForEvent("download");
+  await row.getByRole("link", { name: "Download" }).click();
+  expect((await download).suggestedFilename()).toMatch(/^HotelCost_Cost_Report_.*\.xlsm$/);
+});
