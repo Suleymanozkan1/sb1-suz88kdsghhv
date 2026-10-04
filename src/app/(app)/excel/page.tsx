@@ -1,6 +1,6 @@
 import { FileSpreadsheet } from "lucide-react";
-import { pageContext, monthRange } from "@/server/page";
-import { authorize, departmentScope } from "@/server/auth/actor";
+import { pageContext, monthRange, requirePageAccess } from "@/server/page";
+import { departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, Label, PageHeader, Select, Input, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
@@ -11,7 +11,7 @@ export const metadata = { title: "Excel Export" };
 
 export default async function ExcelPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const { actor, hotelId, hotel } = await pageContext();
-  authorize(actor, "report:export", { hotelId });
+  requirePageAccess(actor, "report:export", hotelId);
   const range = monthRange(await searchParams);
   const [departments, warehouses, reports] = await Promise.all([
     prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }),
@@ -37,14 +37,14 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
               </button>
             </div>
           </form>
-          <BackgroundExport formId="xl-form" />
+          <BackgroundExport formId="xl-form" timezone={hotel.timezone} />
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink-600">
             <li>Opens on <strong>01_CONTROL</strong> with the <strong>TÜM COST RAPORLARINI OLUŞTUR</strong> button; all report sheets are already filled for {hotel.name}.</li>
             <li>Enable macros to refresh from Excel (Windows): the macro calls this server&apos;s <code>/api/export/full-cost</code> with your API token, rebuilds pivots and charts and re-runs reconciliation.</li>
             <li>Only departments you can access are exported. Modules not yet implemented are marked <Badge tone="amber">NOT_AVAILABLE</Badge> — never shown as zero.</li>
           </ul>
         </Card>
-        <Card title="API token for Excel refresh"><TokenPanel /></Card>
+        <Card title="API token for Excel refresh"><TokenPanel timezone={hotel.timezone} /></Card>
       </div>
       <Card title="Recent exports (archive)" className="mt-4" padded={false}>
         {reports.length === 0 ? <div className="p-4"><Empty title="No exports yet" /></div> : (
@@ -55,7 +55,7 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
                 const d = r.data as { exportId?: string; meta?: { period?: { label?: string } }; score?: { reconciliation?: string; dataQuality?: string } };
                 return (
                   <tr key={r.id}>
-                    <Td>{dateTime(r.generatedAt)}</Td><Td>{users.get(r.generatedById)}</Td><Td className="font-mono text-xs">{d.exportId}</Td><Td>{d.meta?.period?.label}</Td>
+                    <Td>{dateTime(r.generatedAt, hotel.timezone)}</Td><Td>{users.get(r.generatedById)}</Td><Td className="font-mono text-xs">{d.exportId}</Td><Td>{d.meta?.period?.label}</Td>
                     <Td><Badge tone={d.score?.reconciliation === "PASS" ? "green" : d.score?.reconciliation === "FAIL" ? "red" : "amber"}>{d.score?.reconciliation}</Badge></Td>
                     <Td align="right">{d.score?.dataQuality ?? "—"}%</Td>
                   </tr>

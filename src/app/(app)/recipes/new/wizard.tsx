@@ -9,13 +9,14 @@ import { call } from "@/lib/client";
 import { money, pct, qty } from "@/lib/format";
 
 interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string; yieldPct: string; wastePct: string }
-const blank = (): Line => ({ key: crypto.randomUUID(), kind: "product", product: null, subRecipeId: "", quantity: "", unit: "", yieldPct: "", wastePct: "" });
+// the first line is server-rendered: its key (used in element ids) must be the same on server and client
+const blank = (key: string = crypto.randomUUID()): Line => ({ key, kind: "product", product: null, subRecipeId: "", quantity: "", unit: "", yieldPct: "", wastePct: "" });
 type Cost = { foodCost: string; fullBatchCost: string; portionCost: string | null; foodPortionCost: string | null; foodCostPct: string | null; grossMarginPct: string | null; grossContribution: string | null; yieldAdjustment: string; wasteCost: string; ingredientCost: string; lines: { name: string; lineCost: string; apQty: string; baseUnit: string; unitCost: string | null; issues: string[] }[] };
 
 export function RecipeWizard({ types, departments, subRecipes }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[] }) {
   const router = useRouter();
   const [head, setHead] = useState({ type: "RESTAURANT", code: "", name: "", departmentId: departments[0]?.id ?? "", posCode: "", batchYieldQty: "1", yieldUnit: "portion", portions: "1", sellingPrice: "", packagingCost: "", laborCost: "", energyCost: "", otherCost: "", productionLossPct: "" });
-  const [lines, setLines] = useState<Line[]>([blank()]);
+  const [lines, setLines] = useState<Line[]>([blank("line-0")]);
   const [preview, setPreview] = useState<{ issues: { field: string; message: string }[]; cost: Cost | null } | null>(null);
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
   const set = (k: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));

@@ -10,5 +10,5 @@ export const POST = api(async ({ actor, hotelId, body: read }) => {
   const b = body.parse(await read());
   const rows = "csv" in b ? csvToObjects(b.csv).map(mapRow) : b.rows;
   return previewSales(prisma, actor, hotelId, rows);
-});
+}, { perm: "sales:import" });
 

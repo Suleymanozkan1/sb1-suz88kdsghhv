@@ -7,4 +7,4 @@ export const GET = api(({ actor, hotelId }) => listRuns(prisma, actor, hotelId))
 export const POST = api(async ({ actor, hotelId, body }) => {
   const b = z.object({ periodId: z.string().min(1) }).parse(await body());
   return postAllocation(prisma, actor, hotelId, b.periodId);
-});
+}, { perm: "allocation:manage" });

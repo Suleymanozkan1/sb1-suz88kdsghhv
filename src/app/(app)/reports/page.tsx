@@ -11,7 +11,7 @@ export const metadata = { title: "Reports" };
 const LABEL: Record<string, string> = { FULL_COST_EXPORT: "Full cost export (Excel / API)", MANAGEMENT_PACK: "Management pack (PDF)", PERIOD_CLOSE: "Period close snapshot" };
 
 export default async function ReportsPage() {
-  const { actor, hotelId } = await pageContext();
+  const { actor, hotelId, hotel } = await pageContext();
   const res = await guarded(() => listReports(prisma, actor, hotelId));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const now = new Date();
@@ -31,7 +31,7 @@ export default async function ReportsPage() {
                 const filters = Object.entries(f).filter(([, v]) => v).map(([k]) => k).join(", ");
                 return (
                   <tr key={r.id}>
-                    <Td>{dateTime(r.generatedAt)}</Td>
+                    <Td>{dateTime(r.generatedAt, hotel.timezone)}</Td>
                     <Td className="font-medium">{LABEL[r.reportType] ?? r.reportType}</Td>
                     <Td>{r.periodFrom ? `${date(r.periodFrom)} – ${date(new Date(r.periodTo!.getTime() - 86400000))}` : "—"}{r.period && <Badge tone={r.period.status === "CLOSED" ? "gray" : "green"}>{r.period.code} {r.period.status}</Badge>}</Td>
                     <Td>{r.generatedBy}</Td>

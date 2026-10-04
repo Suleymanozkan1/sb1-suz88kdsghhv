@@ -10,7 +10,7 @@ import { ReverseButton } from "../operations/forms";
 export const metadata = { title: "Imports" };
 
 export default async function ImportsPage() {
-  const { actor, hotelId } = await pageContext();
+  const { actor, hotelId, hotel } = await pageContext();
   const allowed: ImportKindKey[] = [
     ...(can(actor, "opex:manage") ? (["expenses"] as const) : []),
     ...(can(actor, "pms:import") ? (["occupancy", "reservations"] as const) : []),
@@ -33,9 +33,9 @@ export default async function ImportsPage() {
             <tbody className="divide-y divide-ink-100">
               {batches.map((b) => (
                 <tr key={b.id} className={b.status === "ROLLED_BACK" ? "text-ink-400" : ""}>
-                  <Td>{dateTime(b.createdAt)}</Td><Td className="font-medium">{b.kind}</Td><Td className="text-xs">{b.fileName} <span className="text-ink-400">#{b.fileHash.slice(0, 8)} · {b.sourceFormat} · {b.mappingVersion}</span></Td>
+                  <Td>{dateTime(b.createdAt, hotel.timezone)}</Td><Td className="font-medium">{b.kind}</Td><Td className="text-xs">{b.fileName} <span className="text-ink-400">#{b.fileHash.slice(0, 8)} · {b.sourceFormat} · {b.mappingVersion}</span></Td>
                   <Td align="right">{b.rowCount}</Td><Td align="right">{b.postedCount}</Td><Td>{users.get(b.createdById) ?? "—"}</Td>
-                  <Td>{b.status === "POSTED" ? <Badge tone="green">POSTED</Badge> : <Badge tone="red">ROLLED BACK {b.rolledBackAt ? dateTime(b.rolledBackAt) : ""}</Badge>}</Td>
+                  <Td>{b.status === "POSTED" ? <Badge tone="green">POSTED</Badge> : <Badge tone="red">ROLLED BACK {b.rolledBackAt ? dateTime(b.rolledBackAt, hotel.timezone) : ""}</Badge>}</Td>
                   <Td>{b.status === "POSTED" && <ReverseButton url={`/api/imports/batches/${b.id}/rollback`} label="Roll back" />}</Td>
                 </tr>
               ))}

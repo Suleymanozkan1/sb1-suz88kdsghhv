@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
+import { dateTime } from "@/lib/format";
 
 interface Job {
   id: string;
@@ -21,7 +22,7 @@ const ACTIVE = ["PENDING", "RUNNING"];
 const tone = (s: string) => (s === "COMPLETED" ? "green" : s === "FAILED" ? "red" : "amber");
 
 /** Queue the workbook on the server for large periods; the list polls until every job has finished. */
-export function BackgroundExport({ formId }: { formId: string }) {
+export function BackgroundExport({ formId, timezone }: { formId: string; timezone: string }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +66,7 @@ export function BackgroundExport({ formId }: { formId: string }) {
           <tbody className="divide-y divide-ink-100">
             {jobs.map((j) => (
               <tr key={j.id}>
-                <Td>{new Date(j.createdAt).toLocaleString()}</Td>
+                <Td>{dateTime(j.createdAt, timezone)}</Td>
                 <Td>{j.params.from.slice(0, 10)} → {new Date(new Date(j.params.to).getTime() - 86400000).toISOString().slice(0, 10)}</Td>
                 <Td><Badge tone={tone(j.status)}>{j.status}</Badge>{j.error && <span className="block text-xs text-red-700">{j.error}</span>}</Td>
                 <Td>{j.reconciliation ?? "—"}</Td>

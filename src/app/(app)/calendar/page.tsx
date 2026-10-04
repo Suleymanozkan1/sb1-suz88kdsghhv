@@ -1,5 +1,5 @@
 import { pageContext, guarded } from "@/server/page";
-import { calendarView } from "@/server/services/calendar";
+import { calendarView, canCompleteTask } from "@/server/services/calendar";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
@@ -36,7 +36,7 @@ export default async function CalendarPage() {
                 <Td><Badge tone={TONE[i.status as keyof typeof TONE]}>{i.status.replace("_", " ")}</Badge></Td>
                 <Td className="text-xs text-ink-500">{i.evidence ?? (i.status === "UPCOMING" ? "" : "no evidence found")}</Td>
                 <Td className="text-xs">{i.completedBy ? `${i.completedBy}${i.note ? ` — ${i.note}` : ""}` : ""}</Td>
-                <Td>{i.status !== "DONE" && i.status !== "UPCOMING" && <DoneButton taskId={i.taskId} dueDate={i.dueDate.toISOString().slice(0, 10)} />}</Td>
+                <Td>{i.status !== "DONE" && i.status !== "UPCOMING" && canCompleteTask(actor, i.ownerRole) && <DoneButton taskId={i.taskId} dueDate={i.dueDate.toISOString().slice(0, 10)} />}</Td>
               </tr>
             ))}
           </tbody>

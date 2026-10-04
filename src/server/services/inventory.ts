@@ -31,6 +31,7 @@ export const movementInput = z.object({
 });
 
 export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "inventory:post", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = movementInput.parse(raw);
   authorize(actor, "inventory:post", { hotelId, departmentId: input.departmentId ?? null });
   if (input.type.startsWith("ADJUSTMENT") || input.type === "OPENING") requirePermission(actor, "inventory:adjust");
@@ -65,8 +66,8 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
 export const transferInput = z.object({ fromWarehouseId: z.string(), toWarehouseId: z.string(), productId: z.string(), quantity: dec, unit: z.string(), txDate: z.coerce.date(), reason: z.string().max(500).optional() });
 
 export async function postTransfer(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  const input = transferInput.parse(raw);
   authorize(actor, "inventory:post", { hotelId });
+  const input = transferInput.parse(raw);
   const product = await db.product.findFirst({ where: { id: input.productId, hotelId }, include: { conversions: true } });
   if (!product) throw new DomainError("NOT_FOUND", "Product not found");
   const whs = await db.warehouse.findMany({ where: { id: { in: [input.fromWarehouseId, input.toWarehouseId] }, hotelId } });

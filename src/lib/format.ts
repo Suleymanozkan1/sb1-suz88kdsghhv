@@ -30,9 +30,10 @@ export function date(v: string | Date | null | undefined): string {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(v));
 }
 
-export function dateTime(v: string | Date | null | undefined): string {
+/** Date and time in the hotel's timezone (Hotel.timezone), never the server's: on a cloud host that is UTC. */
+export function dateTime(v: string | Date | null | undefined, timeZone = "Europe/Istanbul"): string {
   if (!v) return "—";
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(v));
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(v));
 }
 
 export function sign(v: V): "pos" | "neg" | "zero" {

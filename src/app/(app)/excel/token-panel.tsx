@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { Alert, Button } from "@/components/ui";
 import { call } from "@/lib/client";
+import { dateTime } from "@/lib/format";
 
-export function TokenPanel() {
+export function TokenPanel({ timezone }: { timezone: string }) {
   const [token, setToken] = useState<{ token: string; expiresAt: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -14,7 +15,7 @@ export function TokenPanel() {
       {token ? (
         <div className="space-y-2">
           <code className="block break-all rounded-lg bg-ink-950 p-3 font-mono text-xs text-brand-200" data-testid="api-token">{token.token}</code>
-          <p className="text-xs text-ink-500">Expires {new Date(token.expiresAt).toLocaleString()}. Copy it now.</p>
+          <p className="text-xs text-ink-500">Expires {dateTime(token.expiresAt, timezone)}. Copy it now.</p>
         </div>
       ) : (
         <Button onClick={async () => { try { setToken(await call("POST", "/api/auth/api-token")); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); } }}>Create token</Button>

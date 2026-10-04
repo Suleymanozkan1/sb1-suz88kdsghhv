@@ -18,7 +18,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const range = monthRange(await searchParams);
   const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
-  if (res.data.kind === "basic") return <BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} range={range} d={res.data.data} />;
+  if (res.data.kind === "basic") return <BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} timezone={hotel.timezone} range={range} d={res.data.data} />;
   const d = res.data.data;
   const k = d.kpis;
   const cur = hotel.baseCurrency;
@@ -160,7 +160,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   <div>
                     <div className="flex items-center gap-2"><span className="font-medium">{a.title}</span><Badge tone={severityTone[a.severity]}>{a.severity}</Badge></div>
                     <p className="text-xs text-ink-500">{a.message}</p>
-                    <p className="text-[11px] text-ink-400">{dateTime(a.createdAt)}</p>
+                    <p className="text-[11px] text-ink-400">{dateTime(a.createdAt, hotel.timezone)}</p>
                   </div>
                 </li>
               ))}

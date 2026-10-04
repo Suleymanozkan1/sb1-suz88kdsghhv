@@ -109,12 +109,21 @@ export async function calendarView(db: Db, actor: Actor, hotelId: string, from: 
   return { tasks, items, counts: { overdue: items.filter((i) => i.status === "OVERDUE").length, done: items.filter((i) => i.status === "DONE").length, upcoming: items.filter((i) => i.status === "UPCOMING" || i.status === "DUE_TODAY").length } };
 }
 
+/** The owner role signs off its own control; a period manager can sign off any. */
+export function canCompleteTask(actor: Actor, ownerRole: string | null): boolean {
+  if (![...actor.permissions].some((p) => !p.endsWith(":view"))) return false;
+  return actor.permissions.has("period:manage") || !ownerRole || ownerRole === actor.roleKey;
+}
+
 export async function completeTask(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  const v = z.object({ taskId: z.string().min(1), dueDate: z.coerce.date(), note: z.string().trim().max(500).nullable().optional() }).parse(raw);
   authorize(actor, "report:view", { hotelId });
+  // a read-only role never signs off a control
+  if (!canCompleteTask(actor, null)) throw new DomainError("FORBIDDEN", "A read-only role cannot complete control tasks");
+  const v = z.object({ taskId: z.string().min(1), dueDate: z.coerce.date(), note: z.string().trim().max(500).nullable().optional() }).parse(raw);
   return inTx(db, async (tx) => {
     const t = await tx.calendarTask.findFirst({ where: { id: v.taskId, hotelId } });
     if (!t) throw new DomainError("NOT_FOUND", "Task not found");
+    if (!canCompleteTask(actor, t.ownerRole)) throw new DomainError("FORBIDDEN", `Only the owner role (${t.ownerRole}) or a period manager can complete this control`);
     const due = utc(v.dueDate);
     if (!dueDates(t, due, new Date(due.getTime() + DAY)).length) throw new DomainError("VALIDATION", "That date is not a due date of this task");
     if (await tx.calendarCompletion.findUnique({ where: { taskId_dueDate: { taskId: t.id, dueDate: due } } })) throw new DomainError("DUPLICATE", "Already completed");

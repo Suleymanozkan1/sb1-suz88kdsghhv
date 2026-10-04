@@ -7,7 +7,8 @@ import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { DomainError, isDomainError, type DomainErrorCode } from "@/domain/errors";
 import { Decimal } from "@/domain/money";
-import type { Actor } from "../auth/actor";
+import { requireHotel, type Actor } from "../auth/actor";
+import type { Permission } from "../auth/permissions";
 import { actorFromToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
 
 const STATUS: Record<DomainErrorCode, number> = {
@@ -83,7 +84,11 @@ export interface Ctx {
 
 type RouteCtx = { params: Promise<Record<string, string>> };
 
-export function api(fn: (ctx: Ctx) => Promise<unknown>) {
+/**
+ * `perm`: checked (with hotel access) before the handler reads the body, so a caller without the right
+ * is refused with 403 whatever it sends. Services still authorize on their own; this only orders the checks.
+ */
+export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permission } = {}) {
   return async (req: NextRequest, rc: RouteCtx) => {
     try {
       if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) {
@@ -95,6 +100,10 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>) {
       const query = req.nextUrl.searchParams;
       // Hotel comes from explicit query/header or the cookie; services re-check access (IDOR).
       const hotelId = query.get("hotelId") ?? req.headers.get("x-hotel-id") ?? req.cookies.get(HOTEL_COOKIE)?.value ?? actor.hotelIds[0] ?? "";
+      if (opts.perm) {
+        if (!actor.permissions.has(opts.perm)) throw new DomainError("FORBIDDEN", `Missing permission: ${opts.perm}`);
+        if (opts.perm !== "platform:admin") requireHotel(actor, hotelId);
+      }
       const params = (await rc?.params) ?? {};
       const result = await fn({
         actor,

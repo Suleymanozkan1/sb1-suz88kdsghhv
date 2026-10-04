@@ -1,5 +1,5 @@
-import { pageContext } from "@/server/page";
-import { authorize, can } from "@/server/auth/actor";
+import { pageContext, requirePageAccess } from "@/server/page";
+import { can } from "@/server/auth/actor";
 import { closeChecklist, periodFor, reconciliationStatus } from "@/server/services/period";
 import { prisma } from "@/server/db";
 import { Badge, Card, PageHeader, Table, Td, Th } from "@/components/ui";
@@ -10,7 +10,7 @@ export const metadata = { title: "Cost Periods" };
 
 export default async function PeriodsPage() {
   const { actor, hotelId } = await pageContext();
-  authorize(actor, "period:manage", { hotelId });
+  requirePageAccess(actor, "period:manage", hotelId);
   await periodFor(prisma, hotelId, new Date());
   const periods = await prisma.costPeriod.findMany({ where: { hotelId }, orderBy: { startDate: "desc" }, take: 13 });
   const checks = await Promise.all(periods.map((p) => (p.status === "CLOSED" ? Promise.resolve(null) : closeChecklist(prisma, hotelId, p))));

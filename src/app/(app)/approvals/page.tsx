@@ -1,5 +1,5 @@
-import { pageContext } from "@/server/page";
-import { authorize, can } from "@/server/auth/actor";
+import { pageContext, requirePageAccess } from "@/server/page";
+import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
@@ -8,8 +8,8 @@ import { Decide } from "./decide";
 export const metadata = { title: "Approvals" };
 
 export default async function ApprovalsPage() {
-  const { actor, hotelId } = await pageContext();
-  authorize(actor, "dashboard:view", { hotelId });
+  const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "dashboard:view", hotelId);
   const [pending, history] = await Promise.all([
     prisma.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "desc" } }),
     prisma.approval.findMany({ where: { hotelId, status: { not: "PENDING" } }, orderBy: { decidedAt: "desc" }, take: 30 }),
@@ -27,7 +27,7 @@ export default async function ApprovalsPage() {
             <tbody className="divide-y divide-ink-100">
               {pending.map((a) => (
                 <tr key={a.id} className="align-top">
-                  <Td>{dateTime(a.requestedAt)}</Td><Td><Badge tone="amber">{a.action.replace(/_/g, " ")}</Badge></Td><Td>{users.get(a.requestedById)}</Td>
+                  <Td>{dateTime(a.requestedAt, hotel.timezone)}</Td><Td><Badge tone="amber">{a.action.replace(/_/g, " ")}</Badge></Td><Td>{users.get(a.requestedById)}</Td>
                   <Td className="whitespace-normal">{a.reason}</Td><Td className="whitespace-normal text-xs text-ink-500">{fmt(a.payload)}</Td>
                   <Td>{canDecide && a.requestedById !== actor.userId ? <Decide id={a.id} /> : <span className="text-xs text-ink-400">{a.requestedById === actor.userId ? "your request" : "no permission"}</span>}</Td>
                 </tr>
@@ -41,7 +41,7 @@ export default async function ApprovalsPage() {
           <thead><tr><Th>Decided</Th><Th>Action</Th><Th>Status</Th><Th>Requested by</Th><Th>Decided by</Th><Th>Note</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">
             {history.map((a) => (
-              <tr key={a.id}><Td>{dateTime(a.decidedAt)}</Td><Td>{a.action.replace(/_/g, " ")}</Td><Td><Badge tone={a.status === "APPROVED" ? "green" : "red"}>{a.status}</Badge></Td><Td>{users.get(a.requestedById)}</Td><Td>{users.get(a.decidedById ?? "")}</Td><Td className="whitespace-normal text-xs">{a.decisionNote}</Td></tr>
+              <tr key={a.id}><Td>{dateTime(a.decidedAt, hotel.timezone)}</Td><Td>{a.action.replace(/_/g, " ")}</Td><Td><Badge tone={a.status === "APPROVED" ? "green" : "red"}>{a.status}</Badge></Td><Td>{users.get(a.requestedById)}</Td><Td>{users.get(a.decidedById ?? "")}</Td><Td className="whitespace-normal text-xs">{a.decisionNote}</Td></tr>
             ))}
           </tbody>
         </Table>

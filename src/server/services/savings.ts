@@ -161,6 +161,7 @@ export const actionInput = z.object({
 export const actionUpdate = z.object({ status: z.enum(ACTION_STATUSES).optional(), actualSaving: dec.nullable().optional(), rootCause: z.string().trim().max(500).nullable().optional(), action: z.string().trim().min(3).max(500).optional(), dueDate: z.coerce.date().optional() });
 
 export async function createAction(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "savings:manage", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const v = actionInput.parse(raw);
   authorize(actor, "savings:manage", { hotelId, ...(v.departmentId ? { departmentId: v.departmentId } : {}) });
   return inTx(db, async (tx) => {
@@ -172,8 +173,8 @@ export async function createAction(db: Db, actor: Actor, hotelId: string, raw: u
 }
 
 export async function updateAction(db: Db, actor: Actor, hotelId: string, id: string, raw: unknown) {
-  const v = actionUpdate.parse(raw);
   authorize(actor, "savings:manage", { hotelId });
+  const v = actionUpdate.parse(raw);
   return inTx(db, async (tx) => {
     const a = await tx.savingAction.findFirst({ where: { id, hotelId } });
     if (!a) throw new DomainError("NOT_FOUND", "Action not found");

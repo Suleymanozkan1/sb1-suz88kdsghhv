@@ -62,6 +62,7 @@ async function postWasteRecord(tx: Tx, actor: Actor, recordId: string, approverI
 }
 
 export async function recordWaste(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "waste:record", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = wasteInput.parse(raw);
   authorize(actor, "waste:record", { hotelId, departmentId: input.departmentId });
   return inTx(db, async (tx) => {

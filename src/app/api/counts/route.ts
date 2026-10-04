@@ -12,4 +12,4 @@ export const GET = api(async ({ actor, hotelId }) => {
 export const POST = api(async ({ actor, hotelId, body }) => {
   const b = z.object({ warehouseId: z.string(), countDate: z.coerce.date(), productIds: z.array(z.string()).optional(), note: z.string().max(500).optional() }).parse(await body());
   return startCount(prisma, actor, hotelId, b);
-});
+}, { perm: "inventory:count" });

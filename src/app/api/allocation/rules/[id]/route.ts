@@ -6,4 +6,4 @@ import { setRuleActive } from "@/server/services/allocation";
 export const PATCH = api(async ({ actor, hotelId, params, body }) => {
   const b = z.object({ active: z.boolean() }).parse(await body());
   return setRuleActive(prisma, actor, hotelId, params.id!, b.active);
-});
+}, { perm: "allocation:manage" });

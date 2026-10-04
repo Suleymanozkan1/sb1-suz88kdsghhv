@@ -20,7 +20,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
   const items = m.items.map((i) => ({ key: i.key, name: i.name, unit: i.unit, input: i.input.toString(), isDish: i.isDish }));
   return (
     <>
-      <PageHeader title={`${s.type} buffet · ${s.department.name} · ${date(s.serviceDate)}`} subtitle={<span className="flex flex-wrap items-center gap-2"><Badge tone={open ? "amber" : "green"}>{s.status}</Badge>Issued from {s.warehouse.name}{s.boardBasis ? ` · ${s.boardBasis}` : ""}{s.occupiedRooms ? ` · ${s.occupiedRooms} occupied rooms` : ""}{s.closedAt ? ` · closed ${dateTime(s.closedAt)}` : ""}</span>} />
+      <PageHeader title={`${s.type} buffet · ${s.department.name} · ${date(s.serviceDate)}`} subtitle={<span className="flex flex-wrap items-center gap-2"><Badge tone={open ? "amber" : "green"}>{s.status}</Badge>Issued from {s.warehouse.name}{s.boardBasis ? ` · ${s.boardBasis}` : ""}{s.occupiedRooms ? ` · ${s.occupiedRooms} occupied rooms` : ""}{s.closedAt ? ` · closed ${dateTime(s.closedAt, hotel.timezone)}` : ""}</span>} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Stat label="Covers" value={s.actualCovers ?? "—"} hint={`Expected ${s.expectedCovers ?? "—"}${m.coverVariance !== null && !open ? ` (${m.coverVariance > 0 ? "+" : ""}${m.coverVariance})` : ""}`} />
         <Stat label="Input cost" value={money(m.inputCost, cur, 0)} hint="Production + refills" />
@@ -68,7 +68,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
         </Card>
         <Card title="Line log" padded={false}>
           <Table><thead><tr><Th>Time</Th><Th>Kind</Th><Th>Item</Th><Th align="right">Qty</Th><Th align="right">Cost</Th></tr></thead>
-            <tbody className="divide-y divide-ink-100">{s.lines.map((l) => <tr key={l.id}><Td>{dateTime(l.recordedAt)}</Td><Td><Badge tone={l.kind === "LEFTOVER" ? "violet" : l.kind === "REFILL" ? "blue" : "gray"}>{l.kind}{l.refillNo ? ` #${l.refillNo}` : ""}</Badge>{l.leftoverClass && <span className="ml-1 text-xs">{l.leftoverClass}</span>}</Td><Td>{names[(l.productId ?? l.recipeId)!]}</Td><Td align="right">{qty(l.quantity.toString(), l.unit)}</Td><Td align="right">{money(l.totalCost?.toString(), cur)}</Td></tr>)}</tbody>
+            <tbody className="divide-y divide-ink-100">{s.lines.map((l) => <tr key={l.id}><Td>{dateTime(l.recordedAt, hotel.timezone)}</Td><Td><Badge tone={l.kind === "LEFTOVER" ? "violet" : l.kind === "REFILL" ? "blue" : "gray"}>{l.kind}{l.refillNo ? ` #${l.refillNo}` : ""}</Badge>{l.leftoverClass && <span className="ml-1 text-xs">{l.leftoverClass}</span>}</Td><Td>{names[(l.productId ?? l.recipeId)!]}</Td><Td align="right">{qty(l.quantity.toString(), l.unit)}</Td><Td align="right">{money(l.totalCost?.toString(), cur)}</Td></tr>)}</tbody>
           </Table>
         </Card>
       </div>
