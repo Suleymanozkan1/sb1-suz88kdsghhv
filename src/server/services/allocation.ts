@@ -38,8 +38,8 @@ export const ruleInput = z
 type Target = { departmentId: string; weight?: string | number | null };
 
 export async function createRule(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  const v = ruleInput.parse(raw);
   authorize(actor, "allocation:manage", { hotelId });
+  const v = ruleInput.parse(raw);
   return inTx(db, async (tx) => {
     const ids = [...v.targets.map((t) => t.departmentId), ...(v.sourceDepartmentId ? [v.sourceDepartmentId] : [])];
     const found = await tx.department.count({ where: { hotelId, id: { in: ids } } });

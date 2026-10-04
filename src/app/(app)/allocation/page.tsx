@@ -62,7 +62,7 @@ export default async function AllocationPage({ searchParams }: { searchParams: P
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 p-4">
               <div className="text-sm">
                 Period <b>{pv.data.period.code}</b> ({pv.data.period.status}) · to allocate <b>{money(pv.data.preview.total, cur)}</b>
-                {pv.data.postedRun && <span className="ml-2"><Badge tone="violet">posted {dateTime(pv.data.postedRun.createdAt)}</Badge></span>}
+                {pv.data.postedRun && <span className="ml-2"><Badge tone="violet">posted {dateTime(pv.data.postedRun.createdAt, hotel.timezone)}</Badge></span>}
               </div>
               {manage && <PostAllocation periodId={pv.data.period.id} disabled={!!pv.data.postedRun || pv.data.preview.lines.length === 0} />}
             </div>
@@ -90,7 +90,7 @@ export default async function AllocationPage({ searchParams }: { searchParams: P
             <tbody className="divide-y divide-ink-100">
               {runs.map((r) => (
                 <tr key={r.id} className={r.status === "REVERSED" ? "text-ink-400" : ""}>
-                  <Td className="font-medium">{r.periodCode}</Td><Td>{dateTime(r.createdAt)}</Td><Td align="right">{money(r.totalAllocated, cur)}</Td>
+                  <Td className="font-medium">{r.periodCode}</Td><Td>{dateTime(r.createdAt, hotel.timezone)}</Td><Td align="right">{money(r.totalAllocated, cur)}</Td>
                   <Td>{r.status === "POSTED" ? <Badge tone="green">POSTED</Badge> : <Badge tone="red">REVERSED {r.reverseReason ? `· ${r.reverseReason}` : ""}</Badge>}</Td>
                   {manage && <Td>{r.status === "POSTED" && <ReverseButton url={`/api/allocation/runs/${r.id}/reverse`} />}</Td>}
                 </tr>

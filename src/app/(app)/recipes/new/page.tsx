@@ -1,5 +1,5 @@
-import { pageContext } from "@/server/page";
-import { authorize, departmentScope } from "@/server/auth/actor";
+import { pageContext, requirePageAccess } from "@/server/page";
+import { departmentScope } from "@/server/auth/actor";
 import { RECIPE_TYPES } from "@/server/services/recipes";
 import { prisma } from "@/server/db";
 import { PageHeader } from "@/components/ui";
@@ -9,7 +9,7 @@ export const metadata = { title: "New Recipe" };
 
 export default async function NewRecipePage() {
   const { actor, hotelId } = await pageContext();
-  authorize(actor, "recipe:manage", { hotelId });
+  requirePageAccess(actor, "recipe:manage", hotelId);
   const [departments, subs] = await Promise.all([
     prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }),
     prisma.recipe.findMany({ where: { hotelId, versions: { some: { status: "APPROVED" } } }, select: { id: true, name: true, versions: { where: { status: "APPROVED" }, select: { yieldUnit: true } } }, orderBy: { name: "asc" } }),

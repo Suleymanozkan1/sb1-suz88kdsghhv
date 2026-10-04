@@ -8,13 +8,14 @@ import { ProductPicker, unitsFor, type PickedProduct } from "@/components/produc
 import { call } from "@/lib/client";
 
 interface Line { key: string; product: PickedProduct | null; quantity: string; unit: string; unitPrice: string; discount: string; taxRatePct: string }
-const blank = (): Line => ({ key: crypto.randomUUID(), product: null, quantity: "", unit: "", unitPrice: "", discount: "", taxRatePct: "" });
+// the first line is server-rendered: its key (used in element ids) must be the same on server and client
+const blank = (key: string = crypto.randomUUID()): Line => ({ key, product: null, quantity: "", unit: "", unitPrice: "", discount: "", taxRatePct: "" });
 
 interface Impact { product: { name: string }; recipes: { name: string; oldPortionCost: string | null; newPortionCost: string | null; newMarginPct: string | null; belowTarget: boolean }[] }
 
 export function ReceiptForm({ suppliers, warehouses }: { suppliers: { id: string; name: string }[]; warehouses: { id: string; name: string }[] }) {
   const router = useRouter();
-  const [lines, setLines] = useState<Line[]>([blank()]);
+  const [lines, setLines] = useState<Line[]>([blank("line-0")]);
   const [msg, setMsg] = useState<{ tone: "red" | "green" | "amber"; text: string } | null>(null);
   const [impacts, setImpacts] = useState<Impact[]>([]);
   const [busy, setBusy] = useState(false);

@@ -1,5 +1,4 @@
-import { pageContext } from "@/server/page";
-import { authorize } from "@/server/auth/actor";
+import { pageContext, requirePageAccess } from "@/server/page";
 import { prisma } from "@/server/db";
 import { warehouseScope } from "@/server/auth/scope";
 import { Badge, Card, Empty, PageHeader } from "@/components/ui";
@@ -10,7 +9,7 @@ export const metadata = { title: "Stock Counts" };
 
 export default async function CountsPage() {
   const { actor, hotelId } = await pageContext();
-  authorize(actor, "inventory:count", { hotelId });
+  requirePageAccess(actor, "inventory:count", hotelId);
   const [counts, warehouses] = await Promise.all([
     prisma.stockCount.findMany({ where: { hotelId, warehouse: warehouseScope(actor) }, include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } }, orderBy: { countDate: "desc" }, take: 20 }),
     prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }),

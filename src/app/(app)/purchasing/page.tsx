@@ -1,5 +1,5 @@
-import { pageContext } from "@/server/page";
-import { authorize, can } from "@/server/auth/actor";
+import { pageContext, requirePageAccess } from "@/server/page";
+import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { money, qty, date } from "@/lib/format";
@@ -9,7 +9,7 @@ export const metadata = { title: "Purchasing" };
 
 export default async function PurchasingPage() {
   const { actor, hotelId, hotel } = await pageContext();
-  authorize(actor, "purchase:view", { hotelId });
+  requirePageAccess(actor, "purchase:view", hotelId);
   const [receipts, suppliers, warehouses, prices] = await Promise.all([
     prisma.goodsReceipt.findMany({ where: { hotelId }, include: { supplier: true, warehouse: true, items: { include: { product: true } } }, orderBy: { receiptDate: "desc" }, take: 30 }),
     prisma.supplier.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),

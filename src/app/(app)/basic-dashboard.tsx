@@ -7,7 +7,7 @@ import { money, pct, qty, dateTime } from "@/lib/format";
 type D = Awaited<ReturnType<typeof basicDashboard>>;
 
 /** Home page for roles without cost-variance rights: only the blocks their permissions allow. */
-export function BasicDashboard({ hotelName, currency, range, d }: { hotelName: string; currency: string; range: { fromStr: string; toStr: string }; d: D }) {
+export function BasicDashboard({ hotelName, currency, timezone, range, d }: { hotelName: string; currency: string; timezone: string; range: { fromStr: string; toStr: string }; d: D }) {
   return (
     <>
       <PageHeader title={`Overview - ${hotelName}`} subtitle="Your role's view: stock, purchasing and alerts you are allowed to see." actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
@@ -31,7 +31,7 @@ export function BasicDashboard({ hotelName, currency, range, d }: { hotelName: s
         )}
         {d.alerts.length > 0 && (
           <Card title="Open alerts">
-            <ul className="divide-y divide-ink-100 text-sm">{d.alerts.map((a) => <li key={a.id} className="py-1.5"><Badge tone={severityTone[a.severity]}>{a.severity}</Badge> {a.message} <span className="text-xs text-ink-500">{dateTime(a.createdAt)}</span></li>)}</ul>
+            <ul className="divide-y divide-ink-100 text-sm">{d.alerts.map((a) => <li key={a.id} className="py-1.5"><Badge tone={severityTone[a.severity]}>{a.severity}</Badge> {a.message} <span className="text-xs text-ink-500">{dateTime(a.createdAt, timezone)}</span></li>)}</ul>
           </Card>
         )}
       </div>

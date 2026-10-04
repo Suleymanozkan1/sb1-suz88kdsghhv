@@ -184,9 +184,32 @@ async function migrate(c: Config) {
 
 // ───────────────────────── first company ─────────────────────────
 
-async function ask(rl: readline.Interface, q: string, def?: string, check?: (v: string) => string | null): Promise<string> {
+/**
+ * Line reader that also works with piped answers: readline drops lines that arrive before the question
+ * is asked, and a closed stdin used to leave the question pending, so setup ended with exit code 0 and no company.
+ */
+function lineReader(rl: readline.Interface) {
+  const lines: string[] = [];
+  const waiting: Array<(l: string | null) => void> = [];
+  let closed = false;
+  rl.on("line", (l) => (waiting.length ? waiting.shift()!(l) : lines.push(l)));
+  rl.on("close", () => {
+    closed = true;
+    while (waiting.length) waiting.shift()!(null);
+  });
+  return (prompt: string) =>
+    new Promise<string>((resolve, reject) => {
+      process.stdout.write(prompt);
+      const done = (l: string | null) => (l === null ? reject(new Error("input ended before setup was complete - run setup again")) : resolve(l));
+      if (lines.length) done(lines.shift()!);
+      else if (closed) done(null);
+      else waiting.push(done);
+    });
+}
+
+async function ask(read: (prompt: string) => Promise<string>, q: string, def?: string, check?: (v: string) => string | null): Promise<string> {
   for (;;) {
-    const a = (await rl.question(`${q}${def ? ` [${def}]` : ""}: `)).trim() || def || "";
+    const a = (await read(`${q}${def ? ` [${def}]` : ""}: `)).trim() || def || "";
     const err = check ? check(a) : a ? null : "required";
     if (!err) return a;
     console.log(`  ✖ ${err}`);
@@ -206,17 +229,18 @@ async function bootstrap(c: Config) {
     if (args.has("admin-email")) {
       input = { organizationName: args.get("company") ?? "My Hotel Group", hotelCode: (args.get("hotel-code") ?? "HTL1").toUpperCase(), hotelName: args.get("hotel") ?? "My Hotel", totalRooms: args.get("rooms") ?? "0", baseCurrency: args.get("currency") ?? "TRY", adminEmail: args.get("admin-email")!, adminName: args.get("admin-name") ?? "Administrator", adminPassword: args.get("admin-password") ?? "" };
     } else {
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const rl = readline.createInterface({ input: process.stdin, terminal: false });
+      const read = lineReader(rl);
       console.log("\nFirst company and administrator (you can add hotels, users and departments later in Administration):");
       input = {
-        organizationName: await ask(rl, "Company name", "My Hotel Group"),
-        hotelName: await ask(rl, "Hotel name", "My Hotel"),
-        hotelCode: (await ask(rl, "Hotel code (letters/digits)", "HTL1", (v) => (/^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$/.test(v) ? null : "letters, digits, - or _"))).toUpperCase(),
-        totalRooms: await ask(rl, "Number of rooms", "100", (v) => (/^\d+$/.test(v) ? null : "a number")),
-        baseCurrency: (await ask(rl, "Currency", "TRY", (v) => (/^[A-Za-z]{3}$/.test(v) ? null : "3 letters, e.g. TRY"))).toUpperCase(),
-        adminName: await ask(rl, "Administrator name", "Administrator"),
-        adminEmail: await ask(rl, "Administrator e-mail", undefined, (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : "a valid e-mail")),
-        adminPassword: await ask(rl, "Administrator password (min 10 characters)", undefined, (v) => (v.length >= 10 ? null : "at least 10 characters")),
+        organizationName: await ask(read, "Company name", "My Hotel Group"),
+        hotelName: await ask(read, "Hotel name", "My Hotel"),
+        hotelCode: (await ask(read, "Hotel code (letters/digits)", "HTL1", (v) => (/^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$/.test(v) ? null : "letters, digits, - or _"))).toUpperCase(),
+        totalRooms: await ask(read, "Number of rooms", "100", (v) => (/^\d+$/.test(v) ? null : "a number")),
+        baseCurrency: (await ask(read, "Currency", "TRY", (v) => (/^[A-Za-z]{3}$/.test(v) ? null : "3 letters, e.g. TRY"))).toUpperCase(),
+        adminName: await ask(read, "Administrator name", "Administrator"),
+        adminEmail: await ask(read, "Administrator e-mail", undefined, (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : "a valid e-mail")),
+        adminPassword: await ask(read, "Administrator password (min 10 characters)", undefined, (v) => (v.length >= 10 ? null : "at least 10 characters")),
       };
       rl.close();
     }

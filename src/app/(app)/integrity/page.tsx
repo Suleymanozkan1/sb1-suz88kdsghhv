@@ -11,7 +11,7 @@ export const metadata = { title: "Calculation Integrity" };
 const TONE = { COMPLETED: "green", RUNNING: "blue", PARTIAL: "amber", PENDING: "gray", FAILED: "red", PENDING_REPROCESS: "amber" } as const;
 
 export default async function IntegrityPage() {
-  const { actor, hotelId } = await pageContext();
+  const { actor, hotelId, hotel } = await pageContext();
   const runs = await guarded(() => listRuns(prisma, actor, hotelId));
   if (!runs.ok) return <Alert>{runs.error}</Alert>;
   return (
@@ -26,7 +26,7 @@ export default async function IntegrityPage() {
               {runs.data.map((r) => {
                 const d = (r.details ?? {}) as Record<string, unknown>;
                 const detail = r.error ?? (d.status ? `result ${String(d.status)}` : d.corrected !== undefined ? `${String(d.corrected)} corrected — ${String(d.reason ?? "")}` : d.mapped !== undefined ? `${String(d.mapped)} mapped, ${String(d.stillUnmapped)} unmapped, ${String(d.skippedClosed)} closed-period lines kept` : "");
-                return <tr key={r.id}><Td>{dateTime(r.startedAt)}</Td><Td className="font-medium">{r.kind}</Td><Td><Badge tone={TONE[r.status]}>{r.status}</Badge></Td><Td>{r.finishedAt ? dateTime(r.finishedAt) : "—"}</Td><Td className="text-xs text-ink-500">{detail}</Td></tr>;
+                return <tr key={r.id}><Td>{dateTime(r.startedAt, hotel.timezone)}</Td><Td className="font-medium">{r.kind}</Td><Td><Badge tone={TONE[r.status]}>{r.status}</Badge></Td><Td>{r.finishedAt ? dateTime(r.finishedAt, hotel.timezone) : "—"}</Td><Td className="text-xs text-ink-500">{detail}</Td></tr>;
               })}
             </tbody>
           </Table>

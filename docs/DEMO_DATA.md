@@ -112,6 +112,51 @@ Each check recomputes its figure through an independent path:
 - **Export leaks:** no export contains another hotel's IDs or names.
 - **Excel:** opens with all sheets and tables, actual cost equals the export, and no other hotel appears anywhere in the sheet XML.
 
+## UI verification on the demo dataset
+
+Two browser checks run against a running server on a demo database.
+
+**`npm run demo:crawl -- --base=http://localhost:3000`** opens every page as every demo role, in every hotel that role can open: 11 roles × 5 companies plus the platform operator. A page fails the crawl when it has any of:
+- an HTTP 5xx;
+- the Next.js error page;
+- an uncaught browser error or a console error;
+- an `/api` call that returns 5xx;
+- another company's hotel or company name in the HTML.
+
+**`npm run test:demo-ui`** runs `playwright.demo.config.ts` against a copy of the demo database: `DEMO_E2E_DATABASE_URL`, by default `hotelcost_demo_qa`. It drives the write flows through the UI as the demo users:
+- purchase receipt;
+- delete request → approval → reversal;
+- waste;
+- stock count;
+- recipe with approval;
+- POS import;
+- buffet session;
+- minibar;
+- expense post and reverse;
+- reports, Excel (sync and background) and the PDF pack;
+- integrity check and data-quality detection on the QA tenant;
+- company administration;
+- platform tenant creation.
+
+It also sends a write to every mutating API route (found from the file system) as the read-only viewer, and requires 403 from each one before the payload is read.
+
+Results on the dev dataset (5 companies, 10 hotels):
+
+| Check | Result |
+|---|---|
+| Page crawl | 2,627 page visits by 56 users in 9.5 min. 0 server errors, 0 cross-company leaks. 810 out-of-role pages show the "No permission" page. |
+| UI write flows | 15/15 pass |
+| Viewer write sweep | 71/71 mutating endpoints answer 403 |
+
+**What the crawl found and what was fixed:**
+- Opening a page outside one's role by URL returned HTTP 500. Such pages now redirect to `/forbidden`.
+- Date and time used the server's timezone (UTC on a cloud host). They now use the hotel's `timezone`.
+- The receipt and recipe forms used random element ids on the server, which broke hydration. Their ids are now stable.
+- 24 write endpoints validated the payload before checking the permission, so a viewer got 422 instead of 403. They now check the permission first.
+- A read-only viewer could mark control tasks done. Now only the task's owner role or a period manager can.
+
+**Known open item:** about 1 % of page loads under 4 parallel browsers log React hydration error #418. The server HTML and the hydrated DOM were compared for those pages and carry the same content. React re-renders the page on the client and the user sees no difference. It does not reproduce in sequential runs or in development mode.
+
 ## Volumes
 
 Measured from the generated databases. Staging was verified with `demo:verify`: 131 checks PASS, including every spec minimum.

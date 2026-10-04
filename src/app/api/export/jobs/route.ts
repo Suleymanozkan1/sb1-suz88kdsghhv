@@ -27,6 +27,6 @@ export const POST = api(async ({ actor, hotelId, body: read, req }) => {
   const job = await queueExportJob(prisma, actor, hotelId, parseExportParams(q), base);
   after(() => runExportJob(prisma, job.id));
   return job;
-});
+}, { perm: "report:export" });
 
 export const GET = api(({ actor, hotelId }) => listExportJobs(prisma, actor, hotelId));

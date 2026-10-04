@@ -77,6 +77,7 @@ async function loadSession(db: Db, actor: Actor, hotelId: string, id: string, pe
 }
 
 export async function createSession(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "buffet:manage", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = sessionInput.parse(raw);
   authorize(actor, "buffet:manage", { hotelId, departmentId: input.departmentId });
   return inTx(db, async (tx) => {

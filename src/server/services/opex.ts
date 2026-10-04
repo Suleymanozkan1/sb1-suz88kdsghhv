@@ -109,6 +109,7 @@ async function postExpense(tx: Tx, actor: Actor, hotelId: string, input: z.infer
 }
 
 export async function createExpense(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "opex:manage", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const v = expenseInput.parse(raw);
   authorize(actor, "opex:manage", { hotelId, departmentId: v.departmentId ?? null });
   return inTx(db, async (tx) => {
@@ -227,6 +228,7 @@ export async function commitExpenseImport(db: Db, actor: Actor, hotelId: string,
 export const assetInput = z.object({ code: z.string().trim().min(1).max(32), name: z.string().trim().min(2).max(120), kind: z.enum(ASSET_KINDS), departmentId: z.string().min(1).nullable().optional(), location: z.string().trim().max(120).nullable().optional(), installedAt: z.coerce.date().nullable().optional() });
 
 export async function createAsset(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "opex:manage", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const v = assetInput.parse(raw);
   authorize(actor, "opex:manage", { hotelId, departmentId: v.departmentId ?? null });
   return inTx(db, async (tx) => {
@@ -242,6 +244,7 @@ export async function createAsset(db: Db, actor: Actor, hotelId: string, raw: un
 export const meterInput = z.object({ code: z.string().trim().min(1).max(32), name: z.string().trim().min(2).max(120), utility: z.enum(UTILITIES), unit: z.string().trim().min(1).max(8), departmentId: z.string().min(1).nullable().optional(), area: z.string().trim().max(60).nullable().optional() });
 
 export async function createMeter(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "opex:manage", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const v = meterInput.parse(raw);
   authorize(actor, "opex:manage", { hotelId, departmentId: v.departmentId ?? null });
   return inTx(db, async (tx) => {
@@ -257,8 +260,8 @@ export const readingInput = z.object({ meterId: z.string().min(1), readingDate: 
 
 /** Cumulative readings must not decrease (a replaced meter starts a new meter). */
 export async function recordReading(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  const v = readingInput.parse(raw);
   authorize(actor, "opex:manage", { hotelId });
+  const v = readingInput.parse(raw);
   return inTx(db, async (tx) => {
     const m = await tx.meter.findFirst({ where: { id: v.meterId, hotelId } });
     if (!m) throw new DomainError("NOT_FOUND", "Meter not found");
@@ -282,8 +285,8 @@ export async function recordReading(db: Db, actor: Actor, hotelId: string, raw: 
 export const laundryInput = z.object({ logDate: z.coerce.date(), source: z.enum(LAUNDRY_SOURCES), kg: dec.refine((v) => Number(v) >= 0, "kg cannot be negative"), pieces: z.coerce.number().int().min(0) });
 
 export async function recordLaundry(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  const v = laundryInput.parse(raw);
   authorize(actor, "opex:manage", { hotelId });
+  const v = laundryInput.parse(raw);
   return inTx(db, async (tx) => {
     const day = new Date(Date.UTC(v.logDate.getUTCFullYear(), v.logDate.getUTCMonth(), v.logDate.getUTCDate()));
     const existing = await tx.laundryLog.findUnique({ where: { hotelId_logDate_source: { hotelId, logDate: day, source: v.source } } });
