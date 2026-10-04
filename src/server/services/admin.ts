@@ -1,0 +1,347 @@
+/**
+ * Administration: users & access, hotel settings, and the master structure the cost engine posts to
+ * (departments + their cost centers, warehouses, product categories). Permission `admin:users`.
+ * Everything is organization- and hotel-scoped and audited; nothing is hard-deleted (deactivate instead),
+ * because ledgers reference these rows.
+ */
+import { z } from "zod";
+import bcrypt from "bcryptjs";
+import { DomainError } from "@/domain/errors";
+import { toStorage } from "@/domain/money";
+import { inTx, type Db, type Tx } from "../db";
+import { type Actor, authorize } from "../auth/actor";
+import { ROLE_TEMPLATES } from "../auth/permissions";
+import { audit } from "./audit";
+
+export const CATEGORY_GROUPS = ["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING", "LINEN"] as const;
+const code = z.string().trim().min(1).max(20).regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Use capitals, digits, - or _");
+const password = z.string().min(10, "At least 10 characters").max(200);
+
+function guard(actor: Actor, hotelId: string) {
+  authorize(actor, "admin:users", { hotelId });
+}
+
+export async function adminOverview(db: Db, actor: Actor, hotelId: string) {
+  guard(actor, hotelId);
+  const [hotel, roles, users, departments, warehouses, categories, hotels] = await Promise.all([
+    db.hotel.findUniqueOrThrow({ where: { id: hotelId } }),
+    db.role.findMany({ where: { organizationId: actor.organizationId }, orderBy: { name: "asc" }, select: { id: true, key: true, name: true, allDepartments: true } }),
+    db.user.findMany({
+      where: { organizationId: actor.organizationId, hotelAccess: { some: { hotelId } } },
+      orderBy: { name: "asc" },
+      select: { id: true, email: true, name: true, active: true, createdAt: true, role: { select: { key: true, name: true, allDepartments: true } }, deptAccess: { select: { departmentId: true } }, hotelAccess: { select: { hotelId: true } } },
+    }),
+    db.department.findMany({ where: { hotelId }, orderBy: { code: "asc" } }),
+    db.warehouse.findMany({ where: { hotelId }, orderBy: { code: "asc" }, include: { department: { select: { name: true } } } }),
+    db.productCategory.findMany({ where: { hotelId }, orderBy: [{ group: "asc" }, { name: "asc" }] }),
+    db.hotel.findMany({ where: { id: { in: [...actor.hotelIds] } }, select: { id: true, code: true, name: true } }),
+  ]);
+  return { hotel, roles, users, departments, warehouses, categories, hotels };
+}
+
+// ── users ──
+
+const userCreate = z.object({
+  email: z.string().trim().toLowerCase().email().max(200),
+  name: z.string().trim().min(2).max(120),
+  password,
+  roleKey: z.string().min(1),
+  departmentIds: z.array(z.string()).max(200).default([]),
+  hotelIds: z.array(z.string()).max(50).default([]),
+});
+
+async function checkDepartments(db: Db | Tx, hotelIds: string[], ids: string[]) {
+  if (!ids.length) return;
+  const n = await db.department.count({ where: { id: { in: ids }, hotelId: { in: hotelIds } } });
+  if (n !== new Set(ids).size) throw new DomainError("VALIDATION", "Unknown department for the selected hotels");
+}
+
+export async function createUser(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = userCreate.parse(input);
+  const hotels = [...new Set([hotelId, ...p.hotelIds])];
+  if (hotels.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only grant access to hotels you administer");
+  const role = await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: p.roleKey } } });
+  if (!role) throw new DomainError("VALIDATION", "Unknown role");
+  if (!role.allDepartments && p.departmentIds.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
+  // generic message: does not reveal whether the address is used by another organization
+  if (await db.user.findUnique({ where: { email: p.email } })) throw new DomainError("DUPLICATE", "This e-mail address cannot be used");
+  const hash = await bcrypt.hash(p.password, 10);
+  return inTx(db, async (tx) => {
+    await checkDepartments(tx, hotels, p.departmentIds);
+    const u = await tx.user.create({ data: { organizationId: actor.organizationId, email: p.email, name: p.name, passwordHash: hash, roleId: role.id } });
+    await tx.userHotelAccess.createMany({ data: hotels.map((h) => ({ userId: u.id, hotelId: h })) });
+    if (!role.allDepartments && p.departmentIds.length) await tx.userDepartmentAccess.createMany({ data: p.departmentIds.map((d) => ({ userId: u.id, departmentId: d })) });
+    await audit(tx, actor, { hotelId, action: "USER_CREATE", entityType: "User", entityId: u.id, after: { email: u.email, name: u.name, role: role.key, hotels, departments: p.departmentIds } });
+    return { id: u.id, email: u.email, name: u.name };
+  });
+}
+
+const userUpdate = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(2).max(120).optional(),
+  roleKey: z.string().min(1).optional(),
+  active: z.boolean().optional(),
+  departmentIds: z.array(z.string()).max(200).optional(),
+  hotelIds: z.array(z.string()).min(1).max(50).optional(),
+  password: password.optional(),
+});
+
+export async function updateUser(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = userUpdate.parse(input);
+  const u = await db.user.findFirst({ where: { id: p.id, organizationId: actor.organizationId, hotelAccess: { some: { hotelId } } }, include: { role: true, deptAccess: true, hotelAccess: true } });
+  if (!u) throw new DomainError("NOT_FOUND", "User not found");
+  // an administrator may only manage users whose every hotel they administer: otherwise resetting a
+  // password or role would let them act inside a hotel they cannot see (privilege escalation)
+  if (u.hotelAccess.some((h) => !actor.hotelIds.includes(h.hotelId))) throw new DomainError("FORBIDDEN", "This user also works in hotels you do not administer");
+  if (u.id === actor.userId && (p.active === false || (p.roleKey && p.roleKey !== u.role.key))) throw new DomainError("CONFLICT", "You cannot deactivate yourself or change your own role");
+  const role = p.roleKey ? await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: p.roleKey } } }) : u.role;
+  if (!role) throw new DomainError("VALIDATION", "Unknown role");
+  if (u.role.key === "admin" && (role.key !== "admin" || p.active === false)) {
+    const admins = await db.user.count({ where: { organizationId: actor.organizationId, active: true, role: { key: "admin" } } });
+    if (admins <= 1) throw new DomainError("CONFLICT", "The organization must keep at least one active administrator");
+  }
+  const depts = p.departmentIds ?? u.deptAccess.map((d) => d.departmentId);
+  // hotel assignment: only hotels of this organization that the administrator administers (spec 32–33)
+  const currentHotels = u.hotelAccess.map((h) => h.hotelId);
+  if (p.hotelIds) {
+    const touched = [...new Set([...p.hotelIds, ...currentHotels])].filter((h) => p.hotelIds!.includes(h) !== currentHotels.includes(h));
+    if (touched.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only grant or remove access to hotels you administer");
+    const own = await db.hotel.count({ where: { id: { in: p.hotelIds }, organizationId: actor.organizationId } });
+    if (own !== new Set(p.hotelIds).size) throw new DomainError("FORBIDDEN", "Hotel outside your organization");
+  }
+  const hotelsAfter = p.hotelIds ?? currentHotels;
+  if (!role.allDepartments && depts.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
+  const hash = p.password ? await bcrypt.hash(p.password, 10) : undefined;
+  return inTx(db, async (tx) => {
+    if (p.hotelIds) {
+      await tx.userHotelAccess.deleteMany({ where: { userId: u.id, hotelId: { notIn: p.hotelIds } } });
+      await tx.userHotelAccess.createMany({ data: p.hotelIds.map((h) => ({ userId: u.id, hotelId: h })), skipDuplicates: true });
+      // department rights never outlive the hotel they belong to
+      if (!p.departmentIds) await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id, department: { hotelId: { notIn: p.hotelIds } } } });
+    }
+    if (p.departmentIds) {
+      await checkDepartments(tx, hotelsAfter, p.departmentIds);
+      await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id } });
+      if (p.departmentIds.length) await tx.userDepartmentAccess.createMany({ data: p.departmentIds.map((d) => ({ userId: u.id, departmentId: d })) });
+    }
+    await tx.user.update({ where: { id: u.id }, data: { name: p.name, roleId: role.id, active: p.active, passwordHash: hash } });
+    // deactivation, role change and password reset end every open session and API token immediately
+    if (p.active === false || hash || role.id !== u.roleId || p.hotelIds) await tx.session.deleteMany({ where: { userId: u.id } });
+    await audit(tx, actor, {
+      hotelId,
+      action: "USER_UPDATE",
+      entityType: "User",
+      entityId: u.id,
+      before: { name: u.name, role: u.role.key, active: u.active, departments: u.deptAccess.map((d) => d.departmentId), hotels: currentHotels },
+      after: { name: p.name ?? u.name, role: role.key, active: p.active ?? u.active, departments: depts, hotels: hotelsAfter, passwordReset: Boolean(hash) },
+    });
+    return { id: u.id };
+  });
+}
+
+// ── hotel settings ──
+
+const hotelSettings = z.object({
+  name: z.string().trim().min(2).max(120),
+  totalRooms: z.coerce.number().int().min(0).max(100_000),
+  baseCurrency: z.string().trim().length(3).toUpperCase(),
+  timezone: z.string().trim().min(3).max(64),
+  priceAlertPct: z.coerce.number().min(0).max(1000),
+  wasteApprovalValue: z.coerce.number().min(0),
+  adjustmentApprovalValue: z.coerce.number().min(0),
+  marginTargetPct: z.coerce.number().min(0).max(100),
+});
+
+export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = hotelSettings.parse(input);
+  const before = await db.hotel.findUniqueOrThrow({ where: { id: hotelId } });
+  if (p.baseCurrency !== before.baseCurrency && (await db.stockTransaction.count({ where: { hotelId }, take: 1 }))) throw new DomainError("CONFLICT", "The base currency cannot change once stock has been posted");
+  return inTx(db, async (tx) => {
+    await tx.currency.upsert({ where: { code: p.baseCurrency }, create: { code: p.baseCurrency, organizationId: actor.organizationId, name: p.baseCurrency }, update: {} });
+    const h = await tx.hotel.update({
+      where: { id: hotelId },
+      data: { name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone, priceAlertPct: toStorage(p.priceAlertPct), wasteApprovalValue: toStorage(p.wasteApprovalValue), adjustmentApprovalValue: toStorage(p.adjustmentApprovalValue), marginTargetPct: toStorage(p.marginTargetPct) },
+    });
+    await audit(tx, actor, { hotelId, action: "HOTEL_SETTINGS", entityType: "Hotel", entityId: hotelId, before, after: h });
+    return h;
+  });
+}
+
+// ── master structure ──
+
+const deptInput = z.object({ code, name: z.string().trim().min(2).max(80), isOutlet: z.boolean().default(false), parentId: z.string().nullish(), sqm: z.coerce.number().min(0).nullish(), headcount: z.coerce.number().int().min(0).nullish() });
+
+export async function createDepartment(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = deptInput.parse(input);
+  if (p.parentId && !(await db.department.findFirst({ where: { id: p.parentId, hotelId } }))) throw new DomainError("VALIDATION", "Unknown parent department");
+  if (await db.department.findUnique({ where: { hotelId_code: { hotelId, code: p.code } } })) throw new DomainError("DUPLICATE", `Department ${p.code} already exists`);
+  return inTx(db, async (tx) => {
+    const d = await tx.department.create({ data: { hotelId, code: p.code, name: p.name, isOutlet: p.isOutlet, parentId: p.parentId ?? null, sqm: p.sqm == null ? null : toStorage(p.sqm), headcount: p.headcount ?? null } });
+    // every department gets its cost center so expenses and allocations have somewhere to land
+    if (!(await tx.costCenter.findUnique({ where: { hotelId_code: { hotelId, code: `CC-${p.code}` } } }))) await tx.costCenter.create({ data: { hotelId, departmentId: d.id, code: `CC-${p.code}`, name: p.name, kind: "DEPARTMENT" } });
+    await audit(tx, actor, { hotelId, action: "DEPARTMENT_CREATE", entityType: "Department", entityId: d.id, after: d });
+    return d;
+  });
+}
+
+const deptUpdate = z.object({ id: z.string(), name: z.string().trim().min(2).max(80).optional(), isOutlet: z.boolean().optional(), active: z.boolean().optional(), sqm: z.coerce.number().min(0).nullish(), headcount: z.coerce.number().int().min(0).nullish() });
+
+export async function updateDepartment(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = deptUpdate.parse(input);
+  const before = await db.department.findFirst({ where: { id: p.id, hotelId } });
+  if (!before) throw new DomainError("NOT_FOUND", "Department not found");
+  return inTx(db, async (tx) => {
+    const d = await tx.department.update({ where: { id: p.id }, data: { name: p.name, isOutlet: p.isOutlet, active: p.active, sqm: p.sqm === undefined ? undefined : p.sqm === null ? null : toStorage(p.sqm), headcount: p.headcount === undefined ? undefined : p.headcount } });
+    await audit(tx, actor, { hotelId, action: "DEPARTMENT_UPDATE", entityType: "Department", entityId: d.id, before, after: d });
+    return d;
+  });
+}
+
+const whInput = z.object({ code, name: z.string().trim().min(2).max(80), departmentId: z.string().nullish() });
+
+export async function createWarehouse(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = whInput.parse(input);
+  if (p.departmentId && !(await db.department.findFirst({ where: { id: p.departmentId, hotelId } }))) throw new DomainError("VALIDATION", "Unknown department");
+  if (await db.warehouse.findUnique({ where: { hotelId_code: { hotelId, code: p.code } } })) throw new DomainError("DUPLICATE", `Warehouse ${p.code} already exists`);
+  return inTx(db, async (tx) => {
+    const w = await tx.warehouse.create({ data: { hotelId, code: p.code, name: p.name, departmentId: p.departmentId ?? null } });
+    await audit(tx, actor, { hotelId, action: "WAREHOUSE_CREATE", entityType: "Warehouse", entityId: w.id, after: w });
+    return w;
+  });
+}
+
+export async function setWarehouseActive(db: Db, actor: Actor, hotelId: string, id: string, active: boolean) {
+  guard(actor, hotelId);
+  const w = await db.warehouse.findFirst({ where: { id, hotelId } });
+  if (!w) throw new DomainError("NOT_FOUND", "Warehouse not found");
+  if (!active) {
+    const stock = await db.stockBalance.count({ where: { warehouseId: id, NOT: { quantity: 0 } } });
+    if (stock) throw new DomainError("CONFLICT", `${w.name} still holds stock on ${stock} product(s) - transfer or count it out first`);
+  }
+  return inTx(db, async (tx) => {
+    const r = await tx.warehouse.update({ where: { id }, data: { active } });
+    await audit(tx, actor, { hotelId, action: active ? "WAREHOUSE_ACTIVATE" : "WAREHOUSE_DEACTIVATE", entityType: "Warehouse", entityId: id });
+    return r;
+  });
+}
+
+const catInput = z.object({ code, name: z.string().trim().min(2).max(80), group: z.enum(CATEGORY_GROUPS), parentId: z.string().nullish() });
+
+export async function createCategory(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = catInput.parse(input);
+  if (p.parentId) {
+    const parent = await db.productCategory.findFirst({ where: { id: p.parentId, hotelId } });
+    if (!parent) throw new DomainError("VALIDATION", "Unknown parent category");
+    if (parent.group !== p.group) throw new DomainError("VALIDATION", `A sub-category must stay in its parent's group (${parent.group})`);
+  }
+  if (await db.productCategory.findUnique({ where: { hotelId_code: { hotelId, code: p.code } } })) throw new DomainError("DUPLICATE", `Category ${p.code} already exists`);
+  return inTx(db, async (tx) => {
+    const c = await tx.productCategory.create({ data: { hotelId, code: p.code, name: p.name, group: p.group, parentId: p.parentId ?? null } });
+    await audit(tx, actor, { hotelId, action: "CATEGORY_CREATE", entityType: "ProductCategory", entityId: c.id, after: c });
+    return c;
+  });
+}
+
+// ── clean installation ──
+
+export const DEFAULT_DEPARTMENTS: Array<[string, string, boolean, string | null]> = [
+  ["FB", "Food & Beverage", false, null],
+  ["REST", "Restaurant", true, "FB"],
+  ["BAR", "Bar", true, "FB"],
+  ["BRKF", "Breakfast", true, "FB"],
+  ["BANQ", "Banquet", true, "FB"],
+  ["KITCH", "Main Kitchen", false, "FB"],
+  ["PAST", "Pastry", true, "FB"],
+  ["ROOMS", "Rooms", false, null],
+  ["HK", "Housekeeping", false, "ROOMS"],
+  ["LAUN", "Laundry", false, "ROOMS"],
+  ["ENG", "Engineering", false, null],
+  ["ADM", "Administration", false, null],
+  ["SM", "Sales & Marketing", false, null],
+];
+export const DEFAULT_WAREHOUSES: Array<[string, string, string | null]> = [
+  ["MAIN", "Main Store", null],
+  ["KITCH", "Kitchen Store", "KITCH"],
+  ["REST", "Restaurant Store", "REST"],
+  ["BAR", "Bar Store", "BAR"],
+  ["BRKF", "Breakfast Store", "BRKF"],
+  ["PAST", "Pastry Store", "PAST"],
+  ["HK", "Housekeeping Store", "HK"],
+  ["LINEN", "Linen Room", "LAUN"],
+  ["ENG", "Engineering Store", "ENG"],
+];
+export const DEFAULT_CATEGORIES: Record<(typeof CATEGORY_GROUPS)[number], string[]> = {
+  FOOD: ["Meat", "Chicken", "Fish", "Seafood", "Vegetables", "Fruits", "Dairy", "Cheese", "Eggs", "Dry goods", "Bakery", "Frozen products", "Sauces", "Spices", "Oils", "Legumes", "Nuts", "Chocolate", "Pastry materials", "Breakfast products"],
+  BEVERAGE: ["Soft drinks", "Juices", "Coffee", "Tea", "Syrups", "Water", "Beer", "Wine", "Spirits", "Garnishes"],
+  PACKAGING: ["Boxes", "Cups", "Bags", "Napkins", "Containers"],
+  HOUSEKEEPING: ["Chemicals", "Amenities", "Cleaning supplies", "Guest supplies"],
+  ENGINEERING: ["Spare parts", "Consumables"],
+  LINEN: ["Bed linen", "Towels", "Bathrobes"],
+};
+
+/** Standard departments (with cost centers), warehouses and category tree for a new hotel (spec 146). */
+export async function applyHotelDefaults(tx: Tx, hotelId: string) {
+  const dept: Record<string, string> = {};
+  for (const [c, name, outlet, parent] of DEFAULT_DEPARTMENTS) {
+    const d = await tx.department.create({ data: { hotelId, code: c, name, isOutlet: outlet, parentId: parent ? dept[parent]! : null } });
+    dept[c] = d.id;
+    await tx.costCenter.create({ data: { hotelId, departmentId: d.id, code: `CC-${c}`, name, kind: "DEPARTMENT" } });
+  }
+  for (const [c, name, d] of DEFAULT_WAREHOUSES) await tx.warehouse.create({ data: { hotelId, code: c, name, departmentId: d ? dept[d]! : null } });
+  for (const [group, children] of Object.entries(DEFAULT_CATEGORIES)) {
+    const parent = await tx.productCategory.create({ data: { hotelId, code: group, name: group[0] + group.slice(1).toLowerCase(), group } });
+    for (const c of children) await tx.productCategory.create({ data: { hotelId, code: `${group}-${c.toUpperCase().replace(/[^A-Z]/g, "")}`, name: c, group, parentId: parent.id } });
+  }
+  return dept;
+}
+
+/** Every tenant gets the full set of role templates (customizable afterwards). */
+export async function createTenantRoles(tx: Tx, organizationId: string) {
+  const roleId: Record<string, string> = {};
+  for (const t of ROLE_TEMPLATES) roleId[t.key] = (await tx.role.create({ data: { organizationId, key: t.key, name: t.name, allDepartments: t.allDepartments, permissions: t.permissions } })).id;
+  return roleId;
+}
+
+const bootstrapInput = z.object({
+  organizationName: z.string().trim().min(2).max(120),
+  hotelCode: code,
+  hotelName: z.string().trim().min(2).max(120),
+  totalRooms: z.coerce.number().int().min(0).max(100_000).default(0),
+  baseCurrency: z.string().trim().length(3).toUpperCase().default("TRY"),
+  adminEmail: z.string().trim().toLowerCase().email(),
+  adminName: z.string().trim().min(2).max(120),
+  adminPassword: password,
+});
+
+/**
+ * First start of a clean single-company installation: organization, hotel, standard USALI-style
+ * departments with cost centers, warehouses, category tree, all role templates and the first administrator.
+ * Refuses to run when any organization exists (never mixes with existing data).
+ */
+export async function bootstrapInstallation(db: Db, input: unknown) {
+  const p = bootstrapInput.parse(input);
+  if (await db.organization.count()) throw new DomainError("CONFLICT", "This database is already set up");
+  const hash = await bcrypt.hash(p.adminPassword, 10);
+  return inTx(
+    db,
+    async (tx) => {
+      const org = await tx.organization.create({ data: { name: p.organizationName } });
+      for (const c of new Set([p.baseCurrency, "TRY", "EUR", "USD"])) await tx.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
+      const hotel = await tx.hotel.create({ data: { organizationId: org.id, code: p.hotelCode, name: p.hotelName, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency } });
+      await applyHotelDefaults(tx, hotel.id);
+      const roleId = await createTenantRoles(tx, org.id);
+      const admin = await tx.user.create({ data: { organizationId: org.id, email: p.adminEmail, name: p.adminName, passwordHash: hash, roleId: roleId.admin! } });
+      await tx.userHotelAccess.create({ data: { userId: admin.id, hotelId: hotel.id } });
+      await tx.auditLog.create({ data: { hotelId: hotel.id, userId: admin.id, action: "INSTALLATION_BOOTSTRAP", entityType: "Organization", entityId: org.id, source: "SETUP" } });
+      return { organizationId: org.id, hotelId: hotel.id, adminId: admin.id };
+    },
+    { timeout: 60_000 },
+  );
+}
