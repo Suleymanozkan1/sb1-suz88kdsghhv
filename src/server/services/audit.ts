@@ -21,6 +21,8 @@ export async function audit(db: Db, actor: Actor | null, e: AuditEntry): Promise
   await db.auditLog.create({
     data: {
       hotelId: e.hotelId ?? null,
+      // hotel rows: the DB trigger derives (and enforces) the organization from the hotel
+      organizationId: e.hotelId ? null : (actor?.organizationId ?? null),
       userId: actor?.userId ?? null,
       action: e.action,
       entityType: e.entityType,

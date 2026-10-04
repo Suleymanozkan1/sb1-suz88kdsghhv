@@ -1,6 +1,7 @@
 import { pageContext } from "@/server/page";
 import { authorize } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
+import { warehouseScope } from "@/server/auth/scope";
 import { Badge, Card, Empty, PageHeader } from "@/components/ui";
 import { date } from "@/lib/format";
 import { CountEditor, NewCount } from "./count-editor";
@@ -11,8 +12,8 @@ export default async function CountsPage() {
   const { actor, hotelId } = await pageContext();
   authorize(actor, "inventory:count", { hotelId });
   const [counts, warehouses] = await Promise.all([
-    prisma.stockCount.findMany({ where: { hotelId }, include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } }, orderBy: { countDate: "desc" }, take: 20 }),
-    prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
+    prisma.stockCount.findMany({ where: { hotelId, warehouse: warehouseScope(actor) }, include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } }, orderBy: { countDate: "desc" }, take: 20 }),
+    prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }),
   ]);
   return (
     <>

@@ -9,7 +9,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const actor = await currentActor();
   if (!actor) redirect("/login");
   const hotelId = await currentHotelId();
-  if (!hotelId) redirect("/login");
+  if (!hotelId) redirect(actor.permissions.has("platform:admin") ? "/platform" : "/no-access");
   const [hotels, pending] = await Promise.all([
     prisma.hotel.findMany({ where: { id: { in: [...actor.hotelIds] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.approval.count({ where: { hotelId, status: "PENDING" } }),

@@ -11,6 +11,7 @@ import { costRecipe } from "@/domain/recipe-cost";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, can, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
+import { assertHotelRefs } from "../auth/scope";
 import { OPEX_CATEGORY_KEYS } from "./opex";
 import { departmentRevenue } from "./revenue";
 import { occupancyStats, OCCUPYING } from "./pms";
@@ -86,6 +87,7 @@ export async function setBudgetLines(db: Db, actor: Actor, hotelId: string, budg
 
 /** CSV rows: month, department (code, blank = hotel), category, amount, target_pct. */
 export async function importBudgetCsv(db: Db, actor: Actor, hotelId: string, budgetId: string, rows: Array<Record<string, string>>) {
+  authorize(actor, "budget:manage", { hotelId });
   const depts = await db.department.findMany({ where: { hotelId } });
   const lines = rows.map((r, i) => {
     const code = (r.department ?? "").trim();
@@ -208,6 +210,7 @@ export async function createTarget(db: Db, actor: Actor, hotelId: string, raw: u
   authorize(actor, "budget:manage", { hotelId });
   const v = targetInput.parse(raw);
   return inTx(db, async (tx) => {
+    await assertHotelRefs(tx, hotelId, { departmentIds: [v.departmentId] });
     // one active target per metric/department: the previous one is deactivated, not overwritten (history kept)
     const prev = await tx.costTarget.findMany({ where: { hotelId, metric: v.metric, departmentId: v.departmentId ?? null, active: true } });
     for (const p of prev) await tx.costTarget.update({ where: { id: p.id }, data: { active: false } });

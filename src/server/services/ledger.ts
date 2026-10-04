@@ -80,7 +80,7 @@ async function lockBalance(tx: Tx, hotelId: string, warehouseId: string, product
 async function fallbackCost(tx: Tx, hotelId: string, productId: string): Promise<Decimal | null> {
   const last = await tx.supplierPrice.findFirst({ where: { hotelId, productId }, orderBy: { priceDate: "desc" } });
   if (last) return D(last.unitPrice.toString());
-  const p = await tx.product.findUnique({ where: { id: productId }, select: { standardCost: true } });
+  const p = await tx.product.findFirst({ where: { id: productId, hotelId }, select: { standardCost: true } });
   return p?.standardCost ? D(p.standardCost.toString()) : null;
 }
 
@@ -185,6 +185,7 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
     }
 
     const departmentId = input.departmentId === undefined ? warehouse.departmentId : input.departmentId;
+    if (departmentId && departmentId !== warehouse.departmentId && !(await tx.department.findFirst({ where: { id: departmentId, hotelId: input.hotelId }, select: { id: true } }))) throw new DomainError("NOT_FOUND", "Department not found");
     const stx = await tx.stockTransaction.create({
       data: {
         hotelId: input.hotelId,

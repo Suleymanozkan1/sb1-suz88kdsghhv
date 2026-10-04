@@ -209,6 +209,10 @@ export async function rollbackSalesImport(db: Db, actor: Actor, hotelId: string,
     const imp = await tx.salesImport.findFirst({ where: { id: importId, hotelId } });
     if (!imp) throw new DomainError("NOT_FOUND", "Import not found");
     if (imp.status !== "POSTED") throw new DomainError("VALIDATION", `Import is ${imp.status}`);
+    if (actor.departmentIds !== "ALL") {
+      const foreign = await tx.saleLine.count({ where: { importId, departmentId: { notIn: [...actor.departmentIds] } } });
+      if (foreign) throw new DomainError("FORBIDDEN", `This import has ${foreign} line(s) outside your departments - ask a cost controller to roll it back`);
+    }
     const dates = await tx.saleLine.findMany({ where: { importId }, select: { saleDate: true }, distinct: ["saleDate"] });
     for (const d of dates) await assertPostable(tx, actor, hotelId, d.saleDate);
     const removed = await tx.saleLine.deleteMany({ where: { importId } });

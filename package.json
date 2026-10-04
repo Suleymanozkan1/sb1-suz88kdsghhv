@@ -28,7 +28,9 @@
     "ops:restore": "bash scripts/ops/restore.sh",
     "ops:verify-restore": "tsx scripts/ops/verify-restore.ts",
     "stress:seed": "tsx scripts/stress.ts --seed",
-    "stress:measure": "tsx scripts/stress.ts --measure"
+    "stress:measure": "tsx scripts/stress.ts --measure",
+    "test:tenant-isolation": "vitest run --project integration tests/integration/tenancy.test.ts tests/integration/hardening.test.ts",
+    "test:permissions": "vitest run --project integration tests/integration/permissions.test.ts tests/integration/security.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

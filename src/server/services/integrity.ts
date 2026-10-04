@@ -34,6 +34,74 @@ async function finishRun(db: Db, id: string, status: CalcStatus, details: unknow
   return db.calculationRun.update({ where: { id }, data: { status, finishedAt: new Date(), details: JSON.parse(JSON.stringify(details)), error: error ?? null } });
 }
 
+/** Hotel-scoped foreign keys (table, column, referenced table) - the same set the DB triggers guard. */
+export const TENANT_LINKS: Array<[string, string, string]> = [
+  ["Asset", "departmentId", "Department"],
+  ["BuffetSession", "departmentId", "Department"],
+  ["BuffetSession", "warehouseId", "Warehouse"],
+  ["CostCenter", "departmentId", "Department"],
+  ["CostCenter", "parentId", "CostCenter"],
+  ["CostSnapshot", "periodId", "CostPeriod"],
+  ["CostTransaction", "costCenterId", "CostCenter"],
+  ["CostTransaction", "departmentId", "Department"],
+  ["CostTransaction", "periodId", "CostPeriod"],
+  ["CostTransaction", "stockTxId", "StockTransaction"],
+  ["Department", "parentId", "Department"],
+  ["Employee", "departmentId", "Department"],
+  ["Expense", "assetId", "Asset"],
+  ["Expense", "departmentId", "Department"],
+  ["Expense", "importId", "ImportBatch"],
+  ["Expense", "roomId", "Room"],
+  ["FifoLayer", "productId", "Product"],
+  ["FifoLayer", "warehouseId", "Warehouse"],
+  ["GoodsReceipt", "orderId", "PurchaseOrder"],
+  ["GoodsReceipt", "supplierId", "Supplier"],
+  ["GoodsReceipt", "warehouseId", "Warehouse"],
+  ["Invoice", "supplierId", "Supplier"],
+  ["Meter", "departmentId", "Department"],
+  ["MinibarMovement", "productId", "Product"],
+  ["MinibarMovement", "roomId", "Room"],
+  ["MinibarPar", "productId", "Product"],
+  ["MinibarPar", "roomId", "Room"],
+  ["OccupancyImport", "importId", "ImportBatch"],
+  ["Product", "categoryId", "ProductCategory"],
+  ["Product", "defaultSupplierId", "Supplier"],
+  ["ProductCategory", "parentId", "ProductCategory"],
+  ["PurchaseOrder", "supplierId", "Supplier"],
+  ["Recipe", "departmentId", "Department"],
+  ["Recipe", "outputProductId", "Product"],
+  ["Reservation", "importId", "ImportBatch"],
+  ["Reservation", "roomId", "Room"],
+  ["SaleLine", "departmentId", "Department"],
+  ["SaleLine", "importId", "SalesImport"],
+  ["SaleLine", "recipeId", "Recipe"],
+  ["StockBalance", "productId", "Product"],
+  ["StockBalance", "warehouseId", "Warehouse"],
+  ["StockCount", "warehouseId", "Warehouse"],
+  ["StockTransaction", "departmentId", "Department"],
+  ["StockTransaction", "periodId", "CostPeriod"],
+  ["StockTransaction", "productId", "Product"],
+  ["StockTransaction", "reversesId", "StockTransaction"],
+  ["StockTransaction", "warehouseId", "Warehouse"],
+  ["SupplierPrice", "productId", "Product"],
+  ["SupplierPrice", "supplierId", "Supplier"],
+  ["Warehouse", "departmentId", "Department"],
+  ["WasteRecord", "departmentId", "Department"],
+  ["WasteRecord", "productId", "Product"],
+  ["WasteRecord", "warehouseId", "Warehouse"],
+  ["YieldRecord", "productId", "Product"],
+];
+
+/** Rows of this hotel that reference a row of another hotel (must be zero; spec 85 tenant integrity). */
+export async function tenantMismatches(db: Db, hotelId: string) {
+  const out: Array<{ table: string; column: string; ref: string; rows: number }> = [];
+  for (const [t, c, r] of TENANT_LINKS) {
+    const [row] = await db.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) n FROM "${t}" x JOIN "${r}" y ON y.id = x."${c}" WHERE x."hotelId" = $1 AND y."hotelId" <> x."hotelId"`, hotelId);
+    if (Number(row!.n)) out.push({ table: t, column: c, ref: r, rows: Number(row!.n) });
+  }
+  return out;
+}
+
 export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
   authorize(actor, "audit:view", { hotelId });
   const run = await startRun(db, actor, hotelId, "INTEGRITY_CHECK");
@@ -93,6 +161,8 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
 
     const stale = await db.calculationRun.findMany({ where: { hotelId, status: { in: ["FAILED", "PENDING_REPROCESS", "PARTIAL"] } }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, kind: true, status: true, startedAt: true, error: true } });
     add("runs", "No failed or interrupted calculations waiting", stale, "WARNING");
+    // 12) tenant integrity: nothing of this hotel points into another hotel
+    add("tenant", "Every reference stays inside this hotel (tenant integrity)", await tenantMismatches(db, hotelId));
 
     const critical = checks.filter((c) => !c.ok && c.severity === "CRITICAL").length;
     const result = { status: critical ? "ISSUES" : checks.some((c) => !c.ok) ? "WARNINGS" : "OK", checks, checkedAt: new Date().toISOString() };

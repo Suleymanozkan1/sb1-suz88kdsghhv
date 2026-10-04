@@ -1,6 +1,7 @@
 import { pageContext } from "@/server/page";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
+import { IMPORT_KINDS, IMPORT_PERMISSION } from "@/server/services/imports";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { Importer, type ImportKindKey } from "./importer";
@@ -18,7 +19,8 @@ export default async function ImportsPage() {
     ...(can(actor, "inventory:adjust") ? (["opening-stock"] as const) : []),
   ];
   if (!allowed.length) return <Alert>You have no import permission.</Alert>;
-  const batches = await prisma.importBatch.findMany({ where: { hotelId }, orderBy: { createdAt: "desc" }, take: 50 });
+  const kinds = IMPORT_KINDS.filter((k) => can(actor, IMPORT_PERMISSION[k]));
+  const batches = await prisma.importBatch.findMany({ where: { hotelId, kind: { in: [...kinds] } }, orderBy: { createdAt: "desc" }, take: 50 });
   const users = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(batches.map((b) => b.createdById))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   return (
     <>

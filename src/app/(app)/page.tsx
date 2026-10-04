@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
-import { dashboard } from "@/server/services/insights";
+import { homeDashboard } from "@/server/services/insights";
+import { BasicDashboard } from "./basic-dashboard";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone, severityTone } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
@@ -15,9 +16,10 @@ const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", I
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const { actor, hotelId, hotel } = await pageContext();
   const range = monthRange(await searchParams);
-  const res = await guarded(() => dashboard(prisma, actor, hotelId, range));
+  const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
-  const d = res.data;
+  if (res.data.kind === "basic") return <BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} range={range} d={res.data.data} />;
+  const d = res.data.data;
   const k = d.kpis;
   const cur = hotel.baseCurrency;
   const maxComp = Math.max(...d.breakdown.components.map((c) => Math.abs(Number(c.amount))), 1);

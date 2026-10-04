@@ -9,6 +9,7 @@ import { defaultConverter, type ProductConversion } from "@/domain/uom";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
+import { assertHotelRefs } from "../auth/scope";
 import { currentUnitCosts } from "./ledger";
 
 const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
@@ -78,6 +79,8 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
   return inTx(db, async (tx) => {
     const before = await tx.product.findFirst({ where: { id: productId, hotelId }, include: { conversions: true } });
     if (!before) throw new DomainError("NOT_FOUND", "Product not found");
+    // linked IDs must belong to this hotel, exactly as on create
+    await assertHotelRefs(tx, hotelId, { categoryIds: [input.categoryId], supplierIds: [input.defaultSupplierId] });
     const conversions = input.conversions ?? before.conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: c.factor.toString() }));
     const merged = { purchaseUnit: input.purchaseUnit ?? before.purchaseUnit, stockUnit: input.stockUnit ?? before.stockUnit, recipeUnit: input.recipeUnit ?? before.recipeUnit };
     if (input.stockUnit && input.stockUnit !== before.stockUnit) {
@@ -90,7 +93,7 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
       await tx.unitConversion.deleteMany({ where: { productId } });
       await tx.unitConversion.createMany({ data: newConv.map((c) => ({ productId, fromUnit: c.fromUnit, toUnit: c.toUnit, factor: c.factor })) });
     }
-    const after = await tx.product.update({ where: { id: productId }, data: data as Prisma.ProductUncheckedUpdateInput, include: { conversions: true } });
+    const after = await tx.product.update({ where: { id: before.id }, data: data as Prisma.ProductUncheckedUpdateInput, include: { conversions: true } });
     await audit(tx, actor, { hotelId, action: "PRODUCT_UPDATE", entityType: "Product", entityId: productId, before, after });
     return after;
   });

@@ -263,6 +263,14 @@ export async function laborReport(db: Db, actor: Actor, hotelId: string, r: Rang
     const revenue = rev.byDept.get(id) ?? null;
     return { department: d?.name ?? "Hotel (unassigned)", departmentId: id || null, employees: d?.headcount ?? null, salary: m.SALARY ?? ZERO, employerCost: m.EMPLOYER_COST ?? ZERO, overtime: m.OVERTIME ?? ZERO, bonus: m.BONUS ?? ZERO, benefits: m.BENEFITS ?? ZERO, other: m.OTHER ?? ZERO, total, revenue, costPct: revenue && revenue.gt(0) ? total.div(revenue) : null, perEmployee: d?.headcount ? total.div(d.headcount) : null };
   }).sort((a, b) => b.total.comparedTo(a.total));
+  // payroll is confidential per department: department-scoped users only see their own departments (spec 14, 27)
+  if (actor.departmentIds !== "ALL") {
+    const scope = actor.departmentIds;
+    const mine = out.filter((x) => x.departmentId && scope.includes(x.departmentId));
+    const t = sum(mine.map((x) => x.total));
+    const rv = sum(mine.map((x) => x.revenue ?? ZERO));
+    return { lines: mine, total: t, totalRevenue: rv, laborCostPct: rv.gt(0) ? t.div(rv) : null, perOccupiedRoom: null, occupancy: occ, scoped: true as const };
+  }
   const total = sum(out.map((x) => x.total));
   return { lines: out, total, totalRevenue, laborCostPct: totalRevenue.gt(0) ? total.div(totalRevenue) : null, perOccupiedRoom: per(total, occ), occupancy: occ };
 }

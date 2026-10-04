@@ -8,7 +8,7 @@ import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { wasteRequiresApproval } from "@/domain/waste";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize, departmentScope } from "../auth/actor";
+import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement, currentUnitCosts } from "./ledger";
 import { toConversions } from "./products";
@@ -124,6 +124,8 @@ export { postWasteRecord };
 
 export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from?: Date; to?: Date; departmentId?: string; status?: "PENDING" | "APPROVED" | "REJECTED" } = {}) {
   authorize(actor, "waste:view", { hotelId });
+  // an explicit department filter can only narrow the user's scope, never widen it
+  if (f.departmentId) requireDepartment(actor, f.departmentId);
   return db.wasteRecord.findMany({
     where: {
       hotelId,

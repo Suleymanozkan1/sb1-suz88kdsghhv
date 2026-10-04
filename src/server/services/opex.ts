@@ -9,6 +9,7 @@ import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
+import { assertHotelRefs } from "../auth/scope";
 import { assertPostable } from "./period";
 import { finishBatch, openBatch, type BatchMeta } from "./imports";
 import { divisionIds, ROOMS_DIVISION } from "./revenue";
@@ -227,8 +228,9 @@ export const assetInput = z.object({ code: z.string().trim().min(1).max(32), nam
 
 export async function createAsset(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   const v = assetInput.parse(raw);
-  authorize(actor, "opex:manage", { hotelId });
+  authorize(actor, "opex:manage", { hotelId, departmentId: v.departmentId ?? null });
   return inTx(db, async (tx) => {
+    await assertHotelRefs(tx, hotelId, { departmentIds: [v.departmentId] });
     if (await tx.asset.findFirst({ where: { hotelId, code: v.code } })) throw new DomainError("DUPLICATE", `Asset code ${v.code} exists`);
     const a = await tx.asset.create({ data: { hotelId, code: v.code, name: v.name, kind: v.kind, departmentId: v.departmentId ?? null, location: v.location ?? null, installedAt: v.installedAt ?? null } });
     await audit(tx, actor, { hotelId, action: "ASSET_CREATE", entityType: "Asset", entityId: a.id, after: a });
@@ -241,8 +243,9 @@ export const meterInput = z.object({ code: z.string().trim().min(1).max(32), nam
 
 export async function createMeter(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   const v = meterInput.parse(raw);
-  authorize(actor, "opex:manage", { hotelId });
+  authorize(actor, "opex:manage", { hotelId, departmentId: v.departmentId ?? null });
   return inTx(db, async (tx) => {
+    await assertHotelRefs(tx, hotelId, { departmentIds: [v.departmentId] });
     if (await tx.meter.findFirst({ where: { hotelId, code: v.code } })) throw new DomainError("DUPLICATE", `Meter code ${v.code} exists`);
     const m = await tx.meter.create({ data: { hotelId, ...v, departmentId: v.departmentId ?? null, area: v.area ?? null } });
     await audit(tx, actor, { hotelId, action: "METER_CREATE", entityType: "Meter", entityId: m.id, after: m });
@@ -259,6 +262,7 @@ export async function recordReading(db: Db, actor: Actor, hotelId: string, raw: 
   return inTx(db, async (tx) => {
     const m = await tx.meter.findFirst({ where: { id: v.meterId, hotelId } });
     if (!m) throw new DomainError("NOT_FOUND", "Meter not found");
+    if (m.departmentId) requireDepartment(actor, m.departmentId);
     const day = new Date(Date.UTC(v.readingDate.getUTCFullYear(), v.readingDate.getUTCMonth(), v.readingDate.getUTCDate()));
     if (day.getTime() > Date.now() + 86400000) throw new DomainError("VALIDATION", "Reading date is in the future");
     const prev = await tx.meterReading.findFirst({ where: { meterId: m.id, readingDate: { lt: day } }, orderBy: { readingDate: "desc" } });

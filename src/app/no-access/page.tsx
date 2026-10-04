@@ -1,0 +1,20 @@
+import { redirect } from "next/navigation";
+import { currentActor } from "@/server/auth/session";
+import { Alert } from "@/components/ui";
+import { SignOutButton } from "@/components/sign-out-button";
+
+export const metadata = { title: "No hotel access" };
+export const dynamic = "force-dynamic";
+
+export default async function NoAccess() {
+  const actor = await currentActor();
+  if (!actor) redirect("/login");
+  if (actor.hotelIds.length) redirect("/");
+  return (
+    <main className="mx-auto max-w-lg space-y-4 p-6">
+      <h1 className="text-2xl font-semibold text-ink-950">No hotel assigned</h1>
+      <Alert tone="amber">Your account ({actor.email}) is active but not assigned to any active hotel. Ask your company administrator to give you access.</Alert>
+      <SignOutButton />
+    </main>
+  );
+}

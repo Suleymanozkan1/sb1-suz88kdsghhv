@@ -165,6 +165,7 @@ export async function postGoodsReceipt(db: Db, actor: Actor, hotelId: string, ra
         if (po.supplierId !== supplier.id) throw new DomainError("VALIDATION", "PO belongs to another supplier");
         if (!["APPROVED", "PARTIALLY_RECEIVED"].includes(po.status)) throw new DomainError("VALIDATION", `PO is ${po.status}`);
       }
+      if (!po && input.items.some((i) => i.poItemId)) throw new DomainError("VALIDATION", "PO lines need their purchase order (orderId)");
       const products = await tx.product.findMany({ where: { hotelId, id: { in: input.items.map((i) => i.productId) } }, include: { conversions: true } });
       const lines = input.items.map((it) => {
         const p = products.find((x) => x.id === it.productId);

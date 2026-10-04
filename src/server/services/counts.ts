@@ -10,6 +10,7 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement } from "./ledger";
+import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 
 const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
 
@@ -18,6 +19,8 @@ export async function startCount(db: Db, actor: Actor, hotelId: string, input: {
   return inTx(db, async (tx) => {
     const wh = await tx.warehouse.findFirst({ where: { id: input.warehouseId, hotelId } });
     if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
+    requireWarehouseScope(actor, wh);
+    if (input.productIds) await assertHotelRefs(tx, hotelId, { productIds: input.productIds });
     const balances = await tx.stockBalance.findMany({ where: { warehouseId: wh.id, ...(input.productIds ? { productId: { in: input.productIds } } : {}) } });
     const productIds = input.productIds ?? balances.map((b) => b.productId);
     const n = await tx.stockCount.count({ where: { hotelId } });
@@ -51,8 +54,9 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
   authorize(actor, "inventory:count", { hotelId });
   const input = countEntry.parse(raw);
   return inTx(db, async (tx) => {
-    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true } });
+    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true, warehouse: true } });
     if (!c) throw new DomainError("NOT_FOUND", "Count not found");
+    requireWarehouseScope(actor, c.warehouse);
     if (c.status !== "DRAFT") throw new DomainError("IMMUTABLE", `Count is ${c.status}`);
     for (const l of input.lines) {
       const line = c.lines.find((x) => x.productId === l.productId);
@@ -68,7 +72,7 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
         data: { countedQty: l.countedQty, varianceQty: toStorage(variance).toString(), varianceValue: toStorage(variance.times(D(line.unitCost.toString()))).toString(), reason: l.reason ?? null },
       });
     }
-    return tx.stockCount.findUniqueOrThrow({ where: { id: countId }, include: { lines: { include: { product: true } } } });
+    return tx.stockCount.findFirstOrThrow({ where: { id: countId, hotelId }, include: { lines: { include: { product: true } } } });
   });
 }
 
@@ -79,8 +83,9 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
 export async function submitCount(db: Db, actor: Actor, hotelId: string, countId: string) {
   authorize(actor, "inventory:count", { hotelId });
   return inTx(db, async (tx) => {
-    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true } });
+    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true, warehouse: true } });
     if (!c) throw new DomainError("NOT_FOUND", "Count not found");
+    requireWarehouseScope(actor, c.warehouse);
     if (c.status !== "DRAFT") throw new DomainError("VALIDATION", `Count is ${c.status}`);
     const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: hotelId } });
     const totalAbs = sum(c.lines.map((l) => D(l.varianceValue.toString()).abs()));

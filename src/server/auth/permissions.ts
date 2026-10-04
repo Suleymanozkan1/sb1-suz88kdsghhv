@@ -46,6 +46,9 @@ export const PERMISSIONS = [
   "report:view",
   "report:export",
   "admin:users",
+  "admin:hotels",
+  // platform operator only: create / suspend tenants (organizations). Never granted by tenant roles.
+  "platform:admin",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -57,7 +60,8 @@ export interface RoleTemplate {
   permissions: Permission[];
 }
 
-const ALL = [...PERMISSIONS];
+const ALL = PERMISSIONS.filter((p) => p !== "platform:admin");
+const READ_ONLY = PERMISSIONS.filter((p) => /:view$/.test(p) && p !== "audit:view");
 const OPERATIONAL: Permission[] = [
   "dashboard:view",
   "product:view",
@@ -74,8 +78,8 @@ const OPERATIONAL: Permission[] = [
 ];
 
 export const ROLE_TEMPLATES: RoleTemplate[] = [
-  { key: "admin", name: "System Administrator", allDepartments: true, permissions: ALL },
-  { key: "cost_controller", name: "Cost Controller", allDepartments: true, permissions: ALL.filter((p) => p !== "admin:users") },
+  { key: "admin", name: "Company Administrator", allDepartments: true, permissions: ALL },
+  { key: "cost_controller", name: "Cost Controller", allDepartments: true, permissions: ALL.filter((p) => p !== "admin:users" && p !== "admin:hotels") },
   {
     key: "fb_manager",
     name: "F&B Manager",
@@ -98,5 +102,9 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
   { key: "breakfast_chef", name: "Breakfast Chef", allDepartments: false, permissions: [...OPERATIONAL, "buffet:view", "buffet:manage"] },
   { key: "pastry_chef", name: "Pastry Chef", allDepartments: false, permissions: OPERATIONAL },
   { key: "rooms_division", name: "Rooms Division Manager", allDepartments: false, permissions: ["dashboard:view", "product:view", "inventory:view", "inventory:post", "inventory:count", "waste:view", "waste:record", "cost:view", "report:view", "opex:view", "opex:manage", "rooms:view", "pms:import", "minibar:view", "budget:view", "savings:manage"] },
+  { key: "viewer", name: "Viewer (read-only)", allDepartments: true, permissions: READ_ONLY },
   { key: "warehouse", name: "Warehouse User", allDepartments: true, permissions: ["product:view", "inventory:view", "inventory:post", "inventory:receive", "inventory:count", "purchase:view", "waste:record", "waste:view", "minibar:view", "minibar:manage"] },
 ];
+
+/** The platform operator's role. Lives only in the platform organization (which owns no hotels). */
+export const SUPER_ADMIN_TEMPLATE: RoleTemplate = { key: "super_admin", name: "Platform Super Administrator", allDepartments: true, permissions: ["platform:admin"] };

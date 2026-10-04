@@ -3,12 +3,23 @@
  * the requester can never decide their own request.
  */
 import { DomainError } from "@/domain/errors";
-import { inTx, type Db } from "../db";
-import { type Actor, authorize, requireHotel } from "../auth/actor";
+import { inTx, type Db, type Tx } from "../db";
+import { type Actor, authorize, requireDepartment, requireHotel } from "../auth/actor";
 import { audit } from "./audit";
 import { reverseMovement } from "./ledger";
 import { postWasteRecord } from "./waste";
 import { postCount } from "./counts";
+
+/** The department an approval acts on (null = hotel-level), so department-scoped users stay in their scope. */
+async function approvalDepartments(db: Db | Tx, hotelId: string, items: Array<{ action: string; entityId: string }>): Promise<Map<string, string | null>> {
+  const ids = (a: string) => items.filter((i) => i.action === a).map((i) => i.entityId);
+  const [stx, waste, counts] = await Promise.all([
+    db.stockTransaction.findMany({ where: { hotelId, id: { in: ids("STOCK_DELETE") } }, select: { id: true, departmentId: true } }),
+    db.wasteRecord.findMany({ where: { hotelId, id: { in: ids("WASTE") } }, select: { id: true, departmentId: true } }),
+    db.stockCount.findMany({ where: { hotelId, id: { in: ids("STOCK_ADJUSTMENT") } }, select: { id: true, warehouse: { select: { departmentId: true } } } }),
+  ]);
+  return new Map<string, string | null>([...stx.map((x) => [x.id, x.departmentId] as const), ...waste.map((x) => [x.id, x.departmentId] as const), ...counts.map((x) => [x.id, x.warehouse.departmentId] as const)]);
+}
 
 /** A posted stock entry cannot be deleted: the attempt becomes a DELETE REQUEST (spec §183–§184). */
 export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, input: { stockTxId: string; reason: string }) {
@@ -17,6 +28,7 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
   return inTx(db, async (tx) => {
     const stx = await tx.stockTransaction.findFirst({ where: { id: input.stockTxId, hotelId }, include: { reversedBy: true, product: true } });
     if (!stx) throw new DomainError("NOT_FOUND", "Stock transaction not found");
+    if (stx.departmentId) requireDepartment(actor, stx.departmentId);
     if (stx.reversedBy) throw new DomainError("CONFLICT", "Already reversed");
     if (stx.type === "REVERSAL") throw new DomainError("VALIDATION", "Reversals cannot be deleted");
     const pending = await tx.approval.findFirst({ where: { hotelId, entityType: "StockTransaction", entityId: stx.id, status: "PENDING" } });
@@ -45,6 +57,8 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
       const a = await tx.approval.findFirst({ where: { id: input.approvalId, hotelId } });
       if (!a) throw new DomainError("NOT_FOUND", "Approval not found");
       requireHotel(actor, a.hotelId);
+      const dept = (await approvalDepartments(tx, hotelId, [a])).get(a.entityId);
+      if (dept) requireDepartment(actor, dept);
       if (a.status !== "PENDING") throw new DomainError("CONFLICT", `Approval already ${a.status}`);
       if (a.requestedById === actor.userId) throw new DomainError("FORBIDDEN", "You cannot approve your own request");
       if (input.decision === "REJECT" && (!input.note || input.note.trim().length < 3)) throw new DomainError("VALIDATION", "A rejection note is required");
@@ -97,5 +111,12 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
 
 export async function listApprovals(db: Db, actor: Actor, hotelId: string, status: "PENDING" | "APPROVED" | "REJECTED" | "ALL" = "PENDING") {
   authorize(actor, "dashboard:view", { hotelId });
-  return db.approval.findMany({ where: { hotelId, ...(status === "ALL" ? {} : { status }) }, orderBy: { requestedAt: "desc" }, take: 200 });
+  const rows = await db.approval.findMany({ where: { hotelId, ...(status === "ALL" ? {} : { status }) }, orderBy: { requestedAt: "desc" }, take: 200 });
+  if (actor.departmentIds === "ALL") return rows;
+  const scope = actor.departmentIds;
+  const depts = await approvalDepartments(db, hotelId, rows);
+  return rows.filter((r) => {
+    const d = depts.get(r.entityId);
+    return d ? scope.includes(d) : false;
+  });
 }

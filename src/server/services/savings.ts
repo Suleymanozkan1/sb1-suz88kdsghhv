@@ -11,6 +11,7 @@ import { saving, savingTracking } from "@/domain/planning";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, can } from "../auth/actor";
 import { audit } from "./audit";
+import { assertHotelRefs } from "../auth/scope";
 import { theoreticalVsActual } from "./variance";
 import { inventoryStatus } from "./insights";
 import { energyReport, laborReport } from "./operations";
@@ -163,6 +164,7 @@ export async function createAction(db: Db, actor: Actor, hotelId: string, raw: u
   const v = actionInput.parse(raw);
   authorize(actor, "savings:manage", { hotelId, ...(v.departmentId ? { departmentId: v.departmentId } : {}) });
   return inTx(db, async (tx) => {
+    await assertHotelRefs(tx, hotelId, { departmentIds: [v.departmentId] });
     const a = await tx.savingAction.create({ data: { hotelId, driver: v.driver, problem: v.problem, rootCause: v.rootCause ?? null, action: v.action, departmentId: v.departmentId ?? null, ownerName: v.ownerName, baselineCost: v.baselineCost ? toStorage(D(v.baselineCost)).toString() : null, targetSaving: toStorage(D(v.targetSaving)).toString(), dueDate: v.dueDate, opportunityKey: v.opportunityKey ?? null, createdById: actor.userId } });
     await audit(tx, actor, { hotelId, action: "SAVING_ACTION_CREATE", entityType: "SavingAction", entityId: a.id, after: a });
     return a;

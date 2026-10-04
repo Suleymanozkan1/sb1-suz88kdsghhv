@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -40,6 +40,7 @@ const NAV = [
   { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
   { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },
   { href: "/integrity", label: "Calculation Integrity", icon: ShieldAlert, perm: "audit:view" },
+  { href: "/admin", label: "Administration", icon: Users, perm: "admin:users" },
 ];
 
 export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; pendingApprovals: number; children: React.ReactNode }) {

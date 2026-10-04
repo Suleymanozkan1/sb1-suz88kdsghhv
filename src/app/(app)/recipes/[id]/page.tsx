@@ -40,7 +40,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
   if (!res.ok) return res.error.includes("not found") ? notFound() : <Alert>{res.error}</Alert>;
   const { result: c, version } = res.data;
   const { marginTargetPct } = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { marginTargetPct: true } });
-  const recipe = await prisma.recipe.findUniqueOrThrow({ where: { id }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
+  const recipe = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
   const cur = hotel.baseCurrency;
   const products = c.lines.filter((l) => l.kind === "PRODUCT").map((l) => ({ id: l.refId, name: l.name, unitCost: l.unitCost?.toString() ?? null, unit: l.baseUnit }));
   return (

@@ -248,9 +248,17 @@ enum LeftoverClass {
 // ──────────────────────── Tenancy & org ────────────────────────
 
 model Organization {
-  id         String     @id @default(cuid())
+  id         String       @id @default(cuid())
   name       String
-  createdAt  DateTime   @default(now())
+  /// demo/QA tenant: may be reset by the demo tooling (never in production)
+  isDemo     Boolean      @default(false)
+  /// a deactivated tenant cannot sign in
+  active     Boolean      @default(true)
+  /// the platform operator's own organization (super administrators live here, it owns no hotels)
+  isPlatform Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  invites    UserInvite[]
+  auditLogs  AuditLog[]
   hotels     Hotel[]
   users      User[]
   roles      Role[]
@@ -271,6 +279,7 @@ model Hotel {
   wasteApprovalValue      Decimal      @default(1000) @db.Decimal(20, 6)
   adjustmentApprovalValue Decimal      @default(1000) @db.Decimal(20, 6)
   marginTargetPct         Decimal      @default(65) @db.Decimal(20, 6)
+  active                  Boolean      @default(true)
   createdAt               DateTime     @default(now())
 
   departments       Department[]
@@ -304,6 +313,7 @@ model Hotel {
   costSnapshots     CostSnapshot[]
   calcRuns          CalculationRun[]
   exportJobs        ExportJob[]
+  employees         Employee[]
   buffetSessions    BuffetSession[]
   minibarPars       MinibarPar[]
   minibarMovements  MinibarMovement[]
@@ -351,6 +361,7 @@ model Department {
   expenses       Expense[]
   assets         Asset[]
   meters         Meter[]
+  employees      Employee[]
 
   @@unique([hotelId, code])
 }
@@ -1204,20 +1215,23 @@ model Approval {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  hotelId    String?
-  hotel      Hotel?   @relation(fields: [hotelId], references: [id])
-  userId     String?
-  action     String
-  entityType String
-  entityId   String?
-  before     Json?
-  after      Json?
-  source     String?
-  reason     String?
-  createdAt  DateTime @default(now())
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  hotelId        String?
+  hotel          Hotel?        @relation(fields: [hotelId], references: [id])
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  before         Json?
+  after          Json?
+  source         String?
+  reason         String?
+  createdAt      DateTime      @default(now())
 
   @@index([hotelId, createdAt])
+  @@index([organizationId, createdAt])
   @@index([entityType, entityId])
 }
 
@@ -1815,4 +1829,43 @@ model RateLimitBucket {
 
   @@id([key, windowStart])
   @@index([windowStart])
+}
+
+/// Invitation to join an organization: single-use, expiring, only the SHA-256 of the token is stored.
+model UserInvite {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  email          String
+  name           String?
+  roleKey        String
+  hotelIds       String[]
+  departmentIds  String[]
+  tokenHash      String       @unique
+  invitedById    String
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+
+  @@index([organizationId, createdAt])
+}
+
+/// Employee master (labor cost per department; payroll expenses reference the department, spec 108/112).
+model Employee {
+  id           String     @id @default(cuid())
+  hotelId      String
+  hotel        Hotel      @relation(fields: [hotelId], references: [id])
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  code         String
+  name         String
+  position     String
+  monthlyCost  Decimal    @db.Decimal(20, 6)
+  startDate    DateTime
+  endDate      DateTime?
+  active       Boolean    @default(true)
+
+  @@unique([hotelId, code])
+  @@index([hotelId, departmentId])
 }

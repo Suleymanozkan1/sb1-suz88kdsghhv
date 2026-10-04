@@ -11,7 +11,7 @@ import { D, Decimal, ZERO, sum, toStorage } from "@/domain/money";
 import { meterConsumption } from "@/domain/rooms";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize } from "../auth/actor";
+import { type Actor, authorize, requireHotel } from "../auth/actor";
 import { audit } from "./audit";
 import { assertPostable } from "./period";
 import { OPEX_CATEGORY_KEYS, OPEX_CATEGORIES, type OpexCategory } from "./opex";
@@ -182,6 +182,7 @@ async function periodRange(db: Db, hotelId: string, periodId: string) {
 }
 
 export async function previewPeriodAllocation(db: Db, actor: Actor, hotelId: string, periodId: string) {
+  requireHotel(actor, hotelId);
   const { period, from, to } = await periodRange(db, hotelId, periodId);
   const existing = await db.allocationRun.findFirst({ where: { hotelId, periodId, status: "POSTED" } });
   return { period, preview: await previewAllocation(db, actor, hotelId, from, to), postedRun: existing };

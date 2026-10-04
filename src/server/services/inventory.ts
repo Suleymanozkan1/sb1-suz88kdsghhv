@@ -11,6 +11,7 @@ import type { Db } from "../db";
 import { type Actor, authorize, departmentScope, requirePermission } from "../auth/actor";
 import { postMovement, transferStock } from "./ledger";
 import { audit } from "./audit";
+import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 import { toConversions } from "./products";
 import { openPoQuantities } from "./purchasing";
 
@@ -37,6 +38,10 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
   if (input.type === "OPENING" && !input.unitCost) throw new DomainError("VALIDATION", "Opening balances require a unit cost");
   const product = await db.product.findFirst({ where: { id: input.productId, hotelId }, include: { conversions: true } });
   if (!product) throw new DomainError("NOT_FOUND", "Product not found");
+  await assertHotelRefs(db, hotelId, { departmentIds: [input.departmentId] });
+  const wh = await db.warehouse.findFirst({ where: { id: input.warehouseId, hotelId } });
+  if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
+  requireWarehouseScope(actor, wh);
   const conv = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions));
   const inbound = input.type === "ADJUSTMENT_IN" || input.type === "OPENING";
   const unitCostPerStock = input.unitCost ? D(input.unitCost).div(conv.factor) : null;
@@ -64,6 +69,9 @@ export async function postTransfer(db: Db, actor: Actor, hotelId: string, raw: u
   authorize(actor, "inventory:post", { hotelId });
   const product = await db.product.findFirst({ where: { id: input.productId, hotelId }, include: { conversions: true } });
   if (!product) throw new DomainError("NOT_FOUND", "Product not found");
+  const whs = await db.warehouse.findMany({ where: { id: { in: [input.fromWarehouseId, input.toWarehouseId] }, hotelId } });
+  if (whs.length !== new Set([input.fromWarehouseId, input.toWarehouseId]).size) throw new DomainError("NOT_FOUND", "Warehouse not found");
+  for (const w of whs) requireWarehouseScope(actor, w);
   const q = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions)).quantity;
   return transferStock(db, actor, { hotelId, fromWarehouseId: input.fromWarehouseId, toWarehouseId: input.toWarehouseId, productId: product.id, quantity: q, txDate: input.txDate, reason: input.reason });
 }

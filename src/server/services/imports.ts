@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize, requirePermission } from "../auth/actor";
+import { type Actor, authorize, requireHotel, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
 import type { Permission } from "../auth/permissions";
 import { reverseMovement } from "./ledger";
@@ -58,6 +58,7 @@ export async function listBatches(db: Db, actor: Actor, hotelId: string, kind?: 
  * PMS statistics rows from the batch are removed. Fully audited.
  */
 export async function rollbackBatch(db: Db, actor: Actor, hotelId: string, batchId: string, reason: string, reverseExpense: (tx: Tx, actor: Actor, hotelId: string, id: string, reason: string) => Promise<unknown>) {
+  requireHotel(actor, hotelId);
   if (!reason?.trim()) throw new DomainError("VALIDATION", "A reason is required to roll back an import");
   return inTx(db, async (tx) => {
     const b = await tx.importBatch.findFirst({ where: { id: batchId, hotelId } });

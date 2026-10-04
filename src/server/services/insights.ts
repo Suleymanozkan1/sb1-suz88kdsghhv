@@ -2,12 +2,13 @@
  * Dashboard, inventory status and data-quality center (spec §167–§178, §216–§222).
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
+import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
 import { stockLevel, daysOfStock } from "@/domain/costing";
 import { completenessScore } from "@/domain/quality";
 import { costRecipe } from "@/domain/recipe-cost";
 import type { Db } from "../db";
-import { type Actor, authorize, departmentScope } from "../auth/actor";
+import { type Actor, authorize, can, departmentScope, requirePermission } from "../auth/actor";
 import { theoreticalVsActual } from "./variance";
 import { openPoQuantities } from "./purchasing";
 import { buildResolver, versionToDef } from "./recipes";
@@ -155,18 +156,20 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
 }
 
 /** Cost intelligence dashboard (spec §167, §222, §335). */
+/** The cost KPI dashboard: actual vs theoretical needs variance rights (cost controllers, F&B, chefs). */
 export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
   authorize(actor, "dashboard:view", { hotelId });
+  requirePermission(actor, "variance:view");
   const [variance, inv, alerts, purchases, topWaste, priceMoves, quality] = await Promise.all([
     theoreticalVsActual(db, actor, hotelId, { from: q.from, to: q.to }),
     inventoryStatus(db, actor, hotelId),
     db.alert.findMany({ where: { hotelId, acknowledged: false }, orderBy: { createdAt: "desc" }, take: 10 }),
-    db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to } }, _sum: { landedTotal: true, taxTotal: true }, _count: true }),
+    db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true, taxTotal: true }, _count: true }),
     db.wasteRecord.groupBy({ by: ["productId"], where: { hotelId, status: "APPROVED", wasteDate: { gte: q.from, lt: q.to }, ...departmentScope(actor) }, _sum: { costValue: true, stockQty: true }, orderBy: { _sum: { costValue: "desc" } }, take: 5 }),
     db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: q.from, lt: q.to }, changePct: { not: null } }, orderBy: { changePct: "desc" }, take: 5, include: { product: true, supplier: true } }),
     dataQuality(db, actor, hotelId),
   ]);
-  const wasteProducts = await db.product.findMany({ where: { id: { in: topWaste.map((w) => w.productId) } } });
+  const wasteProducts = await db.product.findMany({ where: { hotelId, id: { in: topWaste.map((w) => w.productId) } } });
   const t = variance.totals;
   return {
     period: { from: q.from.toISOString(), to: q.to.toISOString() },
@@ -197,4 +200,31 @@ export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from
     quality: quality.score,
     dataQuality: variance.dataQuality,
   };
+}
+
+/**
+ * Home overview for roles with a dashboard but without cost-variance rights (purchasing, rooms division,
+ * viewer...): each block appears only with its own permission - nothing is computed from data the role
+ * may not see (spec 14, 19).
+ */
+export async function basicDashboard(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
+  authorize(actor, "dashboard:view", { hotelId });
+  const [inv, purchases, priceMoves, alerts] = await Promise.all([
+    can(actor, "inventory:view") ? inventoryStatus(db, actor, hotelId) : Promise.resolve(null),
+    can(actor, "purchase:view") ? db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true }, _count: true }) : Promise.resolve(null),
+    can(actor, "purchase:view") ? db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: q.from, lt: q.to }, changePct: { gt: 0 } }, orderBy: { changePct: "desc" }, take: 5, include: { product: true, supplier: true } }) : Promise.resolve([]),
+    can(actor, "inventory:view") || can(actor, "purchase:view") ? db.alert.findMany({ where: { hotelId, acknowledged: false }, orderBy: { createdAt: "desc" }, take: 10 }) : Promise.resolve([]),
+  ]);
+  return {
+    period: { from: q.from.toISOString(), to: q.to.toISOString() },
+    stock: inv ? { value: inv.totalValue, counts: inv.counts, critical: inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK" || r.level === "LOW").slice(0, 10) } : null,
+    purchases: purchases ? { spend: D(purchases._sum.landedTotal?.toString() ?? 0), receipts: purchases._count } : null,
+    priceIncreases: priceMoves.map((p) => ({ product: p.product.name, supplier: p.supplier.name, previous: p.previousUnitPrice?.toString() ?? null, current: p.unitPrice.toString(), changePct: p.changePct!.toString(), date: p.priceDate })),
+    alerts,
+  };
+}
+
+/** What the home page shows for this actor. */
+export async function homeDashboard(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
+  return can(actor, "variance:view") ? { kind: "full" as const, data: await dashboard(db, actor, hotelId, q) } : { kind: "basic" as const, data: await basicDashboard(db, actor, hotelId, q) };
 }
