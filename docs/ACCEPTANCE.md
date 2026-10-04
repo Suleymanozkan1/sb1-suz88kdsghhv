@@ -53,9 +53,37 @@ Report archive with content and period hashes, reproducibility check, PDF manage
 | Background export; shared rate limits | `services/export-jobs.ts`, `RateLimitBucket` | `integration/export-jobs`, `e2e/hardening` |
 | Backup and restore | `scripts/ops/*` | `npm run ops:verify-restore`: identical counts, ledger totals and export hash |
 
+## Multi-tenant SaaS + demo data + full validation (second specification)
+
+| Spec | Implementation | Evidence |
+|---|---|---|
+| 1–4, 149, 152, 156 Shared platform, tenant-scoped rows, hierarchy | `Organization → Hotel → Department → CostCenter → Warehouse`; every operational row is hotel-scoped. Scaling path in `docs/MULTI_TENANCY.md`. | Schema, `tenancy.test.ts` |
+| 5–10, 13–15 Isolation on every layer; tenant context from the session | `actors.ts`, `authorize`, `assertHotelRefs`, `warehouseScope`, DB `hc_same_hotel` triggers | `tenancy.test.ts` (tenant, hotel and department matrices; ID swapping; linked foreign IDs; DB triggers), `hardening.test.ts`, `security.test.ts` |
+| 11–12, 29–35 Super admin, company admin, tenant / hotel creation, invitations, assignment, hotel switch | `services/tenancy.ts`, `services/admin.ts`, `/platform`, `/admin`, `/invite` | `tenancy.test.ts` (lifecycle), `e2e/tenancy.spec.ts` |
+| 16–23 Report, Excel, PDF, dashboard, cache and job isolation | Hotel-scoped export service; export jobs reload the actor, owner-only download; no shared caches | `tenancy.test.ts` (export leak), `export-jobs.test.ts`, `demo:verify` (Excel XML scan) |
+| 24–25 DB constraints; per-tenant uniqueness | Tenant-consistency triggers; `@@unique([hotelId, sku])` etc. | `tenancy.test.ts` (same SKU in two tenants; trigger refusals) |
+| 26–28, 142–143 Soft delete, financial isolation, multi-tenant audit, super-admin audit | Deactivate-only master data; immutable ledgers; `AuditLog.organizationId` enforced by trigger; `PLATFORM_*` actions in the tenant trail | `tenancy.test.ts` |
+| 37–83 Demo tenants, hotels, master data, volumes, scenarios, intentional errors | `src/server/demo/*`; `DemoScenario` | `docs/DEMO_DATA.md`; `demo:verify` counts |
+| 84–90 Post-seed checks and reconciliations | `src/server/demo/verify.ts` | `test:reconciliation`; dev run: 131 checks PASS |
+| 91–94, 119 Tenant, hotel, department and export matrices | | `tenancy.test.ts`, `permissions.test.ts` (role × 14 capabilities through real services) |
+| 95 Full E2E demo flow | | `full-flow.test.ts` (fresh tenant → … → Excel); Playwright suite |
+| 98–101, 127–130 Performance, background processing, load | Export jobs, bulk Excel, shared rate limits | `scripts/demo-perf.ts` on staging; `docs/PERFORMANCE.md` |
+| 102–106 Error injection, recovery, idempotency, concurrency, transaction integrity | | `hardening.test.ts` (parallel posting, duplicate imports, interrupted runs, rebuild), `export-jobs.test.ts` (stale / failed jobs) |
+| 107–112 Audit, historical price, recipe and stock integrity, month close and reopen | | `full-flow.test.ts` (closed month refuses postings), `demo:verify` (sales use their own version), existing period tests |
+| 113–114 Data quality detects the intentional errors and the score drops | New checks: implausible yield, missing conversion, future-dated records | `demo:verify` |
+| 115 Security tests | | IDOR / tenant escape: `tenancy.test.ts`. Privilege escalation: `permissions.test.ts`, `tenancy.test.ts`. SQL injection: `security.test.ts`. XSS, CSRF, oversized and malformed body: `e2e/hardening.spec.ts`. Session abuse: `hardening.test.ts`, `tenancy.test.ts`. Rate limiting: `export-jobs.test.ts`. |
+| 116–118 Test users per company; dev-only passwords | `generate.ts` (`DEMO_PASSWORD`) | `demo-dataset.test.ts` |
+| 120–124 Tenant deletion (authorised, demo only), backup, reset, production safety | `demo/reset.ts` (FK-ordered purge), `ops:*` scripts | `demo-dataset.test.ts` |
+| 125–126, 154 Commands | `seed`, `seed:demo`, `seed:qa`, `seed:staging`, `demo:reset`, `demo:verify`, `test:tenant-isolation`, `test:permissions`, `test:reconciliation`, `test:excel` | package.json |
+| 144–148 Onboarding, default master data, customization, no hard-coded tenants | `createTenant`, `applyHotelDefaults`, admin screens; no tenant names in code (demo names only in the generator) | `tenancy.test.ts`, `e2e/tenancy.spec.ts` |
+| On-premise Windows installation | `installer/*` | `docs/WINDOWS_INSTALL.md` (setup tested end to end on Linux) |
+
 ## Known limitations (honest)
 
 - **Excel:** there is no Microsoft Excel in CI. The `.xlsm` is validated structurally (oletools) and in LibreOffice (load, VBA compile and execution of pure routines, formula checks). The first refresh in Windows Excel is the final acceptance step. Mac Excel can open the prefilled workbook but cannot refresh it.
 - **Browsers:** Playwright runs on Chromium (desktop + Pixel 7 mobile). Firefox/WebKit projects exist (`E2E_ALL_BROWSERS=1`) but are not installed in this environment.
 - **Large exports:** a 100k-line month takes about 80 s to build. Use background export for such months; the synchronous download remains for normal months.
 - **External integrations:** POS, PMS and accounting data arrive through file and API imports. There are no live vendor connectors.
+- **Windows installer:** only the setup logic was tested here, on Linux. The Windows-specific steps (`pg_ctl register` service, WinSW, `icacls`, firewall, shortcuts) still need one run on a real Windows PC.
+- **Notifications, e-mail and attachments (spec 136-141):** there is no e-mail sender and no file attachment store yet. Invitations are delivered as links by the administrator. When those features are added they must use the same hotel-scoped services.
+- **Organization switch (spec 36):** a user belongs to one organization; multi-company people get one account per company.

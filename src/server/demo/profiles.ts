@@ -11,6 +11,8 @@ export interface DemoProfile {
   posSlots: number;
   /** kitchen issues per day (store top-up + consumption posting), e.g. morning and afternoon */
   issueSlots: number;
+  /** fresh goods (produce, meat, fish, dairy) bought by weight every day instead of whole cases */
+  freshByWeight: boolean;
   wastePerDay: number;
   buffetSessions: number;
   minibarRoomsPerDay: number;
@@ -51,12 +53,13 @@ export const PROFILES: Record<DemoProfile["name"], DemoProfile> = {
     recipes: { finished: 10, semi: 3, versioned: 3 },
     posSlots: 1,
     issueSlots: 1,
+    freshByWeight: false,
     wastePerDay: 1,
     buffetSessions: 3,
     minibarRoomsPerDay: 1,
     employeesPerHotel: 20,
     dailyExpenses: 2,
   },
-  dev: { name: "dev", months: 2, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 2, issueSlots: 1, wastePerDay: 6, buffetSessions: 20, minibarRoomsPerDay: 2, employeesPerHotel: 500, dailyExpenses: 8 },
-  staging: { name: "staging", months: 12, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 3, issueSlots: 2, wastePerDay: 14, buffetSessions: 100, minibarRoomsPerDay: 3, employeesPerHotel: 500, dailyExpenses: 28 },
+  dev: { name: "dev", months: 2, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 2, issueSlots: 1, freshByWeight: false, wastePerDay: 6, buffetSessions: 20, minibarRoomsPerDay: 2, employeesPerHotel: 500, dailyExpenses: 8 },
+  staging: { name: "staging", months: 12, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 4, issueSlots: 2, freshByWeight: true, wastePerDay: 15, buffetSessions: 100, minibarRoomsPerDay: 3, employeesPerHotel: 500, dailyExpenses: 28 },
 };

@@ -97,6 +97,44 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 - **Import engine** (`/imports`): CSV or Excel (.xlsx, first sheet) or JSON rows for expenses, PMS occupancy, reservations, product master, supplier price lists / contracts (price-change warnings) and go-live opening stock. Preview shows valid / invalid / duplicate / warning; commits are all-or-nothing with file hash, format, mapping version and source row; rollbacks reverse ledger postings (expenses, opening stock) or remove statistics; used products are deactivated, never deleted.
 - **Control calendar** (`/calendar`) with the standard recurring controls, due status, system evidence and audited completions; **weekly review** (`/review`) of top cost increases, waste, variance, critical / high stock, price and recipe changes. CSV download of any export table: `/api/export/{group}?format=csv&table=<key>`.
 
+## Multi-tenant SaaS
+
+One application, one code base and one shared database host many companies, each with several hotels. Data is isolated row by row on every layer:
+- session-derived tenant context;
+- authorization on role + hotel + department;
+- tenant-scoped service queries;
+- database triggers that reject any cross-hotel reference;
+- export leak tests.
+
+Roles and screens:
+- **Platform super admin** (`/platform`): creates and suspends tenants, sees no tenant data.
+- **Company administrator** (`/admin`): users and invitations, hotels, departments with cost centers, warehouses, categories, thresholds.
+- Users switch between their hotels in the sidebar.
+
+Details and scaling path: [`docs/MULTI_TENANCY.md`](docs/MULTI_TENANCY.md).
+
+## Demo, QA and staging data
+
+```bash
+npm run seed:demo        # 5 companies, 10 hotels, ~2 months, 15 cost scenarios + intentional errors (~10 min)
+npm run seed:staging     # 12 months: 1M+ stock transactions, 500k+ sales, 50k+ waste …
+npm run demo:verify      # counts, integrity, 3-way cost reconciliation, recipe cost, history, data quality, isolation, Excel
+npm run demo:reset       # removes demo tenants only; refused in production
+```
+
+Test users: `companyadmin@test.local`, `controller@test.local`, `chef@test.local`, … and `superadmin@test.local`; password `Demo!2026-QA` (dev/QA only).
+
+Details: [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md).
+
+## Windows installer (on-premise)
+
+`HotelCost-Setup-<version>.exe` (built with `bash installer/build-windows.sh`) installs:
+- PostgreSQL 16, Node.js 22 and the web application as two auto-starting Windows services;
+- the first company, through a short console dialogue;
+- Start-menu shortcuts for backup, demo data, start, stop and status.
+
+Upgrades keep the data and apply new migrations. See [`docs/WINDOWS_INSTALL.md`](docs/WINDOWS_INSTALL.md).
+
 ## Performance, hardening and operations (Phase 6)
 
 - **Volume:** measured with 10k products, 5k recipes, 100k stock transactions, 100k sales and 50k purchase lines.
@@ -153,6 +191,10 @@ Limitation: there is no Microsoft Excel in CI; VBA is validated structurally (ol
 npm run lint && npm run typecheck
 npm test                    # unit + golden formula tests
 npm run test:integration    # Postgres (TEST_DATABASE_URL), each file uses its own isolated hotel
+npm run test:tenant-isolation   # tenant / hotel / department / export matrices, DB tenant triggers, lifecycle
+npm run test:permissions        # role × capability matrix through the real services
+npm run test:reconciliation     # tiny demo dataset → integrity, 3-way reconciliation, isolation, Excel; engine = services
+npm run test:excel              # workbook fast path, VBA project, app = Excel
 npm run test:e2e            # Playwright against hotelcost_e2e (seeded automatically)
 npm run build
 ```

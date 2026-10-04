@@ -61,3 +61,29 @@ test("background Excel export: queue, wait, download (spec 292–293)", async ({
   await row.getByRole("link", { name: "Download" }).click();
   expect((await download).suggestedFilename()).toMatch(/^HotelCost_Cost_Report_.*\.xlsm$/);
 });
+
+test("stored XSS is rendered as text; oversized and malformed uploads are refused (spec 115)", async ({ page }) => {
+  await login(page, "controller");
+  const origin = new URL(page.url()).origin;
+  let alerted = false;
+  page.on("dialog", async (d) => {
+    alerted = true;
+    await d.dismiss();
+  });
+  const payload = `<img src=x onerror=alert('xss')>`;
+  const sku = `XSS-${Date.now().toString(36)}`;
+  const anyProduct = (await (await page.request.get("/api/products?q=Chicken")).json()) as Array<{ categoryId: string }>;
+  const created = await page.request.post("/api/products", { headers: { origin }, data: { sku, name: payload, categoryId: anyProduct[0]!.categoryId, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g" } });
+  expect(created.ok()).toBe(true);
+  await page.goto(`/products?q=${encodeURIComponent(sku)}`);
+  await expect(page.getByText(payload).first()).toBeVisible();
+  expect(alerted).toBe(false);
+  expect(await page.locator("img[src='x']").count()).toBe(0);
+
+  const big = await page.request.post("/api/products", { headers: { origin, "content-type": "application/json" }, data: JSON.stringify({ sku: "BIG", name: "x".repeat(6 * 1024 * 1024) }) });
+  expect(big.status()).toBe(413);
+  const broken = await page.request.post("/api/products", { headers: { origin, "content-type": "application/json" }, data: "{not json" });
+  expect(broken.status()).toBe(422);
+  const csrf = await page.request.post("/api/products", { headers: { origin: "https://evil.example" }, data: { sku: "CSRF" } });
+  expect(csrf.status()).toBe(403);
+});

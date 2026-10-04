@@ -22,6 +22,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { DATABASE_URL: E2E_DB, NODE_ENV: "production" },
+    // the whole suite signs in ~35 times from 127.0.0.1; production keeps the default of 30 per 15 minutes
+    env: { DATABASE_URL: E2E_DB, NODE_ENV: "production", RATE_LIMIT_LOGIN_PER_IP: "500" },
   },
 });

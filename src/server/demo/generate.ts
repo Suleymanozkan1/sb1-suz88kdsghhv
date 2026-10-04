@@ -687,11 +687,21 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     const number = `GRN-${String(++grn).padStart(6, "0")}`;
     const invoiceNo = `${s.name.split(" ")[0]!.toUpperCase().slice(0, 4)}-${ymd(d).replace(/-/g, "")}-${grn}`;
     const freight = supplierIdx <= 1 && rnd() < 0.3 ? 250 : 0;
-    const prepared = lines.map(({ p, stockQty }) => {
-      const units = p.caseSize ? Math.max(1, cint(stockQty / p.caseSize - 1e-9)) : p.stockUnit === "pc" ? Math.max(1, cint(stockQty)) : ceilTo(Math.max(stockQty, 0.5), 0.5);
-      const stock = p.caseSize ? D(units).times(p.caseSize) : D(units);
-      const unitPrice = toStorage(D(priceOn(p, d)).times(p.caseSize ?? 1));
-      return { p, units, stock, unitPrice };
+    const FRESH = new Set(["VEG", "FRUIT", "MEAT", "CHICKEN", "FISH", "SEAFOOD", "DAIRY", "CHEESE"]);
+    // fresh goods arrive in lots with their own expiry date: one receipt line per lot (traceability, spec 79)
+    const lotted = lines.flatMap(({ p, stockQty }) => {
+      // food carries batch / best-before dates: fresh goods and dry stores alike arrive in several lots
+      const lots = ctx.profile.freshByWeight && (FRESH.has(p.cat.code) || p.cat.group === "FOOD") && stockQty >= 1 ? 2 + (stockQty >= 6 ? 1 : 0) : 1;
+      return Array.from({ length: lots }, (_, k) => ({ p, stockQty: stockQty / lots, lot: lots > 1 ? k + 1 : 0 }));
+    });
+    const prepared = lotted.map(({ p, stockQty, lot }) => {
+      // produce, meat and fish are weighed on delivery (kg / l) when the profile says so; packed goods come in cases
+      const weighed = ctx.profile.freshByWeight && FRESH.has(p.cat.code) && p.stockUnit !== "pc";
+      const pack = weighed ? null : p.caseSize;
+      const units = pack ? Math.max(1, cint(stockQty / pack - 1e-9)) : p.stockUnit === "pc" ? Math.max(1, cint(stockQty)) : ceilTo(Math.max(stockQty, 0.5), 0.5);
+      const stock = pack ? D(units).times(pack) : D(units);
+      const unitPrice = toStorage(D(priceOn(p, d)).times(pack ?? 1));
+      return { p, units, stock, unitPrice, unit: pack ? p.purchaseUnit : p.stockUnit, lot };
     });
     const landed = computeLandedCost(prepared.map((x) => ({ quantity: x.units, stockQty: x.stock, unitPrice: x.unitPrice, taxRatePct: x.p.taxRatePct })), { freight }, "BY_VALUE", 1);
     receipts.push({ id: receiptId, hotelId: H, number, supplierId: s.id, warehouseId: ctx.wh.MAIN!, receiptDate: at(d, 6), invoiceNo, freight: String(freight), netTotal: toStorage(landed.netTotal).toString(), taxTotal: toStorage(landed.taxTotal).toString(), landedTotal: toStorage(landed.landedTotal).toString(), postedAt: at(d, 6), postedById: userId });
@@ -700,13 +710,13 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     for (const [i, x] of prepared.entries()) {
       const l = landed.lines[i]!;
       const itemId = randomUUID();
-      items.push({ id: itemId, receiptId, productId: x.p.id, quantity: String(x.units), unit: x.p.purchaseUnit, stockQty: toStorage(x.stock).toString(), unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString(), taxAmount: toStorage(l.taxAmount).toString(), landedExtra: toStorage(l.landedExtra).toString(), landedAmount: toStorage(l.landedAmount).toString(), landedUnitCost: toStorage(l.landedUnitCost).toString() });
-      invoiceItems.push({ invoiceId: invId, productId: x.p.id, description: x.p.name, quantity: String(x.units), unit: x.p.purchaseUnit, unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString() });
+      items.push({ id: itemId, receiptId, productId: x.p.id, quantity: String(x.units), unit: x.unit, ...(x.lot ? { lotNo: `${ymd(d).replace(/-/g, "")}-${x.lot}`, expiryDate: new Date(d.getTime() + (x.p.cat.code === "FISH" || x.p.cat.code === "SEAFOOD" ? 2 + x.lot : 4 + 2 * x.lot) * DAY) } : {}), stockQty: toStorage(x.stock).toString(), unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString(), taxAmount: toStorage(l.taxAmount).toString(), landedExtra: toStorage(l.landedExtra).toString(), landedAmount: toStorage(l.landedAmount).toString(), landedUnitCost: toStorage(l.landedUnitCost).toString() });
+      invoiceItems.push({ invoiceId: invId, productId: x.p.id, description: x.p.name, quantity: String(x.units), unit: x.unit, unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString() });
       L.post({ warehouseId: ctx.wh.MAIN!, productId: x.p.id, type: "PURCHASE", quantity: x.stock, exactTotal: toStorage(l.landedAmount), txDate: at(d, 6), sourceType: "GOODS_RECEIPT", sourceId: itemId, reason: `${number} / ${invoiceNo}` });
       const unitPrice = l.netAmount.div(x.stock);
       const prev = lastUnitPrice.get(x.p.id) ?? null;
       const ch = priceChange(prev, unitPrice, "10");
-      prices.push({ hotelId: H, supplierId: s.id, productId: x.p.id, priceDate: at(d, 6), purchaseUnit: x.p.purchaseUnit, packPrice: toStorage(l.netAmount.div(D(x.units))).toString(), unitPrice: toStorage(unitPrice).toString(), previousUnitPrice: prev ? toStorage(prev).toString() : null, changePct: ch.changePct ? toStorage(ch.changePct).toString() : null, quantity: toStorage(x.stock).toString(), source: "RECEIPT", sourceId: itemId, invoiceNo });
+      prices.push({ hotelId: H, supplierId: s.id, productId: x.p.id, priceDate: at(d, 6), purchaseUnit: x.unit, packPrice: toStorage(l.netAmount.div(D(x.units))).toString(), unitPrice: toStorage(unitPrice).toString(), previousUnitPrice: prev ? toStorage(prev).toString() : null, changePct: ch.changePct ? toStorage(ch.changePct).toString() : null, quantity: toStorage(x.stock).toString(), source: "RECEIPT", sourceId: itemId, invoiceNo });
       if (ch.isAlert && ch.changePct) alerts.push({ hotelId: H, type: "PRICE_INCREASE", severity: ch.changePct.gte(20) ? "HIGH" : "WARNING", title: `Price increase: ${x.p.name}`, message: `${x.p.name}: ${toStorage(prev!).toFixed(2)} → ${toStorage(unitPrice).toFixed(2)} ${"TRY"}/${x.p.stockUnit} (+${ch.changePct.toFixed(2)}%) from ${s.name}`, entityType: "Product", entityId: x.p.id, data: { productId: x.p.id, changePct: ch.changePct.toFixed(2) }, createdAt: at(d, 6) });
       lastUnitPrice.set(x.p.id, unitPrice);
       L.notePrice(x.p.id, toStorage(unitPrice));
@@ -809,9 +819,10 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
 
     // waste (spec 64): realistic reasons, quantities from what is on hand
     const wasteN = Math.max(0, rint(ctx.profile.wastePerDay * (0.6 + rnd() * 0.8)));
-    for (let w = 0; w < wasteN; w++) {
+    for (let w = 0, tries = 0; w < wasteN && tries < wasteN * 4; tries++) {
       const store = ["KITCH", "KITCH", "BAR", "BRKF", "PAST"][Math.trunc(rnd() * 5)]!;
-      const candidates = ctx.products.filter((p) => L.position(ctx.wh[store]!, p.id).quantity.gt(0.05) && p.cat.group !== "HOUSEKEEPING");
+      // something must be physically there to be wasted (at least one piece for counted items)
+      const candidates = ctx.products.filter((p) => L.position(ctx.wh[store]!, p.id).quantity.gte(p.stockUnit === "pc" ? 1 : 0.05) && p.cat.group !== "HOUSEKEEPING");
       if (!candidates.length) continue;
       const p = candidates[Math.trunc(rnd() * candidates.length)]!;
       const have = L.position(ctx.wh[store]!, p.id).quantity;
@@ -823,6 +834,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       const id = randomUUID();
       const deptId = ctx.dept[store === "KITCH" ? (rnd() < 0.7 ? "REST" : "KITCH") : store]!;
       const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "WASTE", quantity: qty.neg(), txDate: at(d, 15), departmentId: deptId, sourceType: "WASTE", sourceId: id, reason: `${wt}: ${reason}`, idempotencyKey: `waste:${id}` });
+      w++;
       wasteRows.push({ id, hotelId: H, departmentId: deptId, warehouseId: ctx.wh[store]!, productId: p.id, wasteType: wt, wasteDate: at(d, 15), quantity: qty.toString(), unit: p.stockUnit, stockQty: qty.toString(), unitCost: stx.unitCost.toString(), costValue: stx.totalCost.neg().toString(), reason, status: "APPROVED", userId, stockTxId: stx.id, createdAt: at(d, 15) });
       wasteCount++;
     }
@@ -844,7 +856,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     }
     for (const s of plan[i]!) {
       const v = versionAt(s.r, d);
-      const saleDate = at(d, [9, 13, 20][s.slot] ?? 20);
+      const saleDate = at(d, [9, 13, 20, 23][s.slot] ?? 20);
       let unit: Decimal | null = null;
       if (v) {
         let sum = ZERO;
@@ -1156,7 +1168,7 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
     const n = rint(ctx.profile.dailyExpenses * (0.7 + rnd() * 0.6));
     for (let k = 0; k < n; k++) {
       const [d, cat, sub, desc, amt] = small[Math.trunc(rnd() * small.length)]!;
-      post(at(day, 10 + (k % 8)), d, cat, sub, desc, amt * (0.5 + rnd()), rnd() < 0.3 ? { supplier: serviceSupplier, assetId: d === "ENG" ? assets[Math.trunc(rnd() * assets.length)]!.id : undefined } : {});
+      post(at(day, 10 + (k % 8)), d, cat, sub, desc, amt * (0.5 + rnd()), rnd() < 0.45 ? { supplier: serviceSupplier, assetId: d === "ENG" ? assets[Math.trunc(rnd() * assets.length)]!.id : undefined } : {});
     }
   }
   for (let i = 0; i < expenses.length; i += 5000) await db.expense.createMany({ data: expenses.slice(i, i + 5000) });

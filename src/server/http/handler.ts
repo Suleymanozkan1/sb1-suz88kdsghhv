@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
-import { isDomainError, type DomainErrorCode } from "@/domain/errors";
+import { DomainError, isDomainError, type DomainErrorCode } from "@/domain/errors";
 import { Decimal } from "@/domain/money";
 import type { Actor } from "../auth/actor";
 import { actorFromToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
@@ -40,7 +40,10 @@ export function toJson(value: unknown): unknown {
   );
 }
 
+const MAX_BODY = 5 * 1024 * 1024;
+
 export function errorResponse(e: unknown) {
+  if ((e as { status?: number } | null)?.status === 413) return NextResponse.json({ error: { code: "PAYLOAD_TOO_LARGE", message: "Request body exceeds 5 MB" } }, { status: 413 });
   if (isDomainError(e)) {
     const retry = e.code === "RATE_LIMITED" ? (e.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds : undefined;
     return NextResponse.json({ error: { code: e.code, message: e.message, details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
@@ -100,9 +103,16 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>) {
         params,
         query,
         body: async () => {
+          // the declared length can be absent or wrong (chunked uploads): measure what actually arrived
           const len = Number(req.headers.get("content-length") ?? 0);
-          if (len > 5 * 1024 * 1024) throw Object.assign(new Error("Payload too large"), { status: 413 });
-          return req.json();
+          if (len > MAX_BODY) throw Object.assign(new Error("Payload too large"), { status: 413 });
+          const text = await req.text();
+          if (Buffer.byteLength(text) > MAX_BODY) throw Object.assign(new Error("Payload too large"), { status: 413 });
+          try {
+            return text ? JSON.parse(text) : {};
+          } catch {
+            throw new DomainError("VALIDATION", "Request body is not valid JSON");
+          }
         },
       });
       if (result instanceof NextResponse) return result;
