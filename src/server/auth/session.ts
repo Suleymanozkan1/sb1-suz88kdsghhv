@@ -88,3 +88,12 @@ export const currentHotelId = cache(async (): Promise<string | null> => {
   const sel = jar.get(HOTEL_COOKIE)?.value;
   return sel && actor.hotelIds.includes(sel) ? sel : actor.hotelIds[0]!;
 });
+
+/** Long-lived bearer token for the Excel VBA refresh. Returned once; only the hash is stored. */
+export async function createApiToken(userId: string, days: number): Promise<{ token: string; expiresAt: Date }> {
+  const token = `hc_${randomBytes(32).toString("hex")}`;
+  const expiresAt = new Date(Date.now() + days * 86400000);
+  await prisma.session.create({ data: { id: hash(token), userId, expiresAt } });
+  await prisma.auditLog.create({ data: { userId, action: "API_TOKEN_CREATE", entityType: "User", entityId: userId, source: "AUTH", after: { expiresAt: expiresAt.toISOString() } } });
+  return { token, expiresAt };
+}

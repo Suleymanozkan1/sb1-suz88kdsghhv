@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck,
+  BarChart3, Boxes, FileSpreadsheet, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -24,6 +24,7 @@ const NAV = [
   { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
   { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },
+  { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
   { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },
 ];
 

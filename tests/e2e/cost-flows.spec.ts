@@ -126,3 +126,27 @@ test("department isolation in the UI and API (spec §242, §274)", async ({ page
   const csrf = await page.request.post("/api/waste", { data: {}, headers: { origin: "https://evil.example" } });
   expect(csrf.status()).toBe(403);
 });
+
+test("Excel export: page offers .xlsm download and one-time API token (spec 2, 102, 123)", async ({ page }) => {
+  await login(page, "controller");
+  await page.getByRole("link", { name: "Excel Export" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Excel full cost report");
+  await page.getByLabel("Start date").fill("2026-09-01");
+  await page.getByLabel("End date").fill("2026-09-30");
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.getByRole("button", { name: "Download .xlsm" }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^HotelCost_Cost_Report_GAR_2026_09\.xlsm$/);
+  await page.getByRole("button", { name: "Create token" }).click();
+  const token = await page.getByTestId("api-token").textContent();
+  expect(token).toMatch(/^hc_[0-9a-f]{64}$/);
+  // the token authenticates the Excel refresh endpoint (TSV contract)
+  const res = await page.request.get("/api/export/full-cost?format=tsv&from=2026-09-01&to=2026-09-30", { headers: { authorization: `Bearer ${token}` } });
+  expect(res.status()).toBe(200);
+  expect((await res.text()).startsWith("##EXPORT\t1.0")).toBe(true);
+  // chefs cannot export
+  const chefCtx = await page.context().browser()!.newContext();
+  const chef = await chefCtx.newPage();
+  await login(chef, "chef");
+  await expect(chef.getByRole("link", { name: "Excel Export" })).toHaveCount(0);
+  expect((await chef.request.get("/api/export/full-cost")).status()).toBe(403);
+  await chefCtx.close();
+});

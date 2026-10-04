@@ -2,7 +2,7 @@
   "name": "hotelcost",
   "version": "0.1.0",
   "private": true,
-  "description": "HotelCost — hotel cost intelligence & cost-control platform",
+  "description": "HotelCost \u2014 hotel cost intelligence & cost-control platform",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -18,7 +18,11 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "vba:gen": "tsx scripts/gen-vba.ts",
+    "prebuild": "tsx scripts/gen-vba.ts",
+    "excel:sample": "tsx scripts/excel-smoke.ts",
+    "excel:validate": "python3 scripts/lo-validate.py"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -26,8 +30,11 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
+    "cfb": "^1.2.2",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.51.0",
     "next": "^15.5.4",
     "react": "^19.1.1",

@@ -24,7 +24,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["tests/**", "prisma/**", "playwright.config.ts", "src/components/**", "src/app/**"],
+    files: ["tests/**", "prisma/**", "scripts/**", "playwright.config.ts", "src/components/**", "src/app/**", "src/server/excel/**"],
     rules: { "no-restricted-syntax": "off" },
   },
 );

@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hotelcost
+      POSTGRES_PASSWORD: hotelcost
+      POSTGRES_DB: hotelcost
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    ports: ["5432:5432"]
+  app:
+    build: .
+    depends_on: [db]
+    environment:
+      DATABASE_URL: postgresql://hotelcost:hotelcost@db:5432/hotelcost?schema=public
+      PUBLIC_BASE_URL: http://localhost:3000
+    ports: ["3000:3000"]
+volumes:
+  pgdata:
