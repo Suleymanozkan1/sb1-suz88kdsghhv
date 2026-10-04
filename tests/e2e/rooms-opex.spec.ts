@@ -44,9 +44,9 @@ test("operating cost modules show laundry unit cost, energy and cost per asset",
   await page.goto(`/operations?${lastMonth()}&tab=laundry`);
   await expect(page.getByText("Cost / kg")).toBeVisible();
   await expect(page.getByRole("cell", { name: "Bath Towel" })).toBeVisible();
-  await page.getByRole("link", { name: "Energy" }).click();
+  await page.getByRole("link", { name: "Energy", exact: true }).click();
   await expect(page.getByRole("cell", { name: "ELECTRICITY" }).first()).toBeVisible();
-  await page.getByRole("link", { name: "Engineering" }).click();
+  await page.getByRole("link", { name: "Engineering", exact: true }).click();
   await expect(page.getByText("Cost per asset (spec 113)")).toBeVisible();
 });
 

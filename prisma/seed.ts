@@ -25,6 +25,9 @@ import { createAsset, createMeter, recordReading, recordLaundry, commitExpenseIm
 import { commitOccupancy, commitReservations } from "../src/server/services/pms";
 import { createRule, postAllocation } from "../src/server/services/allocation";
 import { periodFor } from "../src/server/services/period";
+import { createBudget, setBudgetLines, approveBudget, createTarget } from "../src/server/services/planning";
+import { createAction, updateAction } from "../src/server/services/savings";
+import { departmentRevenue } from "../src/server/services/revenue";
 
 const prisma = new PrismaClient();
 const PASSWORD = "HotelCost!2026";
@@ -585,6 +588,43 @@ async function main() {
   await createRule(prisma, admin, H, { name: "Engineering department by m²", sourceCategoryGroup: "ALL", sourceDepartmentId: dept.ENG, driver: "SQM", targets: opDepts.map((c) => ({ departmentId: dept[c]! })) });
   await postAllocation(prisma, admin, H, (await periodFor(prisma, H, firstMonthEnd)).id);
   console.log(`Rooms: ${allRooms.length}; reservations: ${resRows.length}; expenses: ${await prisma.expense.count({ where: { hotelId: H } })}`);
+  // ── Planning (Phase 4): approved budget built from the first month's run rate, targets, saving actions ──
+  const fmFrom = new Date(Date.UTC(firstMonthEnd.getUTCFullYear(), firstMonthEnd.getUTCMonth(), 1));
+  const fmTo = new Date(Date.UTC(firstMonthEnd.getUTCFullYear(), firstMonthEnd.getUTCMonth() + 1, 1));
+  const byDeptCat = await prisma.costTransaction.groupBy({ by: ["departmentId", "categoryGroup"], where: { hotelId: H, txDate: { gte: fmFrom, lt: fmTo } }, _sum: { amount: true } });
+  const revByDept = await departmentRevenue(prisma, H, fmFrom, fmTo);
+  const season = [0.78, 0.8, 0.86, 0.94, 1.02, 1.12, 1.2, 1.22, 1.0, 0.92, 0.82, 0.86]; // resort seasonality (budget assumption)
+  const budgetLines: Array<{ month: number; departmentId: string | null; categoryGroup: string; amount: string; targetPct?: string | null }> = [];
+  const fixedish = new Set(["LABOR", "RENT", "INSURANCE", "DEPRECIATION", "ADMINISTRATION", "SALES_MARKETING"]);
+  for (let mth = 1; mth <= 12; mth++) {
+    const f = season[mth - 1]! / season[firstMonthEnd.getUTCMonth()]!;
+    for (const x of byDeptCat) {
+      const amt = Number(x._sum.amount?.toString() ?? 0);
+      if (amt <= 0 || x.categoryGroup === "ALL") continue;
+      const scale = fixedish.has(x.categoryGroup) ? 1 : f;
+      budgetLines.push({ month: mth, departmentId: x.departmentId, categoryGroup: x.categoryGroup, amount: (amt * scale * 0.97).toFixed(2), targetPct: x.categoryGroup === "FOOD" ? "0.28" : x.categoryGroup === "BEVERAGE" ? "0.12" : null });
+    }
+    for (const [d, v] of revByDept.byDept) if (v.gt(0)) budgetLines.push({ month: mth, departmentId: d, categoryGroup: "REVENUE", amount: (Number(v.toString()) * f * 1.03).toFixed(2) });
+  }
+  // merge duplicates (same month/department/category from DIRECT + ALLOCATED rows)
+  const merged = new Map<string, (typeof budgetLines)[number]>();
+  for (const l of budgetLines) {
+    const k = `${l.month}|${l.departmentId ?? ""}|${l.categoryGroup}`;
+    const cur = merged.get(k);
+    merged.set(k, cur ? { ...cur, amount: (Number(cur.amount) + Number(l.amount)).toFixed(2) } : l);
+  }
+  const budgetYear = firstMonthEnd.getUTCFullYear();
+  const bud = await createBudget(prisma, actors.accounting!, H, { year: budgetYear, name: `Budget ${budgetYear}`, notes: "Seasonality-weighted, 3 % efficiency target on cost, +3 % revenue" });
+  await setBudgetLines(prisma, actors.accounting!, H, bud.id, [...merged.values()].filter((l) => Number(l.amount) > 0));
+  await approveBudget(prisma, actors.accounting!, H, bud.id);
+  for (const [metric, target, warnAt] of [["FOOD_COST_PCT", "0.32", "0.30"], ["BEVERAGE_COST_PCT", "0.14", "0.12"], ["WASTE_PCT", "0.02", "0.015"], ["UNEXPLAINED_VARIANCE_PCT", "0.03", "0.02"], ["LABOR_COST_PCT", "0.30", "0.28"], ["ENERGY_PER_OCCUPIED_ROOM", "300", "280"], ["ROOM_COST_PER_NIGHT", "1750", "1650"], ["COST_PER_OCCUPIED_ROOM", "3000", "2850"], ["BUFFET_COST_PER_COVER", "120", "110"], ["MINIBAR_SHRINKAGE_PCT", "0.03", "0.02"]] as const) await createTarget(prisma, admin, H, { metric, target, warnAt });
+  const sa1 = await createAction(prisma, admin, H, { driver: "WASTE", problem: "Buffet leftovers discarded at breakfast", rootCause: "Production not linked to forecast covers", action: "Produce in waves from the buffet forecast; refill smaller trays", ownerName: "Elif Şahin", targetSaving: "12000", dueDate: new Date(firstMonthEnd.getTime() + 20 * 86_400_000), departmentId: dept.BRKF });
+  await updateAction(prisma, admin, H, sa1.id, { status: "IN_PROGRESS" });
+  const sa2 = await createAction(prisma, admin, H, { driver: "SUPPLIER_PRICE", problem: "Chicken breast +20 % at current supplier", rootCause: "Single-source contract", action: "Tender with two alternative suppliers", ownerName: "Burak Çelik", targetSaving: "18000", dueDate: new Date(firstMonthEnd.getTime() - 5 * 86_400_000) });
+  await updateAction(prisma, admin, H, sa2.id, { status: "DONE", actualSaving: "14500" });
+  await createAction(prisma, admin, H, { driver: "ENERGY", problem: "Laundry gas consumption above plan", action: "Heat-recovery check on washer extractors", ownerName: "Engineering chief", targetSaving: "6000", dueDate: new Date(firstMonthEnd.getTime() - 2 * 86_400_000), departmentId: dept.LAUN });
+  console.log(`Budget lines: ${merged.size}; targets: 10; saving actions: 3`);
+
 
   // ── A pending delete request (demonstrates §285 in the UI) ──
   const anyReceipt = await prisma.stockTransaction.findFirst({ where: { hotelId: H, type: "PURCHASE", productId: pid["HK-SHAMPOO"] } });

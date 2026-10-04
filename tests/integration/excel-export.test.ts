@@ -59,7 +59,7 @@ beforeAll(async () => {
 
 describe("export contract", () => {
   it("is versioned and contains every section, unavailable modules flagged (no fake zeros)", () => {
-    expect(exp.exportVersion).toBe("1.1");
+    expect(exp.exportVersion).toBe("1.2");
     for (const k of ["executiveSummary", "costDetail", "foodCost", "beverageCost", "recipeCost", "recipeSummary", "theoreticalConsumption", "actualConsumption", "consumptionVariance", "waste", "wasteSummary", "yield", "purchaseCost", "supplierPrice", "ppv", "inventoryValue", "monthlyStock", "stockVariance", "criticalStock", "stockAging", "reorder", "departmentCost", "outletCost", "costCenter", "pnl", "topCostDrivers", "topWaste", "topVariance", "unexplainedVariance", "missingData", "productSales", "costTrend"]) {
       expect(exp.sections[k], k).toBeDefined();
     }
@@ -68,10 +68,14 @@ describe("export contract", () => {
       expect(exp.sections[k]!.rows, k).toHaveLength(0); // no sessions / rooms in this scenario
     }
     // this hotel has no rooms division / housekeeping / laundry departments: not available, never zero-filled
-    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "budgetVariance", "forecast", "costSaving"]) {
+    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "budgetVariance"]) {
       expect(exp.sections[k]!.status, k).toBe("NOT_AVAILABLE");
       expect(exp.sections[k]!.rows).toHaveLength(0);
     }
+    // planning works without a budget: forecast from history, savings from posted data
+    expect(exp.sections.forecast!.status).toBe("OK");
+    expect(exp.sections.costSaving!.status).toBe("OK");
+    expect(exp.sections.budgetVariance!.note).toMatch(/No budget/);
     // modules that exist but have no data in the period: PARTIAL with no rows
     for (const k of ["laborCost", "energyCost", "engineeringCost", "costAllocation"]) {
       expect(exp.sections[k]!.status, k).toBe("PARTIAL");
@@ -114,7 +118,7 @@ describe("export contract", () => {
 
   it("TSV rendering carries the same data (column counts, row counts, end marker)", () => {
     const lines = toTsv(exp).split("\n");
-    expect(lines[0]).toMatch(/^##EXPORT\t1\.1\tEXP-/);
+    expect(lines[0]).toMatch(/^##EXPORT\t1\.2\tEXP-/);
     expect(lines.at(-1)).toBe("##END");
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i]!.startsWith("##SECTION")) continue;

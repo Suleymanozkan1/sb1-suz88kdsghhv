@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank,
 } from "lucide-react";
 import { cn } from "./ui";
 import { call } from "@/lib/client";
@@ -26,6 +26,10 @@ const NAV = [
   { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
   { href: "/allocation", label: "Cost Allocation", icon: Split, perm: "opex:view" },
   { href: "/imports", label: "Imports", icon: FileUp, perm: "opex:view" },
+  { href: "/budget", label: "Budget & Targets", icon: Target, perm: "budget:view" },
+  { href: "/forecast", label: "Forecast & What-if", icon: TrendingUp, perm: "budget:view" },
+  { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
+  { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
   { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },

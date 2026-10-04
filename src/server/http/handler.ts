@@ -47,7 +47,7 @@ export function errorResponse(e: unknown) {
     if (e.code === "P2025") return NextResponse.json({ error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
   }
   const msg = e instanceof Error ? e.message : String(e);
-  if (msg.includes("LEDGER_IMMUTABLE") || msg.includes("RECIPE_VERSION_FROZEN")) return NextResponse.json({ error: { code: "IMMUTABLE", message: msg.split("\n").pop() } }, { status: 409 });
+  if (msg.includes("LEDGER_IMMUTABLE") || msg.includes("RECIPE_VERSION_FROZEN") || msg.includes("BUDGET_FROZEN")) return NextResponse.json({ error: { code: "IMMUTABLE", message: msg.split("\n").pop() } }, { status: 409 });
   console.error("[api] unhandled", e);
   return NextResponse.json({ error: { code: "INTERNAL", message: "Unexpected error" } }, { status: 500 });
 }

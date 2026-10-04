@@ -7,5 +7,5 @@
 Option Explicit
 
 Public Function DepartmentSections() As Variant
-    DepartmentSections = Array("departmentCost", "outletCost", "costCenter", "costAllocation", "budgetVariance", "forecast", "costSaving", "missingData", "rawSales")
+    DepartmentSections = Array("departmentCost", "outletCost", "costCenter", "costAllocation", "budgetVariance", "forecast", "costSaving", "menuEngineering", "missingData", "rawSales")
 End Function

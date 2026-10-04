@@ -2,7 +2,7 @@
 
 Cost intelligence for hotels: **purchase → stock → recipe → yield → consumption → waste → actual vs theoretical → variance → department / product cost**, with every figure traceable to source transactions — plus a macro-enabled **Excel reporting layer** (`.xlsm`) that uses the same cost engine.
 
-> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar) + Phase 3 (rooms & operating costs)**. Budget and forecast are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
+> Status: **Phase 1 (core cost engine) + Phase 1b (Excel layer) + Phase 2 (buffet & minibar) + Phase 3 (rooms & operating costs) + Phase 4 (budget, forecast, what-if, menu engineering, savings)**. Report archive / PDF pack and hardening are on the roadmap; wherever they appear (screens, exports, Excel) they are marked `NOT_AVAILABLE` — never shown as zero.
 
 ## Quick start
 
@@ -51,6 +51,10 @@ Principles enforced in code and tests:
 | Net room contribution | Gross room revenue − commission − payment fee − other distribution − room cost |
 | Allocation | Source cost × destination driver / Σ drivers, exact to 6 decimals (largest remainder), per cost category |
 | GOP | Revenue − cost of sales − labor − energy − departmental expenses − A&G − S&M/distribution |
+| Budget variance | Actual − budget (positive = over budget); variance % = variance / budget; YTD = Jan → period end |
+| Forecast | Fixed share × average monthly cost + variable rate × expected volume (occupied rooms, or covers for F&B) × (1 + known price change); running month = actual + rate × remaining volume |
+| Menu engineering | High seller: menu mix ≥ 70 % × 1/n; high margin: contribution / unit ≥ weighted average → Star, Plowhorse, Puzzle, Dog |
+| Saving | Current − potential (formula + assumption per opportunity); gap = target − realized |
 | Minibar contribution | Revenue − cost of consumed items; shrinkage = expected room qty − counted qty (posted as count adjustment) |
 | Landed cost | Net price − discount + freight + shipping + customs + handling + other (tax separate) |
 | WAC | (Old qty × old avg + received qty × landed unit cost) / total qty |
@@ -76,6 +80,14 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 - **Room cost** (`/rooms`): rooms-division cost (Rooms, Housekeeping, Laundry incl. allocations) split to rooms by occupied nights × m², plus room-tagged costs and channel cost; by room, type, floor, area and channel; CPOR, CPAR, cost per guest, cost per stay; warnings when allocation or occupancy is missing.
 - **Module reports**: housekeeping (per occupied room / guest night), laundry (per kg / piece / occupied room, linen lost / damaged / discarded / replacement), labor (by department, cost %), energy (billed vs metered, unit cost, per room / m²), engineering (by type, emergency vs preventive, cost per asset).
 - **Excel**: sheets 18–24 and 37 are filled (plus floor/area, channel, linen, meter and asset tables); P&L reaches GOP and EBITDA when payroll, energy and occupancy data exist (never estimated). Export contract `exportVersion` 1.1.
+
+## Planning (Phase 4)
+
+- **Budget & targets** (`/budget`, `/api/budgets/*`, `/api/targets`): budgets per year (month × department × category, revenue lines and cost-% targets), CSV load, approval (frozen by DB trigger), revisions (copy × factor) that supersede the approved version. Budget vs actual by category and department, month and YTD. Configurable targets with early-warning level for food / beverage / waste / unexplained %, labor %, energy per room, room cost per night, CPOR, buffet cost per cover, minibar shrinkage.
+- **Forecast & what-if** (`/forecast`, `/api/forecast`, `/api/what-if`): month forecast per category from the last 3 months (fixed / variable split), expected occupancy (input, or actual + on-the-books), covers, known price change; base / best / worst scenarios with revenue and result. What-if levers: ingredient price (with affected recipes and monthly impact), occupancy, buffet covers, waste points, labor, energy.
+- **Menu engineering** (`/menu-engineering`): Kasavana–Smith classes from sales × frozen recipe cost, margin vs the hotel target, cost change since sale.
+- **Savings** (`/savings`, `/api/savings/*`): opportunities (supplier price, waste, portion control, yield, recipe re-engineering, overstock carrying cost, energy, labor, OTA → direct) each with formula and stated assumption; actions with root cause, owner, due date, target vs realized saving, overdue flag.
+- **Excel**: sheets 39–41 filled, menu engineering on sheet 54, department / cost-center budget columns; export contract `exportVersion` 1.2.
 
 ## Excel Full Cost Report (.xlsm)
 
@@ -115,6 +127,6 @@ npm run build
 | 1b ✅ | Excel `.xlsm` reporting layer + export contract |
 | 2 ✅ | Buffet sessions (production/refill/leftover, cost & waste per cover, forecast), minibar (par, room sub-ledger, shrinkage, contribution) |
 | 3 ✅ | Rooms, housekeeping, laundry, labor, energy, engineering, allocation engine, PMS & accounting import |
-| 4 | Budget, forecast, what-if, saving actions, menu engineering |
+| 4 ✅ | Budget, targets, forecast, scenarios, what-if, saving opportunities & actions, menu engineering |
 | 5 | Report archive/PDF pack, Excel/CSV import engine, month-end management pack |
 | 6 | Performance at 100k+ volumes, security hardening, full E2E simulation |

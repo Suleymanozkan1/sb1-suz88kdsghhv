@@ -1,0 +1,73 @@
+import { pageContext, guarded, monthRange } from "@/server/page";
+import { listActions, opportunities } from "@/server/services/savings";
+import { can } from "@/server/auth/actor";
+import { prisma } from "@/server/db";
+import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
+import { PeriodFilter } from "@/components/period-filter";
+import { date, money, pct } from "@/lib/format";
+import { CreateAction, UpdateAction } from "./actions";
+
+export const metadata = { title: "Cost Savings" };
+
+const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
+
+export default async function SavingsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  const sp = await searchParams;
+  const now = new Date();
+  const range = monthRange({ from: sp.from ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10), to: sp.to ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).toISOString().slice(0, 10) });
+  const { actor, hotelId, hotel } = await pageContext();
+  const cur = hotel.baseCurrency;
+  const [opps, acts] = await Promise.all([guarded(() => opportunities(prisma, actor, hotelId, { from: range.from, to: range.to })), guarded(() => listActions(prisma, actor, hotelId))]);
+  if (!opps.ok) return <Alert>{opps.error}</Alert>;
+  if (!acts.ok) return <Alert>{acts.error}</Alert>;
+  const manage = can(actor, "savings:manage");
+  const a = acts.data;
+  const A = opps.data.assumptions;
+  return (
+    <>
+      <PageHeader title="Cost savings" subtitle="Opportunities sized from posted data with their formula and assumption (spec 199–200); actions with owner, due date, target and realized saving (spec 255–256)." actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Stat label="Potential saving (period)" value={money(opps.data.total, cur, 0)} hint={`${opps.data.opportunities.length} opportunities`} />
+        <Stat label="Expected (actions)" value={money(a.totals.expected, cur, 0)} />
+        <Stat label="Realized" value={money(a.totals.realized, cur, 0)} tone="good" />
+        <Stat label="Open actions" value={a.totals.open} />
+        <Stat label="Overdue" value={a.totals.overdue} tone={a.totals.overdue ? "bad" : "default"} />
+      </div>
+      <Card title="Opportunities" className="mt-4" padded={false}>
+        {opps.data.opportunities.length === 0 ? <div className="p-4"><Empty title="No saving opportunity found in this period" /></div> : (
+          <Table>
+            <thead><tr><Th>Driver</Th><Th>Opportunity</Th><Th align="right">Current</Th><Th align="right">Potential</Th><Th align="right">Saving</Th><Th align="right">%</Th><Th>Basis</Th>{manage && <Th />}</tr></thead>
+            <tbody className="divide-y divide-ink-100">
+              {opps.data.opportunities.map((o) => (
+                <tr key={o.key} className="align-top">
+                  <Td><Badge>{o.driver.replace("_", " ")}</Badge></Td><Td className="font-medium">{o.title}</Td><Td align="right">{money(o.current, cur, 0)}</Td><Td align="right">{money(o.potential, cur, 0)}</Td>
+                  <Td align="right" className="font-semibold text-brand-700">{money(o.saving, cur, 0)}</Td><Td align="right">{pct(f100(o.savingPct))}</Td>
+                  <Td className="max-w-md text-xs text-ink-500">{o.formula}{o.assumption && <div className="text-amber-700">Assumption: {o.assumption}</div>}</Td>
+                  {manage && <Td>{o.actionId ? <Badge tone="violet">action open</Badge> : <CreateAction opportunity={{ key: o.key, driver: o.driver, title: o.title, current: o.current.toString(), saving: o.saving.toString() }} />}</Td>}
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <p className="border-t border-ink-100 p-3 text-xs text-ink-500">Default assumptions (override via the API): waste avoidable {(A.wasteReduction * 100).toFixed(0)} %, unexplained usage recoverable {(A.unexplainedCapture * 100).toFixed(0)} %, carrying cost {(A.carryingCostAnnual * 100).toFixed(0)} %/year, energy {(A.energyReduction * 100).toFixed(0)} %, OTA → direct {(A.otaShiftToDirect * 100).toFixed(0)} %, labor efficiency {(A.laborEfficiency * 100).toFixed(0)} % (a configured LABOR_COST_PCT target replaces it).</p>
+      </Card>
+      <Card title="Saving actions" className="mt-4" padded={false}>
+        {a.items.length === 0 ? <div className="p-4"><Empty title="No actions yet" /></div> : (
+          <Table>
+            <thead><tr><Th>Problem</Th><Th>Action</Th><Th>Owner</Th><Th>Due</Th><Th align="right">Target</Th><Th align="right">Realized</Th><Th align="right">Gap</Th><Th>Status</Th>{manage && <Th />}</tr></thead>
+            <tbody className="divide-y divide-ink-100">
+              {a.items.map((x) => (
+                <tr key={x.id} className={x.status === "CANCELLED" ? "text-ink-400" : ""}>
+                  <Td><span className="font-medium">{x.problem}</span>{x.rootCause && <div className="text-xs text-ink-500">Root cause: {x.rootCause}</div>}</Td><Td>{x.action}</Td><Td>{x.ownerName}</Td>
+                  <Td className={x.overdue ? "font-semibold text-red-700" : ""}>{date(x.dueDate)}</Td><Td align="right">{money(x.tracking.expected, cur, 0)}</Td><Td align="right">{money(x.tracking.realized, cur, 0)}</Td><Td align="right">{money(x.tracking.gap, cur, 0)}</Td>
+                  <Td><Badge tone={x.status === "DONE" ? "green" : x.status === "CANCELLED" ? "gray" : x.overdue ? "red" : "amber"}>{x.overdue ? "OVERDUE" : x.status.replace("_", " ")}</Badge></Td>
+                  {manage && <Td>{(x.status === "OPEN" || x.status === "IN_PROGRESS") && <UpdateAction id={x.id} status={x.status} />}</Td>}
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </>
+  );
+}

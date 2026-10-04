@@ -317,6 +317,8 @@ model Hotel {
   reservations      Reservation[]
   importBatches     ImportBatch[]
   allocationRuns    AllocationRun[]
+  costTargets       CostTarget[]
+  savingActions     SavingAction[]
 
   @@unique([organizationId, code])
 }
@@ -1611,13 +1613,23 @@ model AllocationRun {
   @@index([hotelId, periodId, status])
 }
 
+// ───────────────────────── Planning (Phase 4) ─────────────────────────
+// Budget lines are cost (or revenue) amounts per month × department × category; an APPROVED budget
+// is frozen by a DB trigger (a revision is a new budget). Targets are configurable, never hard-coded.
+
 model Budget {
-  id      String       @id @default(cuid())
-  hotelId String
-  hotel   Hotel        @relation(fields: [hotelId], references: [id])
-  year    Int
-  name    String
-  lines   BudgetLine[]
+  id           String       @id @default(cuid())
+  hotelId      String
+  hotel        Hotel        @relation(fields: [hotelId], references: [id])
+  year         Int
+  name         String
+  status       String       @default("DRAFT") // DRAFT | APPROVED | SUPERSEDED
+  notes        String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  approvedById String?
+  approvedAt   DateTime?
+  lines        BudgetLine[]
 
   @@unique([hotelId, year, name])
 }
@@ -1628,9 +1640,60 @@ model BudgetLine {
   budget        Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   month         Int
   departmentId  String?
-  categoryGroup String
+  categoryGroup String // cost category (FOOD, BEVERAGE, LABOR, ENERGY, …) or REVENUE
   amount        Decimal  @db.Decimal(20, 6)
-  targetPct     Decimal? @db.Decimal(20, 6)
+  targetPct     Decimal? @db.Decimal(20, 6) // fraction of revenue (e.g. 0.28 food cost)
+
+  @@index([budgetId, month])
+}
+
+/**
+ * Configurable cost targets (spec 194): MAX = actual must stay at or below target.
+ */
+model CostTarget {
+  id           String    @id @default(cuid())
+  hotelId      String
+  hotel        Hotel     @relation(fields: [hotelId], references: [id])
+  metric       String // FOOD_COST_PCT | BEVERAGE_COST_PCT | WASTE_PCT | LABOR_COST_PCT | ENERGY_PER_OCCUPIED_ROOM | ROOM_COST_PER_NIGHT | COST_PER_OCCUPIED_ROOM | BUFFET_COST_PER_COVER | UNEXPLAINED_VARIANCE_PCT | MINIBAR_SHRINKAGE_PCT
+  departmentId String?
+  target       Decimal   @db.Decimal(20, 6)
+  warnAt       Decimal?  @db.Decimal(20, 6) // early-warning level (same unit as target)
+  direction    String    @default("MAX") // MAX | MIN
+  validFrom    DateTime?
+  active       Boolean   @default(true)
+  notes        String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([hotelId, metric, active])
+}
+
+/**
+ * Cost saving action (spec 255–256): problem → root cause → action → owner → target vs realized saving.
+ */
+model SavingAction {
+  id             String    @id @default(cuid())
+  hotelId        String
+  hotel          Hotel     @relation(fields: [hotelId], references: [id])
+  driver         String // SUPPLIER_PRICE | WASTE | YIELD | PORTION | RECIPE | OVERSTOCK | ENERGY | LABOR | CHANNEL | OTHER
+  problem        String
+  rootCause      String?
+  action         String
+  departmentId   String?
+  ownerName      String
+  ownerId        String?
+  baselineCost   Decimal?  @db.Decimal(20, 6) // monthly cost of the driver when the action was opened
+  targetSaving   Decimal   @db.Decimal(20, 6) // expected monthly saving
+  actualSaving   Decimal?  @db.Decimal(20, 6) // realized monthly saving (measured)
+  dueDate        DateTime
+  status         String    @default("OPEN") // OPEN | IN_PROGRESS | DONE | CANCELLED
+  opportunityKey String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  closedAt       DateTime?
+
+  @@index([hotelId, status])
 }
 
 model OccupancyImport {
