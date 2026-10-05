@@ -7,6 +7,7 @@ import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from 
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
 import { money, pct, qty } from "@/lib/format";
+import { useT } from "@/i18n/client";
 
 interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string; yieldPct: string; wastePct: string }
 // the first line is server-rendered: its key (used in element ids) must be the same on server and client
@@ -15,6 +16,7 @@ type Cost = { foodCost: string; fullBatchCost: string; portionCost: string | nul
 
 export function RecipeWizard({ types, departments, subRecipes }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[] }) {
   const router = useRouter();
+  const t = useT();
   const [head, setHead] = useState({ type: "RESTAURANT", code: "", name: "", departmentId: departments[0]?.id ?? "", posCode: "", batchYieldQty: "1", yieldUnit: "portion", portions: "1", sellingPrice: "", packagingCost: "", laborCost: "", energyCost: "", otherCost: "", productionLossPct: "" });
   const [lines, setLines] = useState<Line[]>([blank("line-0")]);
   const [preview, setPreview] = useState<{ issues: { field: string; message: string }[]; cost: Cost | null } | null>(null);
@@ -32,16 +34,16 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
 
   // Live cost: calculated on the server by the shared engine (no financial math in the browser).
   useEffect(() => {
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       if (!version.lines.length) return setPreview(null);
       try {
         setPreview(await call("POST", "/api/recipes/preview", { name: head.name || "Draft", version }));
       } catch (e) {
-        setPreview({ issues: [{ field: "request", message: e instanceof Error ? e.message : "Preview failed" }], cost: null });
+        setPreview({ issues: [{ field: "request", message: e instanceof Error ? e.message : t("Preview failed") }], cost: null });
       }
     }, 300);
-    return () => clearTimeout(t);
-  }, [version, head.name]);
+    return () => clearTimeout(timer);
+  }, [version, head.name, t]);
 
   async function save() {
     setMsg(null);
@@ -49,7 +51,7 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
       const r = await call<{ id: string }>("POST", "/api/recipes", { code: head.code, name: head.name, type: head.type, departmentId: head.departmentId || null, posCode: head.posCode || null, version: { ...version, reason: "Initial version" } });
       router.push(`/recipes/${r.id}`);
     } catch (e) {
-      setMsg({ tone: "red", text: e instanceof Error ? e.message : "Failed" });
+      setMsg({ tone: "red", text: e instanceof Error ? e.message : t("Failed") });
     }
   }
 
@@ -58,76 +60,76 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
   return (
     <div className="grid gap-4 xl:grid-cols-3">
       <div className="space-y-4 xl:col-span-2">
-        <Card title="1 · Recipe">
+        <Card title={`1 · ${t("Recipe")}`}>
           <div className="grid gap-3 md:grid-cols-4">
-            <div><Label htmlFor="w-type">Recipe type</Label><Select id="w-type" {...H("type")}>{types.map((t) => <option key={t}>{t}</option>)}</Select></div>
-            <div><Label htmlFor="w-code">Code</Label><Input id="w-code" {...H("code")} required /></div>
-            <div className="md:col-span-2"><Label htmlFor="w-name">Menu / product name</Label><Input id="w-name" {...H("name")} required /></div>
-            <div><Label htmlFor="w-dept">Department</Label><Select id="w-dept" {...H("departmentId")}>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></div>
-            <div><Label htmlFor="w-pos">POS code</Label><Input id="w-pos" {...H("posCode")} /></div>
-            <div><Label htmlFor="w-by">Batch yield</Label><Input id="w-by" inputMode="decimal" {...H("batchYieldQty")} /></div>
-            <div><Label htmlFor="w-yu">Yield unit</Label><Select id="w-yu" {...H("yieldUnit")}>{["portion", "kg", "l", "pc", "tray"].map((u) => <option key={u}>{u}</option>)}</Select></div>
-            <div><Label htmlFor="w-por">Usable portions</Label><Input id="w-por" inputMode="decimal" {...H("portions")} /></div>
-            <div><Label htmlFor="w-sp">Selling price (net)</Label><Input id="w-sp" inputMode="decimal" {...H("sellingPrice")} /></div>
-            <div><Label htmlFor="w-pl">Production loss %</Label><Input id="w-pl" inputMode="decimal" {...H("productionLossPct")} /></div>
+            <div><Label htmlFor="w-type">{t("Recipe type")}</Label><Select id="w-type" {...H("type")}>{types.map((x) => <option key={x} value={x}>{t(x)}</option>)}</Select></div>
+            <div><Label htmlFor="w-code">{t("Code")}</Label><Input id="w-code" {...H("code")} required /></div>
+            <div className="md:col-span-2"><Label htmlFor="w-name">{t("Menu / product name")}</Label><Input id="w-name" {...H("name")} required /></div>
+            <div><Label htmlFor="w-dept">{t("Department")}</Label><Select id="w-dept" {...H("departmentId")}>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></div>
+            <div><Label htmlFor="w-pos">{t("POS code")}</Label><Input id="w-pos" {...H("posCode")} /></div>
+            <div><Label htmlFor="w-by">{t("Batch yield")}</Label><Input id="w-by" inputMode="decimal" {...H("batchYieldQty")} /></div>
+            <div><Label htmlFor="w-yu">{t("Yield unit")}</Label><Select id="w-yu" {...H("yieldUnit")}>{["portion", "kg", "l", "pc", "tray"].map((u) => <option key={u} value={u}>{t(u)}</option>)}</Select></div>
+            <div><Label htmlFor="w-por">{t("Usable portions")}</Label><Input id="w-por" inputMode="decimal" {...H("portions")} /></div>
+            <div><Label htmlFor="w-sp">{t("Selling price (net)")}</Label><Input id="w-sp" inputMode="decimal" {...H("sellingPrice")} /></div>
+            <div><Label htmlFor="w-pl">{t("Production loss %")}</Label><Input id="w-pl" inputMode="decimal" {...H("productionLossPct")} /></div>
           </div>
         </Card>
-        <Card title="2 · Ingredients">
+        <Card title={`2 · ${t("Ingredients")}`}>
           <div className="space-y-2">
             {lines.map((l, i) => (
               <div key={l.key} className="grid items-end gap-2 rounded-lg border border-ink-100 p-2 md:grid-cols-12">
-                <div className="md:col-span-2"><Label htmlFor={`k-${l.key}`}>Line {i + 1}</Label><Select id={`k-${l.key}`} value={l.kind} onChange={(e) => set(l.key, { kind: e.target.value as Line["kind"], product: null, subRecipeId: "", unit: "" })}><option value="product">Ingredient</option><option value="sub">Sub-recipe</option></Select></div>
+                <div className="md:col-span-2"><Label htmlFor={`k-${l.key}`}>{t("Line {n}", { n: i + 1 })}</Label><Select id={`k-${l.key}`} value={l.kind} onChange={(e) => set(l.key, { kind: e.target.value as Line["kind"], product: null, subRecipeId: "", unit: "" })}><option value="product">{t("Ingredient")}</option><option value="sub">{t("Sub-recipe")}</option></Select></div>
                 <div className="md:col-span-4">
-                  <Label htmlFor={`i-${l.key}`}>{l.kind === "product" ? "Search ingredient" : "Sub-recipe"}</Label>
+                  <Label htmlFor={`i-${l.key}`}>{l.kind === "product" ? t("Search ingredient") : t("Sub-recipe")}</Label>
                   {l.kind === "product" ? <ProductPicker id={`i-${l.key}`} value={l.product} onChange={(p) => set(l.key, { product: p, unit: p?.recipeUnit ?? "" })} /> : (
-                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">Select…</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">{t("Select…")}</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
                   )}
                 </div>
-                <div className="md:col-span-2"><Label htmlFor={`q-${l.key}`}>Qty (EP)</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} /></div>
-                <div className="md:col-span-1"><Label htmlFor={`u-${l.key}`}>UOM</Label><Select id={`u-${l.key}`} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })}>{(l.kind === "product" ? unitsFor(l.product) : ["g", "kg", "ml", "l", "portion", "pc"]).map((u) => <option key={u}>{u}</option>)}</Select></div>
-                <div className="md:col-span-1"><Label htmlFor={`y-${l.key}`}>Yield %</Label><Input id={`y-${l.key}`} inputMode="decimal" placeholder="default" value={l.yieldPct} onChange={(e) => set(l.key, { yieldPct: e.target.value })} /></div>
-                <div className="md:col-span-1"><Label htmlFor={`w-${l.key}`}>Waste %</Label><Input id={`w-${l.key}`} inputMode="decimal" value={l.wastePct} onChange={(e) => set(l.key, { wastePct: e.target.value })} /></div>
-                <div className="md:col-span-1"><Button type="button" variant="ghost" aria-label="Remove" onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : ls))}><Trash2 className="h-4 w-4" /></Button></div>
+                <div className="md:col-span-2"><Label htmlFor={`q-${l.key}`}>{t("Qty (EP)")}</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} /></div>
+                <div className="md:col-span-1"><Label htmlFor={`u-${l.key}`}>{t("UOM")}</Label><Select id={`u-${l.key}`} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })}>{(l.kind === "product" ? unitsFor(l.product) : ["g", "kg", "ml", "l", "portion", "pc"]).map((u) => <option key={u}>{u}</option>)}</Select></div>
+                <div className="md:col-span-1"><Label htmlFor={`y-${l.key}`}>{t("Yield %")}</Label><Input id={`y-${l.key}`} inputMode="decimal" placeholder={t("default")} value={l.yieldPct} onChange={(e) => set(l.key, { yieldPct: e.target.value })} /></div>
+                <div className="md:col-span-1"><Label htmlFor={`w-${l.key}`}>{t("Waste %")}</Label><Input id={`w-${l.key}`} inputMode="decimal" value={l.wastePct} onChange={(e) => set(l.key, { wastePct: e.target.value })} /></div>
+                <div className="md:col-span-1"><Button type="button" variant="ghost" aria-label={t("Remove")} onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : ls))}><Trash2 className="h-4 w-4" /></Button></div>
               </div>
             ))}
           </div>
-          <Button type="button" variant="secondary" className="mt-3" onClick={() => setLines((ls) => [...ls, blank()])}><Plus className="h-4 w-4" /> Add ingredient</Button>
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => setLines((ls) => [...ls, blank()])}><Plus className="h-4 w-4" /> {t("Add ingredient")}</Button>
         </Card>
-        <Card title="3 · Other costs per batch">
+        <Card title={`3 · ${t("Other costs per batch")}`}>
           <div className="grid gap-3 md:grid-cols-4">
-            <div><Label htmlFor="w-pk">Packaging</Label><Input id="w-pk" inputMode="decimal" {...H("packagingCost")} /></div>
-            <div><Label htmlFor="w-lb">Direct labor</Label><Input id="w-lb" inputMode="decimal" {...H("laborCost")} /></div>
-            <div><Label htmlFor="w-en">Energy</Label><Input id="w-en" inputMode="decimal" {...H("energyCost")} /></div>
-            <div><Label htmlFor="w-ot">Other</Label><Input id="w-ot" inputMode="decimal" {...H("otherCost")} /></div>
+            <div><Label htmlFor="w-pk">{t("Packaging")}</Label><Input id="w-pk" inputMode="decimal" {...H("packagingCost")} /></div>
+            <div><Label htmlFor="w-lb">{t("Direct labor")}</Label><Input id="w-lb" inputMode="decimal" {...H("laborCost")} /></div>
+            <div><Label htmlFor="w-en">{t("Energy")}</Label><Input id="w-en" inputMode="decimal" {...H("energyCost")} /></div>
+            <div><Label htmlFor="w-ot">{t("Other")}</Label><Input id="w-ot" inputMode="decimal" {...H("otherCost")} /></div>
           </div>
         </Card>
       </div>
       <div className="space-y-4">
-        <Card title="4 · Review cost">
-          {!c ? <p className="text-sm text-ink-500">Add ingredients to see the live cost.</p> : (
+        <Card title={`4 · ${t("Review cost")}`}>
+          {!c ? <p className="text-sm text-ink-500">{t("Add ingredients to see the live cost.")}</p> : (
             <div className="space-y-3 text-sm">
               <dl className="grid grid-cols-2 gap-y-1">
-                <dt className="text-ink-500">Ingredient (EP)</dt><dd className="text-right tabular-nums">{money(c.ingredientCost)}</dd>
-                <dt className="text-ink-500">+ Yield adjustment</dt><dd className="text-right tabular-nums">{money(c.yieldAdjustment)}</dd>
-                <dt className="text-ink-500">+ Standard waste</dt><dd className="text-right tabular-nums">{money(c.wasteCost)}</dd>
-                <dt className="font-medium">= Food cost</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost)}</dd>
-                <dt className="font-medium">Full batch cost</dt><dd className="text-right font-medium tabular-nums">{money(c.fullBatchCost)}</dd>
-                <dt className="font-semibold">Cost per portion</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost)}</dd>
-                <dt className="text-ink-500">Food cost %</dt><dd className="text-right tabular-nums">{pct(c.foodCostPct)}</dd>
-                <dt className="text-ink-500">Margin %</dt><dd className="text-right tabular-nums">{pct(c.grossMarginPct)}</dd>
+                <dt className="text-ink-500">{t("Ingredient (EP)")}</dt><dd className="text-right tabular-nums">{money(c.ingredientCost)}</dd>
+                <dt className="text-ink-500">+ {t("Yield adjustment")}</dt><dd className="text-right tabular-nums">{money(c.yieldAdjustment)}</dd>
+                <dt className="text-ink-500">+ {t("Standard waste")}</dt><dd className="text-right tabular-nums">{money(c.wasteCost)}</dd>
+                <dt className="font-medium">= {t("Food cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost)}</dd>
+                <dt className="font-medium">{t("Full batch cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.fullBatchCost)}</dd>
+                <dt className="font-semibold">{t("Cost per portion")}</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost)}</dd>
+                <dt className="text-ink-500">{t("Food cost %")}</dt><dd className="text-right tabular-nums">{pct(c.foodCostPct)}</dd>
+                <dt className="text-ink-500">{t("Margin %")}</dt><dd className="text-right tabular-nums">{pct(c.grossMarginPct)}</dd>
               </dl>
               <Table>
-                <thead><tr><Th>Line</Th><Th align="right">AP</Th><Th align="right">Cost</Th></tr></thead>
-                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{x}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost)}</Td></tr>)}</tbody>
+                <thead><tr><Th>{t("Line")}</Th><Th align="right">AP</Th><Th align="right">{t("Cost")}</Th></tr></thead>
+                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost)}</Td></tr>)}</tbody>
               </Table>
             </div>
           )}
-          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">Validation</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul></Alert></div>}
+          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">{t("Validation")}</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul></Alert></div>}
         </Card>
-        <Card title="5 · Save">
+        <Card title={`5 · ${t("Save")}`}>
           {msg && <div className="mb-2"><Alert tone={msg.tone}>{msg.text}</Alert></div>}
-          <p className="mb-3 text-xs text-ink-500">Saved as a <strong>draft version</strong>. A user with recipe approval rights must approve it before it is used for theoretical cost. Incomplete drafts are allowed; approval is blocked until validation passes.</p>
-          <Button onClick={save} disabled={!head.code || !head.name}>Save draft</Button>
+          <p className="mb-3 text-xs text-ink-500">{t("Saved as a")} <strong>{t("draft version")}</strong>. {t("A user with recipe approval rights must approve it before it is used for theoretical cost. Incomplete drafts are allowed; approval is blocked until validation passes.")}</p>
+          <Button onClick={save} disabled={!head.code || !head.name}>{t("Save draft")}</Button>
         </Card>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { call } from "@/lib/client";
 import { cn } from "./ui";
+import { useT } from "@/i18n/client";
 
 export interface PickedProduct {
   id: string;
@@ -17,8 +18,9 @@ export interface PickedProduct {
   conversions?: { fromUnit: string; toUnit: string; factor: string }[];
 }
 
-/** Server-side search by name, SKU, barcode, brand or category (spec §27). */
-export function ProductPicker({ value, onChange, placeholder = "Search name, SKU, barcode…", id }: { value: PickedProduct | null; onChange: (p: PickedProduct | null) => void; placeholder?: string; id?: string }) {
+/** Server-side search by name, SKU, barcode, brand or category. */
+export function ProductPicker({ value, onChange, placeholder, id }: { value: PickedProduct | null; onChange: (p: PickedProduct | null) => void; placeholder?: string; id?: string }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [items, setItems] = useState<PickedProduct[]>([]);
   const [open, setOpen] = useState(false);
@@ -43,7 +45,7 @@ export function ProductPicker({ value, onChange, placeholder = "Search name, SKU
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 text-sm">
         <span className="truncate"><span className="font-medium">{value.name}</span> <span className="text-ink-400">{value.sku} · {value.stockUnit}</span></span>
-        <button type="button" className="text-xs font-medium text-brand-700 hover:underline" onClick={() => onChange(null)}>Change</button>
+        <button type="button" className="text-xs font-medium text-brand-700 hover:underline" onClick={() => onChange(null)}>{t("Change")}</button>
       </div>
     );
   }
@@ -65,7 +67,7 @@ export function ProductPicker({ value, onChange, placeholder = "Search name, SKU
           if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
           if (e.key === "Enter" && items[active]) { e.preventDefault(); onChange(items[active]!); setQ(""); setOpen(false); }
         }}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t("Search name, SKU, barcode…")}
         className="block w-full rounded-lg border border-ink-200 bg-white py-2 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
       />
       {open && items.length > 0 && (

@@ -3,11 +3,13 @@ import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
+import { getT } from "@/i18n/server";
 import { Decide } from "./decide";
 
 export const metadata = { title: "Approvals" };
 
 export default async function ApprovalsPage() {
+  const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "dashboard:view", hotelId);
   const [pending, history] = await Promise.all([
@@ -19,29 +21,29 @@ export default async function ApprovalsPage() {
   const fmt = (p: unknown) => (p && typeof p === "object" ? Object.entries(p as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`).join(" · ") : "");
   return (
     <>
-      <PageHeader title="Approvals" subtitle="Delete requests, high-value waste, stock adjustments. You can never approve your own request." />
-      <Card title={`Pending (${pending.length})`} padded={false}>
-        {pending.length === 0 ? <div className="p-4"><Empty title="Nothing waiting" /></div> : (
+      <PageHeader title={t("Approvals")} subtitle={t("Delete requests, high-value waste, stock adjustments. You can never approve your own request.")} />
+      <Card title={t("Pending ({n})", { n: pending.length })} padded={false}>
+        {pending.length === 0 ? <div className="p-4"><Empty title={t("Nothing waiting")} /></div> : (
           <Table>
-            <thead><tr><Th>Requested</Th><Th>Action</Th><Th>Requested by</Th><Th>Reason</Th><Th>Details</Th><Th /></tr></thead>
+            <thead><tr><Th>{t("Requested")}</Th><Th>{t("Action")}</Th><Th>{t("Requested by")}</Th><Th>{t("Reason")}</Th><Th>{t("Details")}</Th><Th /></tr></thead>
             <tbody className="divide-y divide-ink-100">
               {pending.map((a) => (
                 <tr key={a.id} className="align-top">
-                  <Td>{dateTime(a.requestedAt, hotel.timezone)}</Td><Td><Badge tone="amber">{a.action.replace(/_/g, " ")}</Badge></Td><Td>{users.get(a.requestedById)}</Td>
+                  <Td>{dateTime(a.requestedAt, hotel.timezone)}</Td><Td><Badge tone="amber">{t(a.action.replace(/_/g, " "))}</Badge></Td><Td>{users.get(a.requestedById)}</Td>
                   <Td className="whitespace-normal">{a.reason}</Td><Td className="whitespace-normal text-xs text-ink-500">{fmt(a.payload)}</Td>
-                  <Td>{canDecide && a.requestedById !== actor.userId ? <Decide id={a.id} /> : <span className="text-xs text-ink-400">{a.requestedById === actor.userId ? "your request" : "no permission"}</span>}</Td>
+                  <Td>{canDecide && a.requestedById !== actor.userId ? <Decide id={a.id} /> : <span className="text-xs text-ink-400">{a.requestedById === actor.userId ? t("your request") : t("no permission")}</span>}</Td>
                 </tr>
               ))}
             </tbody>
           </Table>
         )}
       </Card>
-      <Card title="Recent decisions" className="mt-4" padded={false}>
+      <Card title={t("Recent decisions")} className="mt-4" padded={false}>
         <Table>
-          <thead><tr><Th>Decided</Th><Th>Action</Th><Th>Status</Th><Th>Requested by</Th><Th>Decided by</Th><Th>Note</Th></tr></thead>
+          <thead><tr><Th>{t("Decided")}</Th><Th>{t("Action")}</Th><Th>{t("Status")}</Th><Th>{t("Requested by")}</Th><Th>{t("Decided by")}</Th><Th>{t("Note")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">
             {history.map((a) => (
-              <tr key={a.id}><Td>{dateTime(a.decidedAt, hotel.timezone)}</Td><Td>{a.action.replace(/_/g, " ")}</Td><Td><Badge tone={a.status === "APPROVED" ? "green" : "red"}>{a.status}</Badge></Td><Td>{users.get(a.requestedById)}</Td><Td>{users.get(a.decidedById ?? "")}</Td><Td className="whitespace-normal text-xs">{a.decisionNote}</Td></tr>
+              <tr key={a.id}><Td>{dateTime(a.decidedAt, hotel.timezone)}</Td><Td>{t(a.action.replace(/_/g, " "))}</Td><Td><Badge tone={a.status === "APPROVED" ? "green" : "red"}>{t(a.status)}</Badge></Td><Td>{users.get(a.requestedById)}</Td><Td>{users.get(a.decidedById ?? "")}</Td><Td className="whitespace-normal text-xs">{a.decisionNote}</Td></tr>
             ))}
           </tbody>
         </Table>

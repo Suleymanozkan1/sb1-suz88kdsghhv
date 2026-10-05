@@ -1,33 +1,30 @@
 import { redirect } from "next/navigation";
 import { Building2 } from "lucide-react";
 import { currentActor } from "@/server/auth/session";
+import { prisma } from "@/server/db";
+import { getT } from "@/i18n/server";
 import { LoginForm } from "./login-form";
+import { LanguageSwitch } from "@/components/language-switch";
 
-export const metadata = { title: "Sign in" };
+export const metadata = { title: "Giriş" };
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   if (await currentActor()) redirect("/");
+  // an empty installation has nobody to sign in: send the owner to the first-run setup
+  if ((await prisma.user.count()) === 0) redirect("/setup");
+  const t = await getT();
   return (
-    <main className="grid min-h-screen lg:grid-cols-2">
-      <div className="hidden flex-col justify-between bg-ink-950 p-10 text-white lg:flex">
-        <div className="flex items-center gap-2 text-lg font-semibold">
-          <Building2 className="h-6 w-6 text-brand-400" aria-hidden /> HotelCost
-        </div>
-        <div className="max-w-md">
-          <p className="text-3xl font-semibold leading-tight">Know where every unit of cost came from — and why it changed.</p>
-          <p className="mt-4 text-ink-300">Purchase → stock → recipe → yield → consumption → waste → theoretical vs actual → variance. One shared cost engine, fully traceable.</p>
-        </div>
-        <p className="text-xs text-ink-300">Ledger-based · Audited · Decimal-precise</p>
-      </div>
-      <div className="flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2 text-lg font-semibold lg:hidden">
+    <main className="flex min-h-screen items-center justify-center bg-ink-50 p-6">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm ring-1 ring-ink-200">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-lg font-semibold text-ink-950">
             <Building2 className="h-6 w-6 text-brand-600" aria-hidden /> HotelCost
           </div>
-          <h1 className="text-2xl font-semibold text-ink-950">Sign in</h1>
-          <p className="mt-1 text-sm text-ink-500">Use your hotel account.</p>
-          <LoginForm />
+          <LanguageSwitch />
         </div>
+        <h1 className="text-2xl font-semibold text-ink-950">{t("Sign in")}</h1>
+        <LoginForm />
       </div>
     </main>
   );

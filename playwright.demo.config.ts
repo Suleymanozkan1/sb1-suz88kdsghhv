@@ -21,6 +21,6 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { DATABASE_URL: DB, NODE_ENV: "production", RATE_LIMIT_LOGIN_PER_IP: "500", RATE_LIMIT_LOGIN_PER_EMAIL: "100" },
+    env: { DATABASE_URL: DB, NODE_ENV: "production", RATE_LIMIT_LOGIN_PER_IP: "500", RATE_LIMIT_LOGIN_PER_EMAIL: "100", DEFAULT_LOCALE: "en" },
   },
 });

@@ -36,8 +36,8 @@ async function schemaGraph(db: PrismaClient) {
 const q = (s: string) => `"${s.replace(/"/g, "")}"`;
 
 /** Deletes the given demo organizations completely. Returns rows deleted per table. */
-export async function purgeDemoOrganizations(db: PrismaClient, organizationIds: string[]): Promise<Record<string, number>> {
-  assertDemoAllowed();
+export async function purgeDemoOrganizations(db: PrismaClient, organizationIds: string[], ownerConsent = false): Promise<Record<string, number>> {
+  assertDemoAllowed(ownerConsent);
   if (!organizationIds.length) return {};
   const orgs = await db.organization.findMany({ where: { id: { in: organizationIds } } });
   if (orgs.length !== organizationIds.length || orgs.some((o) => !o.isDemo || o.isPlatform)) throw new DomainError("FORBIDDEN", "Only demo organizations can be deleted");

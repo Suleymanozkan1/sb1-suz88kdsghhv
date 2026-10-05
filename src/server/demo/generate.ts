@@ -35,7 +35,9 @@ import type { DemoProfile } from "./profiles";
 
 // ───────────────────────── helpers ─────────────────────────
 
-export function assertDemoAllowed() {
+/** `ownerConsent`: the installation's owner asked for demo data from the first-run setup of an empty database. */
+export function assertDemoAllowed(ownerConsent = false) {
+  if (ownerConsent) return;
   const env = (process.env.HOTELCOST_ENV ?? process.env.APP_ENV ?? "").toLowerCase();
   if (env === "production" || (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_DATA !== "1")) {
     throw new Error("Demo data is disabled in production (spec 124, 126). Set ALLOW_DEMO_DATA=1 only on a non-production server.");
@@ -158,8 +160,8 @@ const WASTE_TYPES: Array<[WasteType, string]> = [["SPOILED", "Spoiled in storage
 
 // ───────────────────────── entry point ─────────────────────────
 
-export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: { password: string; log?: (s: string) => void; now?: Date }): Promise<DemoSummary> {
-  assertDemoAllowed();
+export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: { password: string; log?: (s: string) => void; now?: Date; ownerConsent?: boolean; platformAdmin?: boolean }): Promise<DemoSummary> {
+  assertDemoAllowed(opts.ownerConsent);
   const t0 = Date.now();
   const log = opts.log ?? (() => undefined);
   if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.map((o) => o.name) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
@@ -171,7 +173,8 @@ export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts:
   for (let d = start; d <= end; d = new Date(d.getTime() + DAY)) days.push(d);
   log(`profile ${profile.name}: ${days.length} days ${ymd(start)} → ${ymd(end)}`);
 
-  await ensurePlatformAdmin(db, hash);
+  // never on a public installation: its password would be the documented demo password
+  if (opts.platformAdmin !== false) await ensurePlatformAdmin(db, hash);
   let users = 0;
   let hotels = 0;
   for (const o of profile.orgs) {

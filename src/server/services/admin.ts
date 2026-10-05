@@ -286,18 +286,36 @@ export const DEFAULT_CATEGORIES: Record<(typeof CATEGORY_GROUPS)[number], string
   LINEN: ["Bed linen", "Towels", "Bathrobes"],
 };
 
+/** Turkish names for the defaults above, used when the company is set up in Turkish. Codes stay the same. */
+const DEFAULT_NAMES_TR: Record<string, string> = {
+  "Food & Beverage": "Yiyecek & İçecek", Restaurant: "Restoran", Bar: "Bar", Breakfast: "Kahvaltı", Banquet: "Banket", "Main Kitchen": "Ana Mutfak", Pastry: "Pastane",
+  Rooms: "Odalar", Housekeeping: "Kat Hizmetleri", Laundry: "Çamaşırhane", Engineering: "Teknik Servis", Administration: "İdari İşler", "Sales & Marketing": "Satış & Pazarlama",
+  "Main Store": "Ana Depo", "Kitchen Store": "Mutfak Deposu", "Restaurant Store": "Restoran Deposu", "Bar Store": "Bar Deposu", "Breakfast Store": "Kahvaltı Deposu", "Pastry Store": "Pastane Deposu",
+  "Housekeeping Store": "Kat Hizmetleri Deposu", "Linen Room": "Çamaşır Odası", "Engineering Store": "Teknik Depo",
+  Food: "Yiyecek", Beverage: "İçecek", Packaging: "Ambalaj", Linen: "Tekstil",
+  Meat: "Et", Chicken: "Tavuk", Fish: "Balık", Seafood: "Deniz ürünleri", Vegetables: "Sebze", Fruits: "Meyve", Dairy: "Süt ürünleri", Cheese: "Peynir", Eggs: "Yumurta",
+  "Dry goods": "Kuru gıda", Bakery: "Unlu mamul", "Frozen products": "Dondurulmuş ürünler", Sauces: "Soslar", Spices: "Baharatlar", Oils: "Yağlar", Legumes: "Bakliyat", Nuts: "Kuruyemiş",
+  Chocolate: "Çikolata", "Pastry materials": "Pastane malzemeleri", "Breakfast products": "Kahvaltılık ürünler",
+  "Soft drinks": "Meşrubat", Juices: "Meyve suları", Coffee: "Kahve", Tea: "Çay", Syrups: "Şuruplar", Water: "Su", Beer: "Bira", Wine: "Şarap", Spirits: "Alkollü içkiler", Garnishes: "Garnitürler",
+  Boxes: "Kutular", Cups: "Bardaklar", Bags: "Poşetler", Napkins: "Peçeteler", Containers: "Saklama kapları",
+  Chemicals: "Kimyasallar", Amenities: "Buklet ürünleri", "Cleaning supplies": "Temizlik malzemeleri", "Guest supplies": "Misafir malzemeleri",
+  "Spare parts": "Yedek parçalar", Consumables: "Sarf malzemeleri", "Bed linen": "Yatak tekstili", Towels: "Havlular", Bathrobes: "Bornozlar",
+};
+
 /** Standard departments (with cost centers), warehouses and category tree for a new hotel (spec 146). */
-export async function applyHotelDefaults(tx: Tx, hotelId: string) {
+export async function applyHotelDefaults(tx: Tx, hotelId: string, locale: "tr" | "en" = "en") {
+  const nm = (n: string) => (locale === "tr" ? (DEFAULT_NAMES_TR[n] ?? n) : n);
   const dept: Record<string, string> = {};
-  for (const [c, name, outlet, parent] of DEFAULT_DEPARTMENTS) {
+  for (const [c, en, outlet, parent] of DEFAULT_DEPARTMENTS) {
+    const name = nm(en);
     const d = await tx.department.create({ data: { hotelId, code: c, name, isOutlet: outlet, parentId: parent ? dept[parent]! : null } });
     dept[c] = d.id;
     await tx.costCenter.create({ data: { hotelId, departmentId: d.id, code: `CC-${c}`, name, kind: "DEPARTMENT" } });
   }
-  for (const [c, name, d] of DEFAULT_WAREHOUSES) await tx.warehouse.create({ data: { hotelId, code: c, name, departmentId: d ? dept[d]! : null } });
+  for (const [c, name, d] of DEFAULT_WAREHOUSES) await tx.warehouse.create({ data: { hotelId, code: c, name: nm(name), departmentId: d ? dept[d]! : null } });
   for (const [group, children] of Object.entries(DEFAULT_CATEGORIES)) {
-    const parent = await tx.productCategory.create({ data: { hotelId, code: group, name: group[0] + group.slice(1).toLowerCase(), group } });
-    for (const c of children) await tx.productCategory.create({ data: { hotelId, code: `${group}-${c.toUpperCase().replace(/[^A-Z]/g, "")}`, name: c, group, parentId: parent.id } });
+    const parent = await tx.productCategory.create({ data: { hotelId, code: group, name: nm(group[0] + group.slice(1).toLowerCase()), group } });
+    for (const c of children) await tx.productCategory.create({ data: { hotelId, code: `${group}-${c.toUpperCase().replace(/[^A-Z]/g, "")}`, name: nm(c), group, parentId: parent.id } });
   }
   return dept;
 }
@@ -318,6 +336,8 @@ const bootstrapInput = z.object({
   adminEmail: z.string().trim().toLowerCase().email(),
   adminName: z.string().trim().min(2).max(120),
   adminPassword: password,
+  /** language of the default department / warehouse / category names */
+  locale: z.enum(["tr", "en"]).default("en"),
 });
 
 /**
@@ -335,7 +355,7 @@ export async function bootstrapInstallation(db: Db, input: unknown) {
       const org = await tx.organization.create({ data: { name: p.organizationName } });
       for (const c of new Set([p.baseCurrency, "TRY", "EUR", "USD"])) await tx.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
       const hotel = await tx.hotel.create({ data: { organizationId: org.id, code: p.hotelCode, name: p.hotelName, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency } });
-      await applyHotelDefaults(tx, hotel.id);
+      await applyHotelDefaults(tx, hotel.id, p.locale);
       const roleId = await createTenantRoles(tx, org.id);
       const admin = await tx.user.create({ data: { organizationId: org.id, email: p.adminEmail, name: p.adminName, passwordHash: hash, roleId: roleId.admin! } });
       await tx.userHotelAccess.create({ data: { userId: admin.id, hotelId: hotel.id } });

@@ -11,7 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function call<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH", url: string, body?: unknown): Promise<T> {
+export async function call<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, { method, headers: body === undefined ? {} : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin" });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;

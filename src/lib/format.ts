@@ -27,13 +27,13 @@ export function pct(v: V, digits = 1): string {
 
 export function date(v: string | Date | null | undefined): string {
   if (!v) return "—";
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(v));
+  return new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(new Date(v));
 }
 
 /** Date and time in the hotel's timezone (Hotel.timezone), never the server's: on a cloud host that is UTC. */
 export function dateTime(v: string | Date | null | undefined, timeZone = "Europe/Istanbul"): string {
   if (!v) return "—";
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(v));
+  return new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(v));
 }
 
 export function sign(v: V): "pos" | "neg" | "zero" {

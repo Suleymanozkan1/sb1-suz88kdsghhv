@@ -9,6 +9,25 @@
 import ExcelJS from "exceljs";
 import type { Column, FullCostExport, Section } from "../services/export";
 import { EXPORT_VERSION, APP_VERSION } from "../services/export";
+import { makeT, type Locale, type T } from "@/i18n/core";
+import { TR } from "@/i18n/tr";
+
+/**
+ * Language of the human-facing text only (titles, CONTROL labels, notes, README). Sheet names, table
+ * names, defined names, table column headers, CONTROL values read by the VBA and number formats are the
+ * data contract and stay English in every language.
+ */
+interface Lang {
+  t: T;
+  /** engine text (section titles / notes): dictionary hit or unchanged */
+  tx: (v: string) => string;
+  upper: (v: string) => string;
+}
+const lang = (locale: Locale): Lang => ({
+  t: makeT(locale),
+  tx: (v) => (locale === "en" ? v : (TR[v] ?? v)),
+  upper: (v) => (locale === "tr" ? v.toLocaleUpperCase("tr-TR") : v.toUpperCase()),
+});
 
 export const WORKBOOK_VERSION = "1.0.0";
 export const CONTROL_SHEET = "01_CONTROL";
@@ -172,21 +191,23 @@ export interface BulkTable {
   rows: Array<Record<string, string | null>>;
 }
 
-function title(ws: ExcelJS.Worksheet, text: string, sub: string) {
+function title(ws: ExcelJS.Worksheet, text: string, sub: string, lg: Lang) {
   ws.getCell("A1").value = text;
   ws.getCell("A1").font = { bold: true, size: 16, color: { argb: INK } };
   ws.getCell("A2").value = sub;
   ws.getCell("A2").font = { size: 10, color: { argb: MUTED } };
-  ws.getCell("A3").value = { formula: `HYPERLINK("#'${CONTROL_SHEET}'!A1","← Dashboard'a Dön / Back to CONTROL")`, result: "← Dashboard'a Dön / Back to CONTROL" };
+  const back = lg.t("← Dashboard'a Dön / Back to CONTROL");
+  ws.getCell("A3").value = { formula: `HYPERLINK("#'${CONTROL_SHEET}'!A1","${back.replace(/"/g, '""')}")`, result: back };
   ws.getCell("A3").font = { color: { argb: BRAND }, underline: true, size: 10 };
 }
 
-function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[]) {
+function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[], lg: Lang = lang("en")) {
   const status = ws.getCell(headerRow - 2, startCol);
-  status.value = `Data status: ${sec.status}${sec.note ? ` - ${sec.note}` : ""}  |  rows: ${sec.rows.length}`;
+  // status codes stay as in the tables (conditional formats, VBA); only the wording around them is translated
+  status.value = lg.t("Data status: {status}{note}  |  rows: {rows}", { status: sec.status, note: sec.note ? ` - ${lg.tx(sec.note)}` : "", rows: sec.rows.length });
   status.font = { size: 9, italic: true, color: { argb: sec.status === "NOT_AVAILABLE" ? "FFB45309" : MUTED } };
   const sub = ws.getCell(headerRow - 1, startCol);
-  sub.value = sec.title;
+  sub.value = lg.tx(sec.title);
   sub.font = { bold: true, size: 11, color: { argb: INK } };
   // large tables: ExcelJS writes the first data row (it fixes every column's cell style); the rest is streamed
   const deferred = bulk && sec.rows.length > BULK_THRESHOLD;
@@ -292,7 +313,9 @@ const FORMULAS: Array<[string, string, string]> = [
   ["Recommended Order / Önerilen Sipariş", "= Expected Consumption + Safety Stock + Lead-time Demand − Current Stock − Open PO (rounded up to purchase units)", "Beklenen tüketim + Emniyet stoku + Tedarik süresi talebi − Mevcut stok − Açık sipariş"],
 ];
 
-export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: string; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
+export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: string; locale?: Locale; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
+  const lg = lang(opts.locale ?? "en");
+  const { t } = lg;
   const bulk: BulkTable[] = [];
   const wb = new ExcelJS.Workbook();
   wb.creator = "HotelCost";
@@ -312,7 +335,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   for (const c of [5, 6, 7, 8, 9, 10]) ctl.getColumn(c).width = 16;
   ctl.getCell("B1").value = "HOTELCOST";
   ctl.getCell("B1").font = { bold: true, size: 22, color: { argb: BRAND } };
-  ctl.getCell("B2").value = "FULL COST REPORT";
+  ctl.getCell("B2").value = t("FULL COST REPORT");
   ctl.getCell("B2").font = { bold: true, size: 14, color: { argb: INK } };
   ctl.getCell("C2").value = `${e.meta.hotel.name} · ${e.meta.period.label}`;
   ctl.getCell("C2").font = { size: 12, color: { argb: MUTED } };
@@ -334,10 +357,10 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ["API Base URL", "ctl_ApiUrl", opts.apiBaseUrl, { input: true }],
   ];
   let r = 4;
-  ctl.getCell(`B${r - 1}`).value = "PARAMETERS (yellow cells are editable)";
+  ctl.getCell(`B${r - 1}`).value = t("PARAMETERS (yellow cells are editable)");
   ctl.getCell(`B${r - 1}`).font = { bold: true, size: 10, color: { argb: MUTED } };
   for (const [label, name, value, o] of params) {
-    ctl.getCell(`B${r}`).value = label;
+    ctl.getCell(`B${r}`).value = t(label);
     ctl.getCell(`B${r}`).font = { bold: true, color: { argb: INK } };
     const c = ctl.getCell(`C${r}`);
     c.value = value;
@@ -347,13 +370,13 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF9C3" } };
       c.border = { bottom: { style: "thin", color: { argb: "FFEAB308" } } };
     }
-    if (o.list) c.dataValidation = { type: "list", allowBlank: false, formulae: [o.list.startsWith('"') ? o.list : `=${o.list}`], showErrorMessage: true, errorTitle: "HotelCost", error: "Choose a value from the list." };
-    if (o.date) c.dataValidation = { type: "date", operator: "greaterThan", allowBlank: false, formulae: [new Date("2000-01-01T00:00:00Z")], showErrorMessage: true, error: "Enter a valid date (yyyy-mm-dd)." };
+    if (o.list) c.dataValidation = { type: "list", allowBlank: false, formulae: [o.list.startsWith('"') ? o.list : `=${o.list}`], showErrorMessage: true, errorTitle: "HotelCost", error: t("Choose a value from the list.") };
+    if (o.date) c.dataValidation = { type: "date", operator: "greaterThan", allowBlank: false, formulae: [new Date("2000-01-01T00:00:00Z")], showErrorMessage: true, error: t("Enter a valid date (yyyy-mm-dd).") };
     names.push({ name, ref: `'${CONTROL_SHEET}'!$C$${r}` });
     r++;
   }
   r++;
-  ctl.getCell(`B${r}`).value = "REPORT METADATA";
+  ctl.getCell(`B${r}`).value = t("REPORT METADATA");
   ctl.getCell(`B${r}`).font = { bold: true, size: 10, color: { argb: MUTED } };
   r++;
   const metaRows: Array<[string, string, ExcelJS.CellValue]> = [
@@ -366,17 +389,17 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ["Workbook Version", "ctl_WorkbookVersion", WORKBOOK_VERSION],
     ["Content Hash (SHA-256)", "ctl_ContentHash", e.meta.contentHash],
     ["Scope", "ctl_Scope", e.meta.scope.departments === "ALL" ? "All departments" : e.meta.scope.departments.join(", ")],
-    ["Last Run Status", "ctl_RunStatus", "Prefilled by HotelCost server (macros not run yet)"],
+    ["Last Run Status", "ctl_RunStatus", t("Prefilled by HotelCost server (macros not run yet)")],
   ];
   for (const [label, name, value] of metaRows) {
-    ctl.getCell(`B${r}`).value = label;
+    ctl.getCell(`B${r}`).value = t(label);
     ctl.getCell(`B${r}`).font = { color: { argb: MUTED } };
     ctl.getCell(`C${r}`).value = value;
     names.push({ name, ref: `'${CONTROL_SHEET}'!$C$${r}` });
     r++;
   }
   // score panel
-  ctl.getCell("F11").value = "EXPORT SCORE";
+  ctl.getCell("F11").value = t("EXPORT SCORE");
   ctl.getCell("F11").font = { bold: true, size: 10, color: { argb: MUTED } };
   const scores: Array<[string, string, ExcelJS.CellValue]> = [
     ["Data Quality %", "ctl_ScoreDataQuality", e.score.dataQuality ? Number(e.score.dataQuality) : null],
@@ -386,7 +409,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   ];
   scores.forEach(([label, name, value], i) => {
     const row = 12 + i;
-    ctl.getCell(`F${row}`).value = label;
+    ctl.getCell(`F${row}`).value = t(label);
     ctl.mergeCells(`G${row}:H${row}`);
     const c = ctl.getCell(`G${row}`);
     c.value = value;
@@ -402,11 +425,11 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
       { type: "containsText", operator: "containsText", text: "PASS", priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD6F5E3" } } } },
     ],
   });
-  ctl.getCell("F21").value = "Button not working? Enable macros (File > Info > Enable Content). The prefilled data below is valid without macros.";
+  ctl.getCell("F21").value = t("Button not working? Enable macros (File > Info > Enable Content). The prefilled data below is valid without macros.");
   ctl.getCell("F21").font = { size: 9, italic: true, color: { argb: MUTED } };
   // navigation menu
   r += 1;
-  ctl.getCell(`B${r}`).value = "NAVIGATION";
+  ctl.getCell(`B${r}`).value = t("NAVIGATION");
   ctl.getCell(`B${r}`).font = { bold: true, size: 10, color: { argb: MUTED } };
   r++;
   const navStart = r;
@@ -414,7 +437,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     const row = navStart + i;
     ctl.getCell(`B${row}`).value = { formula: `HYPERLINK("#'${s.name}'!A1","${s.name}")`, result: s.name };
     ctl.getCell(`B${row}`).font = { color: { argb: BRAND }, underline: true };
-    ctl.getCell(`C${row}`).value = s.description;
+    ctl.getCell(`C${row}`).value = t(s.description);
     ctl.getCell(`C${row}`).font = { size: 9, color: { argb: MUTED } };
   });
   ctl.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
@@ -423,12 +446,12 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   const sectionSheet: Record<string, string> = {};
   for (const spec of SHEETS) {
     const ws = wb.addWorksheet(spec.name, { state: spec.hidden ? "hidden" : "visible", views: [{ state: "frozen", ySplit: spec.headerRow ?? HEADER_ROW, showGridLines: false }] });
-    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? "HOTELCOST — FULL COST REPORT" : spec.title, `${e.meta.hotel.name} · ${e.meta.period.label} · ${cur} · Generated ${e.meta.generatedAt.slice(0, 16).replace("T", " ")} by ${e.meta.generatedBy} · Export ${e.exportVersion}`);
+    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? t("HOTELCOST — FULL COST REPORT") : spec.hidden && spec.title === spec.name ? spec.title : t(spec.title), t("{hotel} · {period} · {currency} · Generated {at} by {user} · Export {version}", { hotel: e.meta.hotel.name, period: e.meta.period.label, currency: cur, at: e.meta.generatedAt.slice(0, 16).replace("T", " "), user: e.meta.generatedBy, version: e.exportVersion }), lg);
     let col = 1;
     for (const key of spec.sections) {
       const sec = e.sections[key];
       if (!sec) continue;
-      col = writeTable(ws, sec, col, spec.headerRow ?? HEADER_ROW, cur, locations, spec.sections.length === 1 ? bulk : undefined);
+      col = writeTable(ws, sec, col, spec.headerRow ?? HEADER_ROW, cur, locations, spec.sections.length === 1 ? bulk : undefined, lg);
       sectionSheet[key] = spec.name;
     }
     if (spec.print) ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: `${spec.headerRow ?? HEADER_ROW}:${spec.headerRow ?? HEADER_ROW}` };
@@ -448,7 +471,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     const rowBase = 5 + Math.floor(i / 4) * 3;
     const c = 1 + (i % 4) * 3;
     const L = colLetter(c);
-    ex.getCell(`${L}${rowBase}`).value = label.toUpperCase();
+    ex.getCell(`${L}${rowBase}`).value = lg.upper(t(label));
     ex.getCell(`${L}${rowBase}`).font = { size: 9, bold: true, color: { argb: MUTED } };
     const v = e.summary[key];
     const cell = ex.getCell(`${L}${rowBase + 1}`);
@@ -458,17 +481,17 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     cell.font = { size: 16, bold: true, color: { argb: key === "unexplainedVariance" ? "FFB45309" : INK } };
     for (const rr of [rowBase, rowBase + 1]) ex.getCell(`${L}${rr}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT } };
   });
-  ex.getCell("A4").value = `Data quality ${e.score.dataQuality ?? "—"}% · Reconciliation ${e.score.reconciliation} · Status column shows ACTUAL / THEORETICAL / ESTIMATED / NOT_AVAILABLE / INSUFFICIENT_DATA for every figure (no false precision).`;
+  ex.getCell("A4").value = t("Data quality {dq}% · Reconciliation {recon} · Status column shows ACTUAL / THEORETICAL / ESTIMATED / NOT_AVAILABLE / INSUFFICIENT_DATA for every figure (no false precision).", { dq: e.score.dataQuality ?? "—", recon: e.score.reconciliation });
   ex.getCell("A4").font = { size: 9, italic: true, color: { argb: MUTED } };
 
   // ── 46_RECONCILIATION ──
   const rec = sheet("46_RECONCILIATION");
   const serverSec: Section = {
-    key: "serverChecks", title: "Server-side checks (same engine as the application)", status: "OK", source: "export.checks",
+    key: "serverChecks", title: t("Server-side checks (same engine as the application)"), status: "OK", source: "export.checks",
     columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "money" }, { key: "actual", header: "Actual", type: "money" }, { key: "difference", header: "Difference", type: "money" }, { key: "status", header: "Status", type: "text" }, { key: "note", header: "Note", type: "text" }],
     rows: e.checks.map((c) => ({ check: c.check, expected: c.expected, actual: c.actual, difference: c.difference, status: c.status, note: c.note })),
   };
-  let rc = writeTable(rec, serverSec, 1, HEADER_ROW, cur, locations);
+  let rc = writeTable(rec, serverSec, 1, HEADER_ROW, cur, locations, undefined, lg);
   const S = (k: string) => `INDEX(tbl_executiveSummary[Value],MATCH("${k}",tbl_executiveSummary[Metric],0))`;
   const num = (k: string) => Number(e.summary[k]?.value ?? 0);
   const sumCol = (k: string, col: string, pred?: (r: Record<string, string | null>) => boolean) => (e.sections[k]?.rows ?? []).filter((x) => !pred || pred(x)).reduce((a, x) => a + Number(x[col] ?? 0), 0);
@@ -486,12 +509,12 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ["38_PNL Cost of Sales = Executive Actual Cost", S("actualCost"), num("actualCost"), "INDEX(tbl_pnl[Value],5)", Number(e.sections.pnl?.rows[4]?.value ?? 0), "FILTER"],
   ];
   const exSec: Section = {
-    key: "excelChecks", title: "Workbook formula checks (live)", status: "OK", source: "Excel formulas",
+    key: "excelChecks", title: t("Workbook formula checks (live)"), status: "OK", source: "Excel formulas",
     columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "money" }, { key: "actual", header: "Actual", type: "money" }, { key: "difference", header: "Difference", type: "money" }, { key: "status", header: "Status", type: "text" }],
     rows: excelChecks.map(([c]) => ({ check: c, expected: null, actual: null, difference: null, status: null })),
   };
   const exStart = rc;
-  rc = writeTable(rec, exSec, exStart, HEADER_ROW, cur, locations);
+  rc = writeTable(rec, exSec, exStart, HEADER_ROW, cur, locations, undefined, lg);
   excelChecks.forEach(([, fExp, vExp, fAct, vAct, guard], i) => {
     const row = HEADER_ROW + 1 + i;
     const [B, C, D, E] = [colLetter(exStart + 1), colLetter(exStart + 2), colLetter(exStart + 3), colLetter(exStart + 4)];
@@ -505,23 +528,23 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     rec.getCell(`${E}${row}`).value = { formula: guardExpr ? `IF(${guardExpr},"WARNING",${base})` : base, result: guardActive ? "WARNING" : ok ? "PASS" : "FAIL" };
   });
   const vbaSec: Section = {
-    key: "vbaChecks", title: "Macro checks (row counts, duplicates) — filled on refresh", status: "OK", source: "modReconciliation",
+    key: "vbaChecks", title: t("Macro checks (row counts, duplicates) — filled on refresh"), status: "OK", source: "modReconciliation",
     columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "int" }, { key: "actual", header: "Actual", type: "int" }, { key: "status", header: "Status", type: "text" }],
     rows: Object.values(e.sections).map((s) => ({ check: `Row count ${s.key}`, expected: String(s.rows.length), actual: String(s.rows.length), status: "PASS" })),
   };
-  writeTable(rec, vbaSec, rc, HEADER_ROW, cur, locations);
+  writeTable(rec, vbaSec, rc, HEADER_ROW, cur, locations, undefined, lg);
 
   // ── 48_EXPORT_ERRORS / RUN_LOG ──
-  writeTable(sheet("48_EXPORT_ERRORS"), { key: "errors", title: "Export errors and warnings", status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations);
-  writeTable(sheet("RUN_LOG"), { key: "runLog", title: "Run log", status: "OK", source: "modErrorHandling", columns: ["Run ID", "Date", "User", "Hotel", "Period", "Start Time", "End Time", "Status", "Records Processed", "Errors", "Warnings"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 1 ? "date" : i === 5 || i === 6 ? "datetime" : i >= 8 ? "int" : "text" })), rows: [{ c0: e.exportId, c1: e.meta.generatedAt.slice(0, 10), c2: e.meta.generatedBy, c3: e.meta.hotel.name, c4: e.meta.period.label, c5: e.meta.generatedAt, c6: e.meta.generatedAt, c7: `SERVER PREFILL (${e.score.reconciliation})`, c8: String(Object.values(e.counts).reduce((a, b) => a + b, 0)), c9: String(e.score.errors), c10: String(e.score.warnings) }] }, 1, HEADER_ROW, cur, locations);
+  writeTable(sheet("48_EXPORT_ERRORS"), { key: "errors", title: t("Export errors and warnings"), status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations, undefined, lg);
+  writeTable(sheet("RUN_LOG"), { key: "runLog", title: t("Run log"), status: "OK", source: "modErrorHandling", columns: ["Run ID", "Date", "User", "Hotel", "Period", "Start Time", "End Time", "Status", "Records Processed", "Errors", "Warnings"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 1 ? "date" : i === 5 || i === 6 ? "datetime" : i >= 8 ? "int" : "text" })), rows: [{ c0: e.exportId, c1: e.meta.generatedAt.slice(0, 10), c2: e.meta.generatedBy, c3: e.meta.hotel.name, c4: e.meta.period.label, c5: e.meta.generatedAt, c6: e.meta.generatedAt, c7: `SERVER PREFILL (${e.score.reconciliation})`, c8: String(Object.values(e.counts).reduce((a, b) => a + b, 0)), c9: String(e.score.errors), c10: String(e.score.warnings) }] }, 1, HEADER_ROW, cur, locations, undefined, lg);
 
   // ── 49_FORMULAS / 50_SOURCE_MAP / 51_README ──
-  writeTable(sheet("49_FORMULAS"), { key: "formulas", title: "Formula dictionary (EN / TR)", status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: "Metric", type: "text" }, { key: "b", header: "Formula (EN)", type: "text" }, { key: "c", header: "Formül (TR)", type: "text" }], rows: FORMULAS.map(([a, b, c]) => ({ a, b, c })) }, 1, HEADER_ROW, cur, locations);
+  writeTable(sheet("49_FORMULAS"), { key: "formulas", title: t("Formula dictionary (EN / TR)"), status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: "Metric", type: "text" }, { key: "b", header: "Formula (EN)", type: "text" }, { key: "c", header: "Formül (TR)", type: "text" }], rows: FORMULAS.map(([a, b, c]) => ({ a, b, c })) }, 1, HEADER_ROW, cur, locations, undefined, lg);
   writeTable(sheet("50_SOURCE_MAP"), {
-    key: "sourceMap", title: "Source map", status: "OK", source: "export contract",
+    key: "sourceMap", title: t("Source map"), status: "OK", source: "export contract",
     columns: [{ key: "a", header: "Excel Sheet", type: "text" }, { key: "b", header: "Excel Table", type: "text" }, { key: "c", header: "Dataset", type: "text" }, { key: "d", header: "Source (module / table)", type: "text" }, { key: "e", header: "Source API", type: "text" }, { key: "f", header: "Data Status", type: "text" }, { key: "g", header: "Rows", type: "int" }],
     rows: Object.values(e.sections).map((s) => ({ a: sectionSheet[s.key] ?? "(not placed)", b: `tbl_${s.key}`, c: s.title, d: s.source, e: `GET /api/export/full-cost → sections.${s.key}`, f: s.status, g: String(s.rows.length) })),
-  }, 1, HEADER_ROW, cur, locations);
+  }, 1, HEADER_ROW, cur, locations, undefined, lg);
   const readme = sheet("51_README");
   const lines = [
     "WHAT THIS WORKBOOK IS",
@@ -540,7 +563,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     "Source code of every module is visible in the VBA editor (Alt+F11) and in the HotelCost repository (src/server/excel/vba).",
     "",
     "SHEETS",
-    ...SHEETS.filter((s) => !s.hidden).map((s) => `${s.name} — ${s.description}`),
+    ...SHEETS.filter((s) => !s.hidden).map((s) => `${s.name} — ${t(s.description)}`),
     "RAW_* sheets (hidden, protected) contain the raw datasets used by pivots. RUN_LOG and _LISTS are hidden helper sheets.",
     "",
     "COLOURS",
@@ -560,19 +583,21 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     "",
     `Workbook ${WORKBOOK_VERSION} · Export schema ${EXPORT_VERSION} · Application ${APP_VERSION}`,
   ];
-  lines.forEach((t, i) => {
+  const sheetLine = /^\d\d_[A-Z_]+ — /;
+  lines.forEach((line, i) => {
     const c = readme.getCell(`A${5 + i}`);
-    c.value = t;
-    if (t === t.toUpperCase() && t.length > 3 && !t.includes("—")) c.font = { bold: true, color: { argb: BRAND } };
+    // headings are detected on the English source; sheet lines and the version line are already composed
+    c.value = !line || sheetLine.test(line) || line.startsWith("Workbook ") ? (line.startsWith("Workbook ") ? t("Workbook {wb} · Export schema {schema} · Application {app}", { wb: WORKBOOK_VERSION, schema: EXPORT_VERSION, app: APP_VERSION }) : line) : t(line);
+    if (line === line.toUpperCase() && line.length > 3 && !line.includes("—")) c.font = { bold: true, color: { argb: BRAND } };
   });
   readme.getColumn(1).width = 160;
-  sheet("53_DASHBOARD_CHARTS").getCell("A5").value = "Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.";
-  sheet("55_PIVOTS").getCell("A5").value = "Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.";
+  sheet("53_DASHBOARD_CHARTS").getCell("A5").value = t("Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.");
+  sheet("55_PIVOTS").getCell("A5").value = t("Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.");
 
   // ── _LISTS ──
   const lst = sheet("_LISTS");
   const listTable = (key: string, col: number, header: string[], rows: string[][]) => {
-    writeTable(lst, { key, title: key, status: "OK", source: "lists", columns: header.map((h, i) => ({ key: `c${i}`, header: h, type: "text" })), rows: rows.map((rr) => Object.fromEntries(rr.map((v, i) => [`c${i}`, v]))) }, col, HEADER_ROW, cur, locations);
+    writeTable(lst, { key, title: key, status: "OK", source: "lists", columns: header.map((h, i) => ({ key: `c${i}`, header: h, type: "text" })), rows: rows.map((rr) => Object.fromEntries(rr.map((v, i) => [`c${i}`, v]))) }, col, HEADER_ROW, cur, locations, undefined, lg);
   };
   listTable("lstDepartments", 1, ["Name", "ID"], opts.lists.departments.map((d) => [d.name, d.id]));
   listTable("lstWarehouses", 4, ["Name", "ID"], opts.lists.warehouses.map((w) => [w.name, w.id]));
