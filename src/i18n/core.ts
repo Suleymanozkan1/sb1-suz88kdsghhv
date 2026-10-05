@@ -46,6 +46,9 @@ function compile(): Compiled[] {
   return compiled;
 }
 
+/** Dynamic parts that are enum codes (WASTE, BREAKFAST, SPECIAL_EVENT) are translated too; names and numbers are not. */
+const code = (v: string) => (/^[A-Z][A-Z0-9_]+$/.test(v) ? (TR[v] ?? v) : v);
+
 /** Translate a message produced by the server (English). Unknown messages are returned unchanged. */
 export function translateMessage(locale: Locale, msg: string): string {
   if (locale === "en" || !msg) return msg;
@@ -53,7 +56,7 @@ export function translateMessage(locale: Locale, msg: string): string {
   if (exact !== undefined) return exact;
   for (const c of compile()) {
     const m = c.re.exec(msg);
-    if (m) return c.tr.replace(/\{(\d+)\}/g, (_, i: string) => m[Number(i) + 1] ?? "");
+    if (m) return c.tr.replace(/\{(\d+)\}/g, (_, i: string) => code(m[Number(i) + 1] ?? ""));
   }
   return msg;
 }

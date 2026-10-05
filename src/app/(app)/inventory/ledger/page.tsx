@@ -43,7 +43,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                 <Td align="right">{money(r.unitCost.toString(), hotel.baseCurrency, 4)}</Td>
                 <Td align="right">{money(r.totalCost.toString(), hotel.baseCurrency)}</Td>
                 <Td align="right">{qty(r.balanceQtyAfter.toString())} · {money(r.balanceValueAfter.toString(), hotel.baseCurrency, 0)}</Td>
-                <Td><span className="text-xs text-ink-500">{t(r.sourceType)}{r.reason ? ` · ${r.reason}` : ""}</span>{r.reversedBy && <Badge tone="violet">{t("reversed")}</Badge>}</Td>
+                <Td><span className="text-xs text-ink-500">{t(r.sourceType)}{r.reason ? ` · ${t(r.reason)}` : ""}</span>{r.reversedBy && <Badge tone="violet">{t("reversed")}</Badge>}</Td>
                 <Td>{!r.reversedBy && r.type !== "REVERSAL" && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
               </tr>
             ))}

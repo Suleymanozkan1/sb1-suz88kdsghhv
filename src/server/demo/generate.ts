@@ -30,6 +30,7 @@ import { createBudget, setBudgetLines, approveBudget, createTarget } from "../se
 import { createAction, updateAction } from "../services/savings";
 import { ensureDefaultTasks } from "../services/calendar";
 import { CATALOG, DEMO_DEPARTMENTS, DEMO_WAREHOUSES, DISH_WORDS, FIRST_NAMES, LAST_NAMES, POSITIONS, ROOM_TYPES, SEMI_FINISHED, SUPPLIER_WORDS, type CatalogCategory, type CatalogItem } from "./catalog";
+import { demoNames, type DemoLocale, type DemoNames } from "./catalog-tr";
 import { BulkLedger } from "./engine";
 import type { DemoProfile } from "./profiles";
 
@@ -137,6 +138,8 @@ interface Ctx {
   periods: Map<string, string>;
   scenarios: string[];
   isQa: boolean;
+  /** display names in the dataset language (codes never change) */
+  n: DemoNames;
   log: (s: string) => void;
 }
 
@@ -160,11 +163,12 @@ const WASTE_TYPES: Array<[WasteType, string]> = [["SPOILED", "Spoiled in storage
 
 // ───────────────────────── entry point ─────────────────────────
 
-export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: { password: string; log?: (s: string) => void; now?: Date; ownerConsent?: boolean; platformAdmin?: boolean }): Promise<DemoSummary> {
+export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: { password: string; log?: (s: string) => void; now?: Date; ownerConsent?: boolean; platformAdmin?: boolean; locale?: DemoLocale }): Promise<DemoSummary> {
   assertDemoAllowed(opts.ownerConsent);
   const t0 = Date.now();
   const log = opts.log ?? (() => undefined);
-  if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.map((o) => o.name) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
+  const n = demoNames(opts.locale ?? "en");
+  if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.flatMap((o) => [o.name, demoNames("tr").org(o.name)]) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
   const hash = await bcrypt.hash(opts.password, 10);
   const now = opts.now ?? new Date();
   const end = new Date(dayOf(now).getTime() - DAY); // yesterday
@@ -178,22 +182,22 @@ export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts:
   let users = 0;
   let hotels = 0;
   for (const o of profile.orgs) {
-    const org = await db.organization.create({ data: { name: o.name, isDemo: true } });
+    const org = await db.organization.create({ data: { name: n.org(o.name), isDemo: true } });
     for (const c of ["TRY", "EUR", "USD"]) await db.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
     const roleId: Record<string, string> = {};
     for (const t of ROLE_TEMPLATES) roleId[t.key] = (await db.role.create({ data: { organizationId: org.id, key: t.key, name: t.name, allDepartments: t.allDepartments, permissions: t.permissions } })).id;
     const hotelRows: Array<{ id: string; def: HotelDef }> = [];
-    for (const hd of o.hotels) hotelRows.push({ id: (await db.hotel.create({ data: { organizationId: org.id, code: hd.code, name: hd.name, totalRooms: hd.rooms, priceAlertPct: 10, wasteApprovalValue: 2500, adjustmentApprovalValue: 15000, marginTargetPct: 65 } })).id, def: hd });
-    const admin = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "companyadmin"), name: `${o.name} Admin`, passwordHash: hash, roleId: roleId.admin! } });
+    for (const hd of o.hotels) hotelRows.push({ id: (await db.hotel.create({ data: { organizationId: org.id, code: hd.code, name: n.hotel(hd.name), totalRooms: hd.rooms, priceAlertPct: 10, wasteApprovalValue: 2500, adjustmentApprovalValue: 15000, marginTargetPct: 65 } })).id, def: hd });
+    const admin = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "companyadmin"), name: n.locale === "tr" ? `${n.org(o.name)} Yöneticisi` : `${o.name} Admin`, passwordHash: hash, roleId: roleId.admin! } });
     await db.userHotelAccess.createMany({ data: hotelRows.map((h) => ({ userId: admin.id, hotelId: h.id })) });
     users++;
     for (const [i, h] of hotelRows.entries()) {
       const rnd = prng(hashSeed(`${profile.name}:${h.def.code}`));
-      const ctx: Ctx = { db, profile, rnd, orgId: org.id, orgKey: o.key, hotelId: h.id, hotel: h.def, admin: (await actorForUser(admin.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", log: (s) => log(`  [${h.def.code}] ${s}`) };
+      const ctx: Ctx = { db, profile, rnd, orgId: org.id, orgKey: o.key, hotelId: h.id, hotel: h.def, admin: (await actorForUser(admin.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", n, log: (s) => log(`  [${h.def.code}] ${s}`) };
       await buildHotel(ctx, i);
       hotels++;
     }
-    users += await createOrgUsers(db, o, org.id, roleId, hotelRows.map((h) => h.id), hash);
+    users += await createOrgUsers(db, o, org.id, roleId, hotelRows.map((h) => h.id), hash, n);
   }
   await db.$executeRawUnsafe("ANALYZE");
   const counts = await demoCounts(db);
@@ -210,7 +214,7 @@ async function ensurePlatformAdmin(db: PrismaClient, hash: string) {
 }
 
 /** Role users (spec 116, 118) + bulk users per company (spec 150). */
-async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], orgId: string, roleId: Record<string, string>, hotelIds: string[], hash: string) {
+async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], orgId: string, roleId: Record<string, string>, hotelIds: string[], hash: string, N: DemoNames) {
   const first = hotelIds[0]!;
   const dept = async (codes: string[], hotelId = first) => (await db.department.findMany({ where: { hotelId, code: { in: codes } }, select: { id: true } })).map((d) => d.id);
   const defs: Array<[string, string, string, string[], string[]]> = [
@@ -227,7 +231,7 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
   ];
   let n = 0;
   for (const [key, title, role, hotels, depts] of defs) {
-    const u = await db.user.create({ data: { organizationId: orgId, email: emailFor(o, key), name: `${title} (${o.name})`, passwordHash: hash, roleId: roleId[role]! } });
+    const u = await db.user.create({ data: { organizationId: orgId, email: emailFor(o, key), name: `${N.position(title)} (${N.org(o.name)})`, passwordHash: hash, roleId: roleId[role]! } });
     await db.userHotelAccess.createMany({ data: hotels.map((h) => ({ userId: u.id, hotelId: h })) });
     if (depts.length) await db.userDepartmentAccess.createMany({ data: depts.map((d) => ({ userId: u.id, departmentId: d })) });
     n++;
@@ -266,13 +270,13 @@ function scenario(ctx: Ctx, key: string, title: string, status: "NORMAL" | "EDGE
 }
 
 async function masterData(ctx: Ctx, index: number) {
-  const { db, hotelId: H, rnd } = ctx;
+  const { db, hotelId: H, rnd, n: N } = ctx;
   // departments (parents first) with their cost centers, sized by realistic area / headcount
   for (const d of [...DEMO_DEPARTMENTS].sort((a, b) => Number(!!a.parent) - Number(!!b.parent))) {
-    ctx.dept[d.code] = (await db.department.create({ data: { hotelId: H, code: d.code, name: d.name, isOutlet: d.outlet, parentId: d.parent ? ctx.dept[d.parent]! : null } })).id;
+    ctx.dept[d.code] = (await db.department.create({ data: { hotelId: H, code: d.code, name: N.dept(d.code, d.name), isOutlet: d.outlet, parentId: d.parent ? ctx.dept[d.parent]! : null } })).id;
   }
-  await db.costCenter.createMany({ data: DEMO_DEPARTMENTS.map((d) => ({ hotelId: H, departmentId: ctx.dept[d.code]!, code: `CC-${d.code}`, name: d.name, kind: d.outlet ? "OUTLET" : "DEPARTMENT" })) });
-  for (const [code, name, d] of DEMO_WAREHOUSES) ctx.wh[code] = (await db.warehouse.create({ data: { hotelId: H, code, name, departmentId: d ? ctx.dept[d]! : null } })).id;
+  await db.costCenter.createMany({ data: DEMO_DEPARTMENTS.map((d) => ({ hotelId: H, departmentId: ctx.dept[d.code]!, code: `CC-${d.code}`, name: N.dept(d.code, d.name), kind: d.outlet ? "OUTLET" : "DEPARTMENT" })) });
+  for (const [code, name, d] of DEMO_WAREHOUSES) ctx.wh[code] = (await db.warehouse.create({ data: { hotelId: H, code, name: N.warehouse(code, name), departmentId: d ? ctx.dept[d]! : null } })).id;
   // periods
   for (let m = new Date(ctx.start); m <= ctx.end; m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1))) {
     const p = await db.costPeriod.create({ data: { hotelId: H, code: ym(m), startDate: m, endDate: new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0)) } });
@@ -280,12 +284,12 @@ async function masterData(ctx: Ctx, index: number) {
   }
   // categories: group parents + catalogue children
   const parents = new Map<string, string>();
-  for (const g of [...new Set(CATALOG.map((c) => c.group))]) parents.set(g, (await db.productCategory.create({ data: { hotelId: H, code: g, name: g[0] + g.slice(1).toLowerCase(), group: g } })).id);
+  for (const g of [...new Set(CATALOG.map((c) => c.group))]) parents.set(g, (await db.productCategory.create({ data: { hotelId: H, code: g, name: N.group(g, g[0] + g.slice(1).toLowerCase()), group: g } })).id);
   const catId = new Map<string, string>();
-  for (const c of CATALOG) catId.set(c.code, (await db.productCategory.create({ data: { hotelId: H, code: `${c.group}-${c.code}`, name: c.name, group: c.group, parentId: parents.get(c.group)! } })).id);
+  for (const c of CATALOG) catId.set(c.code, (await db.productCategory.create({ data: { hotelId: H, code: `${c.group}-${c.code}`, name: N.category(c.code, c.name), group: c.group, parentId: parents.get(c.group)! } })).id);
   // suppliers (spec 47-48)
   for (const [k, sp] of SUPPLIER_PLAN.entries()) {
-    const word = SUPPLIER_WORDS[(index * 3 + k) % SUPPLIER_WORDS.length]!;
+    const word = N.t(SUPPLIER_WORDS[(index * 3 + k) % SUPPLIER_WORDS.length]!);
     ctx.suppliers.push({ id: (await db.supplier.create({ data: { hotelId: H, code: `SUP-${String(k + 1).padStart(2, "0")}`, name: `${word} ${sp.kind}`, leadTimeDays: sp.schedule === "daily" ? 1 : sp.schedule === "twice" ? 2 : 5, taxNumber: String(1000000000 + Math.trunc(rnd() * 8999999999)) } })).id, name: `${word} ${sp.kind}`, kind: sp.kind });
   }
   // products: the catalogue (one item left out per hotel), hotel-specific price level
@@ -311,7 +315,7 @@ async function masterData(ctx: Ctx, index: number) {
     const suppliers = SUPPLIER_PLAN.flatMap((sp, k) => (sp.cats.includes(c.code) ? [k] : []));
     const p = +(price * level).toFixed(4);
     const purchaseUnit = pu ?? stockUnit;
-    rows.push({ id, hotelId: H, sku, name, categoryId: catId.get(c.code)!, defaultSupplierId: ctx.suppliers[suppliers[0] ?? 0]!.id, purchaseUnit, stockUnit, recipeUnit: stockUnit === "kg" ? "g" : stockUnit === "l" ? "ml" : "pc", taxRatePct: c.group === "FOOD" ? "1" : "20", standardCost: p.toFixed(4), yieldPct: String(yieldPct), barcode: `869${String(hashSeed(sku + H) % 1e9).padStart(9, "0")}${String(seq % 10)}` });
+    rows.push({ id, hotelId: H, sku, name: N.product(name), categoryId: catId.get(c.code)!, defaultSupplierId: ctx.suppliers[suppliers[0] ?? 0]!.id, purchaseUnit, stockUnit, recipeUnit: stockUnit === "kg" ? "g" : stockUnit === "l" ? "ml" : "pc", taxRatePct: c.group === "FOOD" ? "1" : "20", standardCost: p.toFixed(4), yieldPct: String(yieldPct), barcode: `869${String(hashSeed(sku + H) % 1e9).padStart(9, "0")}${String(seq % 10)}` });
     if (pu && size) convs.push({ productId: id, fromUnit: pu, toUnit: stockUnit, factor: String(size) });
     const meta: ProductMeta = { id, sku, name, cat: c, item: it, categoryId: catId.get(c.code)!, stockUnit, purchaseUnit, caseSize: size, price: p, taxRatePct: c.group === "FOOD" ? 1 : 20, suppliers };
     ctx.products.push(meta);
@@ -321,17 +325,20 @@ async function masterData(ctx: Ctx, index: number) {
   await db.unitConversion.createMany({ data: convs });
   // rooms (spec 72-73)
   const roomRows: Prisma.RoomCreateManyInput[] = [];
+  const roomTypeEn: string[] = [];
   let n = 0;
   for (const rt of ROOM_TYPES) {
     const count = Math.max(1, rint(ctx.hotel.rooms * rt.share));
     for (let k = 0; k < count; k++) {
       n++;
       const floor = rt.type === "Villa" ? "V" : String(1 + Math.trunc((n - 1) / 20));
-      roomRows.push({ id: randomUUID(), hotelId: H, number: rt.type === "Villa" ? `V${String(k + 1).padStart(2, "0")}` : `${floor}${String(((n - 1) % 20) + 1).padStart(2, "0")}`, roomType: rt.type, floor, area: rt.type === "Villa" ? "Villas" : "Main building", sqm: String(rt.sqm) });
+      roomTypeEn.push(rt.type);
+      roomRows.push({ id: randomUUID(), hotelId: H, number: rt.type === "Villa" ? `V${String(k + 1).padStart(2, "0")}` : `${floor}${String(((n - 1) % 20) + 1).padStart(2, "0")}`, roomType: N.roomType(rt.type), floor, area: N.t(rt.type === "Villa" ? "Villas" : "Main building"), sqm: String(rt.sqm) });
     }
   }
   await db.room.createMany({ data: roomRows });
-  ctx.rooms = roomRows.map((r) => ({ id: r.id!, number: r.number, roomType: r.roomType }));
+  // ctx.rooms keeps the English room type: the generator's logic keys off it
+  ctx.rooms = roomRows.map((r, k) => ({ id: r.id!, number: r.number, roomType: roomTypeEn[k]! }));
   await db.hotel.update({ where: { id: H }, data: { totalRooms: ctx.rooms.length } });
   // employees (spec 77) spread over departments by realistic staffing ratios
   const ratio: Record<string, number> = { FO: 0.08, ROOMS: 0.01, HK: 0.2, LAUN: 0.05, FB: 0.01, REST: 0.12, CAFE: 0.04, BAR: 0.05, BRKF: 0.05, KITCH: 0.16, PAST: 0.04, BANQ: 0.04, MINI: 0.01, ENG: 0.07, FIN: 0.03, HR: 0.02, SM: 0.02 };
@@ -345,7 +352,7 @@ async function masterData(ctx: Ctx, index: number) {
     headcount[code] = (headcount[code] ?? 0) + 1;
     const pos = POSITIONS[code] ?? ["Staff"];
     const startDate = new Date(ctx.start.getTime() - Math.trunc(rnd() * 2000) * DAY);
-    emps.push({ hotelId: H, departmentId: ctx.dept[code]!, code: `E${String(i + 1).padStart(5, "0")}`, name: `${FIRST_NAMES[Math.trunc(rnd() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.trunc(rnd() * LAST_NAMES.length)]}`, position: pos[Math.trunc(rnd() * pos.length)]!, monthlyCost: (salary[code]! * (0.85 + rnd() * 0.35)).toFixed(2), startDate });
+    emps.push({ hotelId: H, departmentId: ctx.dept[code]!, code: `E${String(i + 1).padStart(5, "0")}`, name: `${FIRST_NAMES[Math.trunc(rnd() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.trunc(rnd() * LAST_NAMES.length)]}`, position: N.position(pos[Math.trunc(rnd() * pos.length)]!), monthlyCost: (salary[code]! * (0.85 + rnd() * 0.35)).toFixed(2), startDate });
   }
   for (let i = 0; i < emps.length; i += 2000) await db.employee.createMany({ data: emps.slice(i, i + 2000) });
   const area: Record<string, number> = { ROOMS: 26 * ctx.rooms.length, HK: 180, LAUN: 320, REST: 650, CAFE: 180, BAR: 160, BRKF: 420, KITCH: 520, PAST: 90, BANQ: 900, ENG: 280, FIN: 120, HR: 60, SM: 80, FO: 220, MINI: 20, FB: 40 };
@@ -362,7 +369,7 @@ function pickN<T>(rnd: () => number, list: T[], n: number): T[] {
 }
 
 async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
-  const { rnd, db, hotelId: H, admin } = ctx;
+  const { rnd, db, hotelId: H, admin, n: N } = ctx;
   const P = (cat: string) => ctx.byCat.get(cat) ?? [];
   const recipeUnit = (p: ProductMeta) => (p.stockUnit === "kg" ? "g" : p.stockUnit === "l" ? "ml" : "pc");
   const line = (p: ProductMeta, qtyStock: number) => ({ productId: p.id, quantity: p.stockUnit === "pc" ? String(Math.max(1, rint(qtyStock))) : String(Math.max(1, rint(qtyStock * 1000))), unit: recipeUnit(p), ...(p.cat.group === "FOOD" && p.item[5] < 100 && rnd() < 0.3 ? { wastePct: String(2 + Math.trunc(rnd() * 4)) } : {}) });
@@ -388,7 +395,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
     else if (name === "Special Mix" && semi["Spice Mix"]) lines = [{ subRecipeId: semi["Spice Mix"]!, quantity: "150", unit: "g" }, ...pickN(rnd, P("SAUCE"), 2).map((p) => line(p, 0.3)), ...pickN(rnd, P("VEG"), 1).map((p) => line(p, 0.2))];
     else if (name === "Burger Sauce" && semi["Special Mix"]) lines = [{ subRecipeId: semi["Special Mix"]!, quantity: "200", unit: "g" }, ...P("SAUCE").slice(0, 2).map((p) => line(p, 0.35)), ...pickN(rnd, P("DAIRY"), 1).map((p) => line(p, 0.1))];
     else lines = [...pickN(rnd, [...P("VEG"), ...P("DAIRY"), ...P("PASTRY"), ...P("DRY")], 3 + Math.trunc(rnd() * 4)).map((p) => line(p, 0.1 + rnd() * 0.4)), ...pickN(rnd, P("SPICE"), 1).map((p) => line(p, 0.01))];
-    const r = await createRecipe(db, admin, H, { code, name, type: "SEMI_FINISHED", departmentId: ctx.dept.KITCH, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Standard batch", lines } });
+    const r = await createRecipe(db, admin, H, { code, name: N.semi(name), type: "SEMI_FINISHED", departmentId: ctx.dept.KITCH, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: N.t("Standard batch"), lines } });
     await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: v1From });
     semi[name] = r.id;
   }
@@ -401,7 +408,9 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
     const n = Math.max(1, rint(ctx.profile.recipes.finished * frac));
     const words = DISH_WORDS[type === "ROOM_SERVICE" ? "RESTAURANT" : type]!;
     for (let k = 0; k < n && made < ctx.profile.recipes.finished; k++, made++) {
-      const name = `${words.mains[k % words.mains.length]}${words.styles[Math.trunc(k / words.mains.length) % words.styles.length]}`;
+      const main = words.mains[k % words.mains.length]!;
+      const style = words.styles[Math.trunc(k / words.mains.length) % words.styles.length]!;
+      const name = `${main}${style}`;
       let lines: Array<Record<string, string>> = [];
       let batch = 1;
       if (type === "RESTAURANT" || type === "ROOM_SERVICE") {
@@ -429,7 +438,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
       const portionCost = costOf(lines as never) / batch + (lines.some((l) => l.subRecipeId) ? 6 : 0);
       const price = Math.max(20, rint((portionCost * (MARKUP[type] ?? 3)) / 5) * 5);
       const code = `${prefix}-${String(k + 1).padStart(3, "0")}`;
-      const r = await createRecipe(db, admin, H, { code, name, type, departmentId: ctx.dept[deptCode], posCode: type === "MINIBAR" ? null : code, version: { batchYieldQty: batch, yieldUnit: "portion", portions: batch, sellingPrice: price, reason: "Initial standard", lines } });
+      const r = await createRecipe(db, admin, H, { code, name: N.dish(main, style), type, departmentId: ctx.dept[deptCode], posCode: type === "MINIBAR" ? null : code, version: { batchYieldQty: batch, yieldUnit: "portion", portions: batch, sellingPrice: price, reason: N.t("Initial standard"), lines } });
       await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: v1From });
       const weight = type === "BANQUET" || type === "MINIBAR" ? 0 : 0.3 + rnd() * rnd() * 3;
       created.push({ id: r.id, code, outlet: type === "ROOM_SERVICE" ? "ROOMSVC" : deptCode, type, price, weight, versionId: r.versions[0]!.id, base: lines as never, batch });
@@ -446,7 +455,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
       const from = new Date(ctx.start.getTime() + Math.trunc((span * v) / (extra + 1) / DAY) * DAY);
       const factor = 0.88 + rnd() * 0.24;
       const lines = c.base.map((l) => ({ ...l, quantity: l.unit === "pc" ? l.quantity : String(Math.max(1, rint(Number(l.quantity) * factor))) }));
-      const nv = await createVersion(db, admin, H, c.id, { batchYieldQty: c.batch, yieldUnit: "portion", portions: c.batch, sellingPrice: rint((c.price * (1 + 0.04 * v)) / 5) * 5, reason: v % 2 ? "Portion adjusted after tasting" : "Supplier change, recipe re-engineered", lines });
+      const nv = await createVersion(db, admin, H, c.id, { batchYieldQty: c.batch, yieldUnit: "portion", portions: c.batch, sellingPrice: rint((c.price * (1 + 0.04 * v)) / 5) * 5, reason: N.t(v % 2 ? "Portion adjusted after tasting" : "Supplier change, recipe re-engineered"), lines });
       await approveVersion(db, admin, H, nv.id, { effectiveFrom: from });
       versionIds.push(nv.id);
     }
@@ -515,7 +524,7 @@ function planOccupancy(ctx: Ctx): Pms {
       const weekendBoost = !ctx.hotel.resort && (cursor.getUTCDay() === 5 || cursor.getUTCDay() === 6) ? 0.92 : 1;
       const adr = rate[r.roomType]! * (0.85 + rnd() * 0.3) * (0.7 + occTarget * 0.5) * weekendBoost * (ch === "TOUR_OPERATOR" ? 0.78 : ch === "CORPORATE" ? 0.9 : 1);
       const gross = rint(adr * n);
-      reservations.push({ external_id: `RES-${++no}`, room: r.number, room_type: r.roomType, arrival: ymd(cursor), departure: ymd(dep), guests: String(guests), channel: ch, board_basis: ctx.hotel.resort ? (rnd() < 0.6 ? "AI" : "HB") : rnd() < 0.7 ? "BB" : "RO", status: dep <= windowEnd ? "CHECKED_OUT" : "IN_HOUSE", gross_room_revenue: String(gross), commission: (gross * comm).toFixed(2), payment_fee: (gross * fee).toFixed(2), other_distribution: "0" });
+      reservations.push({ external_id: `RES-${++no}`, room: r.number, room_type: ctx.n.roomType(r.roomType), arrival: ymd(cursor), departure: ymd(dep), guests: String(guests), channel: ch, board_basis: ctx.hotel.resort ? (rnd() < 0.6 ? "AI" : "HB") : rnd() < 0.7 ? "BB" : "RO", status: dep <= windowEnd ? "CHECKED_OUT" : "IN_HOUSE", gross_room_revenue: String(gross), commission: (gross * comm).toFixed(2), payment_fee: (gross * fee).toFixed(2), other_distribution: "0" });
       for (let k = 0; k < n; k++) {
         const key = ymd(new Date(cursor.getTime() + k * DAY));
         const cur = nightly.get(key) ?? { occ: 0, guests: 0, rev: 0 };
@@ -538,7 +547,7 @@ interface SimResult {
 }
 
 async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimResult> {
-  const { db, rnd, hotelId: H } = ctx;
+  const { db, rnd, hotelId: H, n: N } = ctx;
   const userId = ctx.admin.userId;
   const productMap = new Map(ctx.products.map((p) => [p.id, { id: p.id, categoryId: p.categoryId, group: p.cat.group, standardCost: D(p.price) }]));
   const whDept = new Map(Object.entries(ctx.wh).map(([code, id]) => [id, DEMO_WAREHOUSES.find((w) => w[0] === code)![2] ? ctx.dept[DEMO_WAREHOUSES.find((w) => w[0] === code)![2]!]! : null]));
@@ -714,13 +723,14 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       const l = landed.lines[i]!;
       const itemId = randomUUID();
       items.push({ id: itemId, receiptId, productId: x.p.id, quantity: String(x.units), unit: x.unit, ...(x.lot ? { lotNo: `${ymd(d).replace(/-/g, "")}-${x.lot}`, expiryDate: new Date(d.getTime() + (x.p.cat.code === "FISH" || x.p.cat.code === "SEAFOOD" ? 2 + x.lot : 4 + 2 * x.lot) * DAY) } : {}), stockQty: toStorage(x.stock).toString(), unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString(), taxAmount: toStorage(l.taxAmount).toString(), landedExtra: toStorage(l.landedExtra).toString(), landedAmount: toStorage(l.landedAmount).toString(), landedUnitCost: toStorage(l.landedUnitCost).toString() });
-      invoiceItems.push({ invoiceId: invId, productId: x.p.id, description: x.p.name, quantity: String(x.units), unit: x.unit, unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString() });
+      invoiceItems.push({ invoiceId: invId, productId: x.p.id, description: N.product(x.p.name), quantity: String(x.units), unit: x.unit, unitPrice: x.unitPrice.toString(), taxRatePct: String(x.p.taxRatePct), netAmount: toStorage(l.netAmount).toString() });
       L.post({ warehouseId: ctx.wh.MAIN!, productId: x.p.id, type: "PURCHASE", quantity: x.stock, exactTotal: toStorage(l.landedAmount), txDate: at(d, 6), sourceType: "GOODS_RECEIPT", sourceId: itemId, reason: `${number} / ${invoiceNo}` });
       const unitPrice = l.netAmount.div(x.stock);
       const prev = lastUnitPrice.get(x.p.id) ?? null;
       const ch = priceChange(prev, unitPrice, "10");
       prices.push({ hotelId: H, supplierId: s.id, productId: x.p.id, priceDate: at(d, 6), purchaseUnit: x.unit, packPrice: toStorage(l.netAmount.div(D(x.units))).toString(), unitPrice: toStorage(unitPrice).toString(), previousUnitPrice: prev ? toStorage(prev).toString() : null, changePct: ch.changePct ? toStorage(ch.changePct).toString() : null, quantity: toStorage(x.stock).toString(), source: "RECEIPT", sourceId: itemId, invoiceNo });
-      if (ch.isAlert && ch.changePct) alerts.push({ hotelId: H, type: "PRICE_INCREASE", severity: ch.changePct.gte(20) ? "HIGH" : "WARNING", title: `Price increase: ${x.p.name}`, message: `${x.p.name}: ${toStorage(prev!).toFixed(2)} → ${toStorage(unitPrice).toFixed(2)} ${"TRY"}/${x.p.stockUnit} (+${ch.changePct.toFixed(2)}%) from ${s.name}`, entityType: "Product", entityId: x.p.id, data: { productId: x.p.id, changePct: ch.changePct.toFixed(2) }, createdAt: at(d, 6) });
+      const pn = N.product(x.p.name);
+      if (ch.isAlert && ch.changePct) alerts.push({ hotelId: H, type: "PRICE_INCREASE", severity: ch.changePct.gte(20) ? "HIGH" : "WARNING", title: N.locale === "tr" ? `Fiyat artışı: ${pn}` : `Price increase: ${pn}`, message: N.locale === "tr" ? `${pn}: ${toStorage(prev!).toFixed(2)} → ${toStorage(unitPrice).toFixed(2)} TRY/${x.p.stockUnit} (+%${ch.changePct.toFixed(2)}), tedarikçi: ${s.name}` : `${pn}: ${toStorage(prev!).toFixed(2)} → ${toStorage(unitPrice).toFixed(2)} ${"TRY"}/${x.p.stockUnit} (+${ch.changePct.toFixed(2)}%) from ${s.name}`, entityType: "Product", entityId: x.p.id, data: { productId: x.p.id, changePct: ch.changePct.toFixed(2) }, createdAt: at(d, 6) });
       lastUnitPrice.set(x.p.id, unitPrice);
       L.notePrice(x.p.id, toStorage(unitPrice));
     }
@@ -732,7 +742,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   for (let i = 0; i < Math.min(5, ctx.days.length); i++) for (const [p, q] of mainNeed(i)) firstWeek.set(p, (firstWeek.get(p) ?? ZERO).plus(q));
   for (const p of ctx.products) {
     const q = r3((firstWeek.get(p.id) ?? ZERO).times(1.2).plus(p.stockUnit === "pc" ? 12 : 2));
-    L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "OPENING", quantity: q, unitCost: D(p.price).toDecimalPlaces(4), txDate: at(d0, 5), sourceType: "MANUAL", reason: "Opening balance (go-live)" });
+    L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "OPENING", quantity: q, unitCost: D(p.price).toDecimalPlaces(4), txDate: at(d0, 5), sourceType: "MANUAL", reason: N.t("Opening balance (go-live)") });
   }
   scenario(ctx, "S06_DEAD_STOCK", "Products bought at go-live and never used", "EDGE_CASE", "Stock aging: dead stock; carrying cost in savings", "Product", deadStock.map((p) => p.id));
 
@@ -802,7 +812,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
         const deptId = ctx.dept[outlet === "ROOMSVC" ? "REST" : outlet]!;
         for (const [p, q] of sm) {
           const qty = r3(Decimal.min(q.times(share), L.position(ctx.wh[store]!, p).quantity));
-          if (qty.gt(0)) L.post({ warehouseId: ctx.wh[store]!, productId: p, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 13 + k * 9), departmentId: deptId, sourceType: "MANUAL", reason: k === 0 ? "Kitchen issue (lunch shift)" : "Kitchen issue (dinner shift)" });
+          if (qty.gt(0)) L.post({ warehouseId: ctx.wh[store]!, productId: p, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 13 + k * 9), departmentId: deptId, sourceType: "MANUAL", reason: N.t(k === 0 ? "Kitchen issue (lunch shift)" : "Kitchen issue (dinner shift)") });
         }
       }
     }
@@ -811,14 +821,14 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       const meta = pm.get(p)!;
       if (!["AMEN", "CLEAN", "CHEM"].includes(meta.cat.code)) continue;
       const qty = r3(Decimal.min(q, L.position(ctx.wh.MAIN!, p).quantity));
-      if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 14), departmentId: ctx.dept.HK!, sourceType: "MANUAL", reason: "Daily housekeeping issue" });
+      if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 14), departmentId: ctx.dept.HK!, sourceType: "MANUAL", reason: N.t("Daily housekeeping issue") });
     }
     // engineering spare parts / technical supplies used on jobs (weekly)
     if (d.getUTCDay() === 3) {
       for (const p of pickN(rnd, [...(ctx.byCat.get("TECH") ?? []), ...(ctx.byCat.get("SPARE") ?? [])].filter((x) => !deadStock.includes(x)), 2)) {
         const have = L.position(ctx.wh.MAIN!, p.id).quantity;
         const qty = r3(Decimal.min(have, D(1)));
-        if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 11), departmentId: ctx.dept.ENG!, sourceType: "MANUAL", reason: "Maintenance job" });
+        if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 11), departmentId: ctx.dept.ENG!, sourceType: "MANUAL", reason: N.t("Maintenance job") });
       }
     }
 
@@ -835,10 +845,11 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       let qty = r3(have.times(heavy ? 0.12 + rnd() * 0.15 : 0.01 + rnd() * 0.04));
       if (p.stockUnit === "pc") qty = D(Math.max(1, Math.trunc(Number(qty.toString()))));
       if (qty.lte(0) || qty.gt(have)) continue;
-      const [wt, reason] = WASTE_TYPES[Math.trunc(rnd() * WASTE_TYPES.length)]!;
+      const [wt, reasonEn] = WASTE_TYPES[Math.trunc(rnd() * WASTE_TYPES.length)]!;
+      const reason = N.t(reasonEn);
       const id = randomUUID();
       const deptId = ctx.dept[store === "KITCH" ? (rnd() < 0.7 ? "REST" : "KITCH") : store]!;
-      const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "WASTE", quantity: qty.neg(), txDate: at(d, 15), departmentId: deptId, sourceType: "WASTE", sourceId: id, reason: `${wt}: ${reason}`, idempotencyKey: `waste:${id}` });
+      const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "WASTE", quantity: qty.neg(), txDate: at(d, 15), departmentId: deptId, sourceType: "WASTE", sourceId: id, reason: N.locale === "tr" ? `Fire: ${reason}` : `${wt}: ${reason}`, idempotencyKey: `waste:${id}` });
       w++;
       wasteRows.push({ id, hotelId: H, departmentId: deptId, warehouseId: ctx.wh[store]!, productId: p.id, wasteType: wt, wasteDate: at(d, 15), quantity: qty.toString(), unit: p.stockUnit, stockQty: qty.toString(), unitCost: stx.unitCost.toString(), costValue: stx.totalCost.neg().toString(), reason, status: "APPROVED", userId, stockTxId: stx.id, createdAt: at(d, 15) });
       wasteCount++;
@@ -847,11 +858,11 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     for (const p of pickN(rnd, (ctx.byCat.get("DRY") ?? []).concat(ctx.byCat.get("CHICKEN") ?? []), 2)) {
       const have = L.position(ctx.wh.MAIN!, p.id).quantity;
       const qty = r3(Decimal.min(have, D(1.5 + rnd() * 3)));
-      if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "STAFF_MEAL", quantity: qty.neg(), txDate: at(d, 13), departmentId: ctx.dept.KITCH!, sourceType: "MANUAL", reason: "Staff canteen" });
+      if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "STAFF_MEAL", quantity: qty.neg(), txDate: at(d, 13), departmentId: ctx.dept.KITCH!, sourceType: "MANUAL", reason: N.t("Staff canteen") });
     }
     if (rnd() < 0.5) {
       const p = (ctx.byCat.get("BEV") ?? []).find((x) => L.position(ctx.wh.BAR!, x.id).quantity.gte(2));
-      if (p) L.post({ warehouseId: ctx.wh.BAR!, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "MANUAL", reason: "VIP welcome" });
+      if (p) L.post({ warehouseId: ctx.wh.BAR!, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "MANUAL", reason: N.t("VIP welcome") });
     }
 
     // POS sales (weekly import file), theoretical cost at the end of the sale day (= costTableAsOf)
@@ -881,7 +892,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
         const countId = randomUUID();
         const number = `CNT-${String(++cnt).padStart(6, "0")}`;
         const cd = at(d, 23, 30);
-        counts.push({ id: countId, hotelId: H, warehouseId: ctx.wh[store]!, number, countDate: cd, status: "POSTED", countedById: userId, postedAt: cd, note: "Month-end count" });
+        counts.push({ id: countId, hotelId: H, warehouseId: ctx.wh[store]!, number, countDate: cd, status: "POSTED", countedById: userId, postedAt: cd, note: N.t("Month-end count") });
         for (const p of ctx.products) {
           const pos = L.position(ctx.wh[store]!, p.id);
           if (pos.quantity.lte(0)) continue;
@@ -894,7 +905,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
             countLines.push({ countId, productId: p.id, systemQty: pos.quantity.toString(), countedQty: counted.toString(), varianceQty: "0", unitCost: pos.avgCost.toString(), varianceValue: "0" });
             continue;
           }
-          const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "COUNT_ADJUSTMENT", quantity: variance, txDate: cd, sourceType: "COUNT", sourceId: countId, reason: `Count ${number}`, idempotencyKey: `count:${countId}:${p.id}` });
+          const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "COUNT_ADJUSTMENT", quantity: variance, txDate: cd, sourceType: "COUNT", sourceId: countId, reason: N.locale === "tr" ? `Sayım ${number}` : `Count ${number}`, idempotencyKey: `count:${countId}:${p.id}` });
           countLines.push({ countId, productId: p.id, systemQty: pos.quantity.toString(), countedQty: counted.toString(), varianceQty: toStorage(variance).toString(), unitCost: stx.unitCost.toString(), varianceValue: stx.totalCost.toString() });
         }
       }
@@ -945,7 +956,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
 // ───────────────────────── services phase ─────────────────────────
 
 async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
-  const { db, rnd, hotelId: H, admin } = ctx;
+  const { db, rnd, hotelId: H, admin, n: N } = ctx;
   // PMS (spec 72-75 driver data)
   await commitReservations(db, admin, H, `pms-reservations-${ctx.hotel.code}.csv`, pms.reservations);
   await commitOccupancy(db, admin, H, `pms-daily-${ctx.hotel.code}.csv`, ctx.days.map((d) => {
@@ -993,10 +1004,10 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
 
   // allocation (spec 145) for every full month
   const opDepts = ["ROOMS", "HK", "LAUN", "REST", "CAFE", "BAR", "BRKF", "BANQ", "KITCH", "PAST"];
-  await createRule(db, admin, H, { name: "Electricity by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "ELECTRICITY", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "KITCH", "LAUN", "REST"].map((c) => ({ departmentId: ctx.dept[c]! })) });
-  await createRule(db, admin, H, { name: "Water by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "WATER", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "LAUN", "KITCH"].map((c) => ({ departmentId: ctx.dept[c]! })) });
-  await createRule(db, admin, H, { name: "Natural gas by sub-meter", sourceCategoryGroup: "ENERGY", sourceSubCategory: "GAS", sourceDepartmentId: null, driver: "METER", targets: ["KITCH", "LAUN"].map((c) => ({ departmentId: ctx.dept[c]! })) });
-  await createRule(db, admin, H, { name: "Engineering department by m²", sourceCategoryGroup: "ALL", sourceDepartmentId: ctx.dept.ENG, driver: "SQM", targets: opDepts.map((c) => ({ departmentId: ctx.dept[c]! })) });
+  await createRule(db, admin, H, { name: N.t("Electricity by sub-meter"), sourceCategoryGroup: "ENERGY", sourceSubCategory: "ELECTRICITY", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "KITCH", "LAUN", "REST"].map((c) => ({ departmentId: ctx.dept[c]! })) });
+  await createRule(db, admin, H, { name: N.t("Water by sub-meter"), sourceCategoryGroup: "ENERGY", sourceSubCategory: "WATER", sourceDepartmentId: null, driver: "METER", targets: ["ROOMS", "LAUN", "KITCH"].map((c) => ({ departmentId: ctx.dept[c]! })) });
+  await createRule(db, admin, H, { name: N.t("Natural gas by sub-meter"), sourceCategoryGroup: "ENERGY", sourceSubCategory: "GAS", sourceDepartmentId: null, driver: "METER", targets: ["KITCH", "LAUN"].map((c) => ({ departmentId: ctx.dept[c]! })) });
+  await createRule(db, admin, H, { name: N.t("Engineering department by m²"), sourceCategoryGroup: "ALL", sourceDepartmentId: ctx.dept.ENG, driver: "SQM", targets: opDepts.map((c) => ({ departmentId: ctx.dept[c]! })) });
   const fullMonths = [...ctx.periods.entries()].filter(([code]) => code < ym(ctx.end) || new Date(Date.UTC(ctx.end.getUTCFullYear(), ctx.end.getUTCMonth() + 1, 0)).getTime() === ctx.end.getTime());
   for (const [, pid] of fullMonths) await postAllocation(db, admin, H, pid);
 
@@ -1026,15 +1037,15 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
       }
       for (const r of rev) lines.set(`${m}|${r.departmentId}|REVENUE`, { month: m, departmentId: r.departmentId, categoryGroup: "REVENUE", amount: Number(r._sum.netRevenue?.toString() ?? 0) * f * 1.03, targetPct: null });
     }
-    const bud = await createBudget(db, admin, H, { year, name: `Budget ${year}`, notes: overrun ? "F&B cost budget set 18 % below run rate (scenario 13: overrun)" : "Seasonality-weighted run rate, 3 % efficiency" });
+    const bud = await createBudget(db, admin, H, { year, name: N.locale === "tr" ? `Bütçe ${year}` : `Budget ${year}`, notes: N.t(overrun ? "F&B cost budget set 18 % below run rate (scenario 13: overrun)" : "Seasonality-weighted run rate, 3 % efficiency") });
     await setBudgetLines(db, admin, H, bud.id, [...lines.values()].filter((l) => l.amount > 0).map((l) => ({ ...l, amount: l.amount.toFixed(2) })));
     await approveBudget(db, admin, H, bud.id);
     if (overrun) scenario(ctx, "S13_BUDGET_OVERRUN", "Food & beverage cost budget below the actual run rate", "EDGE_CASE", "Budget vs actual: unfavourable variance on FOOD / BEVERAGE", "Budget", [bud.id]);
   }
   for (const [metric, target, warnAt] of [["FOOD_COST_PCT", "0.32", "0.30"], ["BEVERAGE_COST_PCT", "0.16", "0.14"], ["WASTE_PCT", "0.02", "0.015"], ["UNEXPLAINED_VARIANCE_PCT", "0.03", "0.02"], ["LABOR_COST_PCT", "0.32", "0.30"], ["ENERGY_PER_OCCUPIED_ROOM", "320", "300"], ["COST_PER_OCCUPIED_ROOM", "3200", "3000"], ["BUFFET_COST_PER_COVER", "140", "125"], ["MINIBAR_SHRINKAGE_PCT", "0.03", "0.02"]] as const) await createTarget(db, admin, H, { metric, target, warnAt });
-  const sa = await createAction(db, admin, H, { driver: "WASTE", problem: "Buffet leftovers above 10 % on low-occupancy days", rootCause: "Production not linked to expected covers", action: "Cook in waves from the cover forecast; smaller refill trays", ownerName: "Breakfast Chef", targetSaving: "15000", dueDate: new Date(ctx.end.getTime() + 20 * DAY), departmentId: ctx.dept.BRKF });
+  const sa = await createAction(db, admin, H, { driver: "WASTE", problem: N.t("Buffet leftovers above 10 % on low-occupancy days"), rootCause: N.t("Production not linked to expected covers"), action: N.t("Cook in waves from the cover forecast; smaller refill trays"), ownerName: N.position("Breakfast Chef"), targetSaving: "15000", dueDate: new Date(ctx.end.getTime() + 20 * DAY), departmentId: ctx.dept.BRKF });
   await updateAction(db, admin, H, sa.id, { status: "IN_PROGRESS" });
-  const sb = await createAction(db, admin, H, { driver: "SUPPLIER_PRICE", problem: "Protein prices up 15-30 % at the main supplier", rootCause: "Single-source contract", action: "Tender with two alternative suppliers", ownerName: "Purchasing Manager", targetSaving: "25000", dueDate: new Date(ctx.end.getTime() - 10 * DAY) });
+  const sb = await createAction(db, admin, H, { driver: "SUPPLIER_PRICE", problem: N.t("Protein prices up 15-30 % at the main supplier"), rootCause: N.t("Single-source contract"), action: N.t("Tender with two alternative suppliers"), ownerName: N.position("Purchasing Manager"), targetSaving: "25000", dueDate: new Date(ctx.end.getTime() - 10 * DAY) });
   await updateAction(db, admin, H, sb.id, { status: "DONE", actualSaving: "19800" });
   await ensureDefaultTasks(db, H);
   ctx.log(`buffets ${buffets}, minibar rooms ${mbRooms.length}`);
@@ -1045,7 +1056,7 @@ async function minibarPhase(ctx: Ctx, sim: SimResult) {
   const { db, rnd, hotelId: H, admin } = ctx;
   if (!sim.minibarProducts.length) return [];
   const parPrice = [90, 60, 75, 70, 140];
-  for (const rt of ROOM_TYPES) for (const [k, pid] of sim.minibarProducts.entries()) await setPar(db, admin, H, { roomType: rt.type, productId: pid, parQty: rt.type === "Standard" ? 2 : 3, sellingPrice: parPrice[k % parPrice.length] });
+  for (const rt of ROOM_TYPES) for (const [k, pid] of sim.minibarProducts.entries()) await setPar(db, admin, H, { roomType: ctx.n.roomType(rt.type), productId: pid, parQty: rt.type === "Standard" ? 2 : 3, sellingPrice: parPrice[k % parPrice.length] });
   const mbRooms = pickN(rnd, ctx.rooms, Math.min(ctx.rooms.length, Math.max(4, ctx.profile.minibarRoomsPerDay * 6)));
   for (const r of mbRooms) await restockToParLevels(db, admin, H, r.id, at(ctx.days[0]!, 9));
   const discrepancy: string[] = [];
@@ -1078,7 +1089,9 @@ async function minibarPhase(ctx: Ctx, sim: SimResult) {
 }
 
 async function operatingCosts(ctx: Ctx, pms: Pms) {
-  const { db, rnd, hotelId: H } = ctx;
+  const { db, rnd, hotelId: H, n: N } = ctx;
+  // "Payroll ROOMS 2026-10" in English; "Maaş - Odalar 2026-10" in Turkish
+  const forDept = (what: string, code: string | null, m: string) => (N.locale === "tr" ? `${N.t(what)} - ${code ? N.dept(code, code) : "Otel geneli"} ${m}` : `${what} ${code} ${m}`);
   const cc = new Map((await db.costCenter.findMany({ where: { hotelId: H } })).map((c) => [c.departmentId, c.id]));
   const emps = await db.employee.groupBy({ by: ["departmentId"], where: { hotelId: H }, _sum: { monthlyCost: true }, _count: true });
   const expenses: Prisma.ExpenseCreateManyInput[] = [];
@@ -1103,14 +1116,14 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
   };
   // assets & meters (master data)
   const assetDefs: Array<[string, string, string, string]> = [["HVAC-CH1", "Central chiller 1", "HVAC", "ENG"], ["KIT-OVEN1", "Combi oven", "OVEN", "KITCH"], ["KIT-DW1", "Flight dishwasher", "DISHWASHER", "KITCH"], ["KIT-CR1", "Cold room", "REFRIGERATOR", "KITCH"], ["LAU-WM1", "Washer extractor", "LAUNDRY", "LAUN"], ["ELV-1", "Guest elevator", "ELEVATOR", "ENG"], ["POOL-1", "Pool filtration", "POOL", "ENG"]];
-  const assets = assetDefs.map(([code, name, kind, d]) => ({ id: randomUUID(), hotelId: H, code, name, kind, departmentId: ctx.dept[d]! }));
+  const assets = assetDefs.map(([code, name, kind, d]) => ({ id: randomUUID(), hotelId: H, code, name: N.t(name), kind, departmentId: ctx.dept[d]! }));
   await db.asset.createMany({ data: assets });
   const meterDefs: Array<[string, string, string, string, string, number]> = [["E-ROOMS", "Electricity rooms", "ELECTRICITY", "kWh", "ROOMS", 18], ["E-KITCH", "Electricity kitchen", "ELECTRICITY", "kWh", "KITCH", 900], ["E-LAUN", "Electricity laundry", "ELECTRICITY", "kWh", "LAUN", 650], ["E-REST", "Electricity restaurant", "ELECTRICITY", "kWh", "REST", 420], ["W-ROOMS", "Water rooms", "WATER", "m3", "ROOMS", 0.35], ["W-LAUN", "Water laundry", "WATER", "m3", "LAUN", 13], ["W-KITCH", "Water kitchen", "WATER", "m3", "KITCH", 8], ["G-KITCH", "Gas kitchen", "GAS", "m3", "KITCH", 150], ["G-LAUN", "Gas laundry", "GAS", "m3", "LAUN", 110]];
   const readings: Prisma.MeterReadingCreateManyInput[] = [];
   const monthUse = new Map<string, number>();
   for (const [code, name, utility, unit, d, daily] of meterDefs) {
     const id = randomUUID();
-    await db.meter.create({ data: { id, hotelId: H, code, name, utility, unit, departmentId: ctx.dept[d]! } });
+    await db.meter.create({ data: { id, hotelId: H, code, name: N.t(name), utility, unit, departmentId: ctx.dept[d]! } });
     let value = 100000 + Math.trunc(rnd() * 40000);
     readings.push({ meterId: id, readingDate: new Date(ctx.start.getTime() - DAY), value: String(value), createdById: ctx.admin.userId });
     for (const day of ctx.days) {
@@ -1139,29 +1152,29 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
     for (const e of emps) {
       const code = Object.entries(ctx.dept).find(([, id]) => id === e.departmentId)?.[0] ?? null;
       const base = Number(e._sum.monthlyCost?.toString() ?? 0) * raise * part;
-      post(closeDate, code, "LABOR", "SALARY", `Payroll ${code} ${m}`, base, { quantity: e._count, unit: "headcount" });
-      post(closeDate, code, "LABOR", "EMPLOYER_COST", `SGK employer share ${code} ${m}`, base * 0.2275);
-      if (["KITCH", "REST", "HK", "BANQ"].includes(code ?? "")) post(closeDate, code, "LABOR", "OVERTIME", `Overtime ${code} ${m}`, base * (mi === raiseMonth ? 0.14 : 0.04 + rnd() * 0.03));
+      post(closeDate, code, "LABOR", "SALARY", forDept("Payroll", code, m), base, { quantity: e._count, unit: "headcount" });
+      post(closeDate, code, "LABOR", "EMPLOYER_COST", forDept("SGK employer share", code, m), base * 0.2275);
+      if (["KITCH", "REST", "HK", "BANQ"].includes(code ?? "")) post(closeDate, code, "LABOR", "OVERTIME", forDept("Overtime", code, m), base * (mi === raiseMonth ? 0.14 : 0.04 + rnd() * 0.03));
     }
     // utilities from metered use + common areas (scenario 11 spike)
     const spike = m === energySpikeMonth ? 1.45 : 1;
     const kwh = (monthUse.get(`${m}|ELECTRICITY`) ?? 0) * 1.2;
-    post(closeDate, null, "ENERGY", "ELECTRICITY", `Electricity ${m}`, kwh * 3.1 * spike, { quantity: rint(kwh), unit: "kWh", supplier: energySupplier });
+    post(closeDate, null, "ENERGY", "ELECTRICITY", `${N.t("Electricity")} ${m}`, kwh * 3.1 * spike, { quantity: rint(kwh), unit: "kWh", supplier: energySupplier });
     const water = (monthUse.get(`${m}|WATER`) ?? 0) * 1.25;
-    post(closeDate, null, "ENERGY", "WATER", `Water ${m}`, water * 46, { quantity: rint(water), unit: "m3", supplier: energySupplier });
+    post(closeDate, null, "ENERGY", "WATER", `${N.t("Water")} ${m}`, water * 46, { quantity: rint(water), unit: "m3", supplier: energySupplier });
     const gas = (monthUse.get(`${m}|GAS`) ?? 0) * 1.05;
-    post(closeDate, null, "ENERGY", "GAS", `Natural gas ${m}`, gas * 14.2 * spike, { quantity: rint(gas), unit: "m3", supplier: energySupplier });
-    if (ctx.hotel.resort) post(closeDate, "KITCH", "ENERGY", "LPG", `LPG ${m}`, (9000 + rnd() * 4000) * part, { supplier: energySupplier });
-    post(closeDate, "ENG", "ENERGY", "FUEL", `Generator diesel ${m}`, (3000 + rnd() * 3000) * part, { supplier: energySupplier });
+    post(closeDate, null, "ENERGY", "GAS", `${N.t("Natural gas")} ${m}`, gas * 14.2 * spike, { quantity: rint(gas), unit: "m3", supplier: energySupplier });
+    if (ctx.hotel.resort) post(closeDate, "KITCH", "ENERGY", "LPG", `${N.t("LPG")} ${m}`, (9000 + rnd() * 4000) * part, { supplier: energySupplier });
+    post(closeDate, "ENG", "ENERGY", "FUEL", `${N.t("Generator diesel")} ${m}`, (3000 + rnd() * 3000) * part, { supplier: energySupplier });
     // contracts and fixed costs
     for (const [d, cat, sub, desc, amt] of [["HK", "HOUSEKEEPING", "OUTSOURCED", "Facade & window cleaning contract", 18500], ["LAUN", "LAUNDRY", "CHEMICALS", "Laundry chemicals contract", 15800], ["ADM", "ADMINISTRATION", "IT", "PMS / POS licences", 26000], ["FIN", "ADMINISTRATION", "AUDIT", "External audit fee", 15000], ["SM", "SALES_MARKETING", "ADVERTISING", "Online advertising", 42000], ["ENG", "ENGINEERING", "PREVENTIVE_MAINTENANCE", "Elevator maintenance contract", 9500], [null, "RENT", "RENT", "Land lease", 250000], [null, "INSURANCE", "INSURANCE", "Property insurance", 31000], [null, "DEPRECIATION", "DEPRECIATION", "Depreciation", 185000]] as const) {
-      post(closeDate, d === "ADM" ? "FIN" : d, cat, sub, `${desc} ${m}`, amt * part, { supplier: serviceSupplier });
+      post(closeDate, d === "ADM" ? "FIN" : d, cat, sub, `${N.t(desc)} ${m}`, amt * part, { supplier: serviceSupplier });
     }
     // room repairs (scenario 10 spike) and engineering jobs on assets
     const repairs = rint((m === roomSpikeMonth ? 14 : 4) * part);
     for (let k = 0; k < repairs; k++) {
       const r = ctx.rooms[Math.trunc(rnd() * ctx.rooms.length)]!;
-      post(new Date(mStart.getTime() + Math.trunc(rnd() * Math.max(1, (closeDate.getTime() - mStart.getTime()) / DAY)) * DAY + 13 * 3600_000), "ROOMS", "ENGINEERING", "EMERGENCY_REPAIR", `Room ${r.number}: ${rnd() < 0.5 ? "AC failure" : "water leak"}`, 900 + rnd() * (m === roomSpikeMonth ? 9000 : 3300), { roomId: r.id, supplier: serviceSupplier });
+      post(new Date(mStart.getTime() + Math.trunc(rnd() * Math.max(1, (closeDate.getTime() - mStart.getTime()) / DAY)) * DAY + 13 * 3600_000), "ROOMS", "ENGINEERING", "EMERGENCY_REPAIR", `${N.t("Room")} ${r.number}: ${N.t(rnd() < 0.5 ? "AC failure" : "water leak")}`, 900 + rnd() * (m === roomSpikeMonth ? 9000 : 3300), { roomId: r.id, supplier: serviceSupplier });
     }
   }
   scenario(ctx, "S10_ROOM_COST_SPIKE", "Emergency room repairs x3 in the last full month", "EDGE_CASE", "Room cost per night up; engineering cost per room", "Hotel", [H]);
@@ -1173,7 +1186,7 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
     const n = rint(ctx.profile.dailyExpenses * (0.7 + rnd() * 0.6));
     for (let k = 0; k < n; k++) {
       const [d, cat, sub, desc, amt] = small[Math.trunc(rnd() * small.length)]!;
-      post(at(day, 10 + (k % 8)), d, cat, sub, desc, amt * (0.5 + rnd()), rnd() < 0.45 ? { supplier: serviceSupplier, assetId: d === "ENG" ? assets[Math.trunc(rnd() * assets.length)]!.id : undefined } : {});
+      post(at(day, 10 + (k % 8)), d, cat, sub, N.t(desc), amt * (0.5 + rnd()), rnd() < 0.45 ? { supplier: serviceSupplier, assetId: d === "ENG" ? assets[Math.trunc(rnd() * assets.length)]!.id : undefined } : {});
     }
   }
   for (let i = 0; i < expenses.length; i += 5000) await db.expense.createMany({ data: expenses.slice(i, i + 5000) });
@@ -1184,7 +1197,7 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
 // ───────────────────────── intentional errors (QA tenant) ─────────────────────────
 
 async function intentionalErrors(ctx: Ctx, recipes: RecipeInfo[]) {
-  const { db, hotelId: H } = ctx;
+  const { db, hotelId: H, n: N } = ctx;
   const userId = ctx.admin.userId;
   const today = ymd(ctx.end);
   const monthStart = new Date(Date.UTC(ctx.end.getUTCFullYear(), ctx.end.getUTCMonth(), 1));
@@ -1196,28 +1209,28 @@ async function intentionalErrors(ctx: Ctx, recipes: RecipeInfo[]) {
   scenario(ctx, "E01_MISSING_RECIPE", "POS items sold without a recipe mapping", "INTENTIONAL_ERROR", "Data quality: unmapped sales; theoretical cost missing", "SaleLine", unmapped);
   // 2) product without any cost (no purchase, no price, no standard) used in a recipe → incomplete recipe
   const cat = ctx.products[0]!.categoryId;
-  const noCost = await db.product.create({ data: { hotelId: H, sku: "QA-NOCOST", name: "Saffron (no cost yet)", categoryId: cat, purchaseUnit: "g", stockUnit: "g", recipeUnit: "g" } });
-  const r = await db.recipe.create({ data: { hotelId: H, code: "QA-RISOTTO", name: "Saffron Risotto (incomplete)", type: "RESTAURANT", departmentId: ctx.dept.REST!, posCode: "QA-RISOTTO" } });
+  const noCost = await db.product.create({ data: { hotelId: H, sku: "QA-NOCOST", name: N.product("Saffron (no cost yet)"), categoryId: cat, purchaseUnit: "g", stockUnit: "g", recipeUnit: "g" } });
+  const r = await db.recipe.create({ data: { hotelId: H, code: "QA-RISOTTO", name: N.dish("Saffron Risotto (incomplete)", ""), type: "RESTAURANT", departmentId: ctx.dept.REST!, posCode: "QA-RISOTTO" } });
   // approved through the back door (an old import): the version is frozen once approved, so lines first
   const v = await db.recipeVersion.create({ data: { recipeId: r.id, version: 1, status: "DRAFT", batchYieldQty: "1", yieldUnit: "portion", portions: "1", createdById: userId } });
   await db.recipeIngredient.create({ data: { versionId: v.id, productId: noCost.id, quantity: "0.5", unit: "g", sortOrder: 0 } });
   await db.recipeVersion.update({ where: { id: v.id }, data: { status: "APPROVED", effectiveFrom: ctx.start, costSnapshot: { portions: "1", requirements: {} } } });
   scenario(ctx, "E02_MISSING_COST", "Ingredient with no purchase, price or standard cost", "INTENTIONAL_ERROR", "Data quality: products without cost; recipe incomplete", "Product", [noCost.id]);
   // 3) missing unit conversion: bought per case, stocked per kg, but nobody defined the case size
-  const noConv = await db.product.create({ data: { hotelId: H, sku: "QA-NOCONV", name: "Frozen Fries (case size missing)", categoryId: cat, purchaseUnit: "case", stockUnit: "kg", recipeUnit: "g", standardCost: "60", defaultSupplierId: ctx.suppliers[5]!.id } });
+  const noConv = await db.product.create({ data: { hotelId: H, sku: "QA-NOCONV", name: N.product("Frozen Fries (case size missing)"), categoryId: cat, purchaseUnit: "case", stockUnit: "kg", recipeUnit: "g", standardCost: "60", defaultSupplierId: ctx.suppliers[5]!.id } });
   scenario(ctx, "E03_MISSING_UNIT", "Purchase unit 'case' without a conversion to kg", "INTENTIONAL_ERROR", "Data quality: purchase unit without conversion", "Product", [noConv.id]);
   // 4) missing supplier
-  const noSup = await db.product.create({ data: { hotelId: H, sku: "QA-NOSUP", name: "Truffle Oil (no supplier)", categoryId: cat, purchaseUnit: "l", stockUnit: "l", recipeUnit: "ml", standardCost: "2400" } });
+  const noSup = await db.product.create({ data: { hotelId: H, sku: "QA-NOSUP", name: N.product("Truffle Oil (no supplier)"), categoryId: cat, purchaseUnit: "l", stockUnit: "l", recipeUnit: "ml", standardCost: "2400" } });
   scenario(ctx, "E04_MISSING_SUPPLIER", "Stock product without a default supplier", "INTENTIONAL_ERROR", "Data quality: products without default supplier", "Product", [noSup.id]);
   // 5) wrong yield
-  const wrongYield = await db.product.create({ data: { hotelId: H, sku: "QA-YIELD", name: "Artichoke (yield typed as 5 %)", categoryId: cat, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g", standardCost: "85", yieldPct: "5", defaultSupplierId: ctx.suppliers[2]!.id } });
+  const wrongYield = await db.product.create({ data: { hotelId: H, sku: "QA-YIELD", name: N.product("Artichoke (yield typed as 5 %)"), categoryId: cat, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g", standardCost: "85", yieldPct: "5", defaultSupplierId: ctx.suppliers[2]!.id } });
   scenario(ctx, "E05_WRONG_YIELD", "Yield entered as 5 % instead of 50 %", "INTENTIONAL_ERROR", "Data quality: implausible yield", "Product", [wrongYield.id]);
   // 6) negative stock: issued before the delivery was booked (allowed negative, as the ledger records it)
   const p = ctx.products.find((x) => x.cat.code === "VEG")!;
   const bal = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId: p.id } } });
   const short = D(bal?.quantity.toString() ?? 0).plus(3);
   const { postMovement } = await import("../services/ledger");
-  const neg = await postMovement(db, ctx.admin, { hotelId: H, warehouseId: ctx.wh.KITCH!, productId: p.id, type: "CONSUMPTION", quantity: short.neg(), txDate: at(day, 21), departmentId: ctx.dept.REST, sourceType: "MANUAL", reason: "Issued before the delivery note was booked", allowNegative: true });
+  const neg = await postMovement(db, ctx.admin, { hotelId: H, warehouseId: ctx.wh.KITCH!, productId: p.id, type: "CONSUMPTION", quantity: short.neg(), txDate: at(day, 21), departmentId: ctx.dept.REST, sourceType: "MANUAL", reason: N.t("Issued before the delivery note was booked"), allowNegative: true });
   scenario(ctx, "E06_NEGATIVE_STOCK", "Issue booked before the delivery: negative kitchen stock", "INTENTIONAL_ERROR", "Data quality: negative inventory; integrity WARNING", "StockTransaction", [neg.id]);
   // 7) wrong date: a POS line dated 30 days in the future (bypassing the API, as a broken interface would)
   const future = await db.saleLine.create({ data: { hotelId: H, importId: imp.id, sourceRow: 4, externalId: "POS-QA-FUTURE", saleDate: new Date(ctx.end.getTime() + 30 * DAY), departmentId: ctx.dept.CAFE!, recipeId: recipes.find((x) => x.outlet === "CAFE")?.id ?? null, posCode: recipes.find((x) => x.outlet === "CAFE")?.code ?? "X", quantity: "2", netRevenue: "240" } });
@@ -1231,7 +1244,7 @@ async function closePastPeriods(ctx: Ctx) {
   const old = [...ctx.periods.entries()].filter(([code]) => code < keepFrom);
   for (const [code, id] of old) {
     await ctx.db.costPeriod.update({ where: { id }, data: { status: "CLOSED", closedAt: new Date(`${code}-28T18:00:00Z`), closedById: ctx.admin.userId } });
-    await ctx.db.auditLog.create({ data: { hotelId: ctx.hotelId, userId: ctx.admin.userId, action: "PERIOD_CLOSED", entityType: "CostPeriod", entityId: id, source: "DEMO_SEED", reason: "Historical month closed by the demo generator" } });
+    await ctx.db.auditLog.create({ data: { hotelId: ctx.hotelId, userId: ctx.admin.userId, action: "PERIOD_CLOSED", entityType: "CostPeriod", entityId: id, source: "DEMO_SEED", reason: ctx.n.t("Historical month closed by the demo generator") } });
   }
 }
 

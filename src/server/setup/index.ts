@@ -86,10 +86,13 @@ export async function startDemoLoad(db: PrismaClient, actor: Actor) {
   await db.auditLog.create({ data: { userId: actor.userId, organizationId: actor.organizationId, action: DEMO_STARTED, entityType: "Organization", entityId: actor.organizationId, source: "SETUP" } });
 }
 
-/** Builds the small demo dataset. Demo users get the owner's password; no platform administrator is created. */
-export async function runDemoLoad(db: PrismaClient, actor: Actor, password: string) {
+/**
+ * Builds the small demo dataset. Demo users get the owner's password; no platform administrator is created.
+ * `locale`: language of the demo names (products, departments, recipes...); codes and e-mail addresses never change.
+ */
+export async function runDemoLoad(db: PrismaClient, actor: Actor, password: string, locale: "tr" | "en") {
   try {
-    const r = await generateDemo(db, PROFILES.web, { password, ownerConsent: true, platformAdmin: false });
+    const r = await generateDemo(db, PROFILES.web, { password, ownerConsent: true, platformAdmin: false, locale });
     await db.auditLog.create({ data: { userId: actor.userId, organizationId: actor.organizationId, action: DEMO_DONE, entityType: "Organization", entityId: actor.organizationId, source: "SETUP", after: { seconds: r.seconds, hotels: r.hotels } } });
   } catch (e) {
     console.error("[setup] demo load failed", e);

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (loadDemo) {
       const actor = (await actorForUser(r.adminId))!;
       await startDemoLoad(prisma, actor);
-      after(() => runDemoLoad(prisma, actor, password));
+      after(() => runDemoLoad(prisma, actor, password, locale));
     }
     const res = NextResponse.json({ ok: true, demo: loadDemo });
     res.cookies.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1", path: "/", expires: expiresAt });

@@ -9,6 +9,12 @@
 export const TR_MESSAGES: Record<string, string> = {
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
+  // stock-ledger reasons written by the buffet and minibar services (shown in the ledger)
+  "Buffet leftover {0}": "Büfe artığı {0}",
+  "Buffet {0} {1}": "Büfe {0} {1}",
+  "{0} buffet {1}: {2} ({3})": "{0} büfesi {1}: {2} ({3})",
+  "Minibar room {0}": "Minibar oda {0}",
+  "Minibar count room {0}: expected {1}, found {2}": "Minibar sayımı oda {0}: beklenen {1}, sayılan {2}",
   "This installation is already set up": "Bu kurulum zaten tamamlanmış",
   "The setup code is not correct": "Kurulum kodu doğru değil",
   "Password is not correct": "Şifre doğru değil",
