@@ -171,12 +171,13 @@ test("buffet (F&B manager): open session, issue, leftovers, close → cost per c
   for (let back = 0; back < 25; back++) {
     const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
     await page.getByLabel("Date", { exact: true }).fill(d);
+    // decide on this attempt's answer: the "already exists" alert of a previous attempt can still be on screen
+    const answer = page.waitForResponse((r) => r.url().endsWith("/api/buffet/sessions") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Open session" }).click();
-    const opened = await Promise.race([
-      page.waitForURL(/\/buffet\/[^/]+$/, { timeout: 10_000 }).then(() => true),
-      page.getByRole("alert").filter({ hasText: "already exists" }).waitFor({ timeout: 10_000 }).then(() => false),
-    ]);
-    if (opened) break;
+    if ((await answer).ok()) {
+      await page.waitForURL(/\/buffet\/[^/]+$/);
+      break;
+    }
   }
   await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet");
   await pickProduct(page, "Product", "Chicken Wings", /Chicken Wings/);

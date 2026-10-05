@@ -68,7 +68,7 @@ export const reports: Record<string, string> = {
   "Room cost per night": "Oda gecesi maliyeti",
   "Cost per cover (buffet)": "Kişi başı maliyet (büfe)",
   "Stock value (period end)": "Stok değeri (dönem sonu)",
-  // table headers (export column headers shown in the PDF; Excel table headers stay English)
+  // table headers (export column headers shown in the PDF; the Excel workbook adds src/i18n/tr/excel.ts)
   "Data status": "Veri durumu",
   "Server reconciliation check": "Sunucu mutabakat kontrolü",
   "Cost per Cover": "Kişi başı maliyet",
@@ -321,7 +321,7 @@ export const reports: Record<string, string> = {
   "Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.": "Grafikler makro tarafından rapor tablolarından (yeniden) oluşturulur: maliyet trendi, yiyecek maliyeti %, fire %, stok değeri, departman maliyeti, en büyük maliyet etkenleri, en çok fire, fiyat trendi, büfe kişi başı maliyeti.",
   "Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.": "Pivot tablolar makro tarafından (yeniden) oluşturulur: departman, kategori, tedarikçi, ürün, fire, stok, reçete, büfe ve minibar maliyeti.",
   "Workbook {wb} · Export schema {schema} · Application {app}": "Çalışma kitabı {wb} · Dışa aktarma şeması {schema} · Uygulama {app}",
-  // sheet titles (sheet names stay English)
+  // sheet titles (Turkish sheet names: src/i18n/tr/excel.ts)
   "Inventory Value": "Stok değeri",
   "Stock Variance": "Stok farkı",
   "Stock Aging": "Stok yaşlandırma",
