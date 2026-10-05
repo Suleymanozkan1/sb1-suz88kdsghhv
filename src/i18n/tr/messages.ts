@@ -12,7 +12,15 @@ export const TR_MESSAGES: Record<string, string> = {
   "{0}% price": "fiyat %{0}",
   // stock-ledger reasons written by the buffet and minibar services (shown in the ledger)
   "Buffet leftover {0}": "Büfe artığı {0}",
-  "Buffet {0} {1}": "Büfe {0} {1}",
+  // one per buffet type: a generic "Buffet {0} {1}" would also match free text such as "Buffet leftovers discarded at breakfast"
+  "Buffet BREAKFAST {0}": "Büfe kahvaltı {0}",
+  "Buffet LUNCH {0}": "Büfe öğle yemeği {0}",
+  "Buffet DINNER {0}": "Büfe akşam yemeği {0}",
+  "Buffet ALL_INCLUSIVE {0}": "Büfe her şey dahil {0}",
+  "Buffet SPECIAL_EVENT {0}": "Büfe özel etkinlik {0}",
+  "Buffet BANQUET {0}": "Büfe banket {0}",
+  "Buffet THEME_NIGHT {0}": "Büfe tema gecesi {0}",
+  "Buffet HOLIDAY {0}": "Büfe bayram/tatil {0}",
   "{0} buffet {1}: {2} ({3})": "{0} büfesi {1}: {2} ({3})",
   "Minibar room {0}": "Minibar oda {0}",
   "Minibar count room {0}: expected {1}, found {2}": "Minibar sayımı oda {0}: beklenen {1}, sayılan {2}",

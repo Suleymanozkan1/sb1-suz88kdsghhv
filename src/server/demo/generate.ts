@@ -163,43 +163,154 @@ const WASTE_TYPES: Array<[WasteType, string]> = [["SPOILED", "Spoiled in storage
 
 // ───────────────────────── entry point ─────────────────────────
 
-export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: { password: string; log?: (s: string) => void; now?: Date; ownerConsent?: boolean; platformAdmin?: boolean; locale?: DemoLocale }): Promise<DemoSummary> {
-  assertDemoAllowed(opts.ownerConsent);
-  const t0 = Date.now();
-  const log = opts.log ?? (() => undefined);
-  const n = demoNames(opts.locale ?? "en");
-  if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.flatMap((o) => [o.name, demoNames("tr").org(o.name)]) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
-  const hash = await bcrypt.hash(opts.password, 10);
-  const now = opts.now ?? new Date();
+export type DemoStep = { kind: "orgs" } | { kind: "hotel" | "buffet" | "services"; code: string } | { kind: "users" };
+export interface DemoRunOptions {
+  /** plain password for the demo users, or an existing bcrypt hash (the installation owner's) */
+  password?: string;
+  passwordHash?: string;
+  log?: (s: string) => void;
+  /** the run's reference time: every step of one run must use the same value */
+  now?: Date;
+  ownerConsent?: boolean;
+  platformAdmin?: boolean;
+  locale?: DemoLocale;
+  /** the `carry` the previous step returned (a hotel's later steps continue from its earlier ones) */
+  carry?: unknown;
+}
+
+/** The steps of a run, each small enough for one serverless request: companies, three per hotel, users. */
+export function demoSteps(profile: DemoProfile): DemoStep[] {
+  const perHotel = profile.orgs.flatMap((o) => o.hotels.flatMap((h) => (["hotel", "buffet", "services"] as const).map((kind) => ({ kind, code: h.code }))));
+  return [{ kind: "orgs" }, ...perHotel, { kind: "users" }];
+}
+
+export const demoStepId = (s: DemoStep) => ("code" in s ? `${s.kind}:${s.code}` : s.kind);
+
+/**
+ * What the later steps of a hotel need from its earlier ones, as plain JSON (the two may run in different
+ * serverless requests). Only the master-data ids and the simulation plan: everything else is in the database.
+ */
+interface Carry {
+  dept: Record<string, string>;
+  wh: Record<string, string>;
+  products: ProductMeta[];
+  suppliers: Ctx["suppliers"];
+  rooms: Ctx["rooms"];
+  periods: Array<[string, string]>;
+  scenarios: string[];
+  recipes: Array<Pick<RecipeInfo, "id" | "code" | "outlet">>;
+  pms: { nightly: Array<[string, { occ: number; guests: number; rev: number }]>; reservations: Pms["reservations"] };
+  sim: Omit<SimResult, "buffetPlan"> & { buffetPlan: Array<Omit<SimResult["buffetPlan"][number], "day"> & { day: string }> };
+}
+
+function toCarry(ctx: Ctx, recipes: RecipeInfo[], pms: Pms, sim: SimResult): Carry {
+  return {
+    dept: ctx.dept,
+    wh: ctx.wh,
+    products: ctx.products,
+    suppliers: ctx.suppliers,
+    rooms: ctx.rooms,
+    periods: [...ctx.periods.entries()],
+    scenarios: ctx.scenarios,
+    recipes: recipes.map((r) => ({ id: r.id, code: r.code, outlet: r.outlet })),
+    pms: { nightly: [...pms.nightly.entries()], reservations: pms.reservations },
+    sim: { ...sim, buffetPlan: sim.buffetPlan.map((b) => ({ ...b, day: b.day.toISOString() })) },
+  };
+}
+
+function runWindow(profile: DemoProfile, now: Date) {
   const end = new Date(dayOf(now).getTime() - DAY); // yesterday
   const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - profile.months, 1));
   const days: Date[] = [];
   for (let d = start; d <= end; d = new Date(d.getTime() + DAY)) days.push(d);
-  log(`profile ${profile.name}: ${days.length} days ${ymd(start)} → ${ymd(end)}`);
+  return { start, end, days };
+}
 
-  // never on a public installation: its password would be the documented demo password
-  if (opts.platformAdmin !== false) await ensurePlatformAdmin(db, hash);
-  let users = 0;
-  let hotels = 0;
-  for (const o of profile.orgs) {
-    const org = await db.organization.create({ data: { name: n.org(o.name), isDemo: true } });
-    for (const c of ["TRY", "EUR", "USD"]) await db.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
-    const roleId: Record<string, string> = {};
-    for (const t of ROLE_TEMPLATES) roleId[t.key] = (await db.role.create({ data: { organizationId: org.id, key: t.key, name: t.name, allDepartments: t.allDepartments, permissions: t.permissions } })).id;
-    const hotelRows: Array<{ id: string; def: HotelDef }> = [];
-    for (const hd of o.hotels) hotelRows.push({ id: (await db.hotel.create({ data: { organizationId: org.id, code: hd.code, name: n.hotel(hd.name), totalRooms: hd.rooms, priceAlertPct: 10, wasteApprovalValue: 2500, adjustmentApprovalValue: 15000, marginTargetPct: 65 } })).id, def: hd });
-    const admin = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "companyadmin"), name: n.locale === "tr" ? `${n.org(o.name)} Yöneticisi` : `${o.name} Admin`, passwordHash: hash, roleId: roleId.admin! } });
-    await db.userHotelAccess.createMany({ data: hotelRows.map((h) => ({ userId: admin.id, hotelId: h.id })) });
-    users++;
-    for (const [i, h] of hotelRows.entries()) {
-      const rnd = prng(hashSeed(`${profile.name}:${h.def.code}`));
-      const ctx: Ctx = { db, profile, rnd, orgId: org.id, orgKey: o.key, hotelId: h.id, hotel: h.def, admin: (await actorForUser(admin.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", n, log: (s) => log(`  [${h.def.code}] ${s}`) };
-      await buildHotel(ctx, i);
-      hotels++;
+const hashOf = async (opts: DemoRunOptions) => opts.passwordHash ?? (await bcrypt.hash(opts.password ?? "", 10));
+
+async function demoOrgOf(db: PrismaClient, o: DemoProfile["orgs"][number]) {
+  // the company is found through its first hotel code (the name depends on the dataset language)
+  const h = await db.hotel.findFirstOrThrow({ where: { code: o.hotels[0]!.code, organization: { isDemo: true } }, select: { organizationId: true } });
+  return h.organizationId;
+}
+
+/** Runs one step. Steps must run in demoSteps() order; each is idempotent only in the sense that it refuses to run twice. */
+export async function runDemoStep(db: PrismaClient, profile: DemoProfile, step: DemoStep, opts: DemoRunOptions): Promise<{ users: number; hotels: number; carry?: unknown }> {
+  assertDemoAllowed(opts.ownerConsent);
+  const log = opts.log ?? (() => undefined);
+  const n = demoNames(opts.locale ?? "en");
+  const { start, end, days } = runWindow(profile, opts.now ?? new Date());
+  if (step.kind === "orgs") {
+    if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.flatMap((o) => [o.name, demoNames("tr").org(o.name)]) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
+    log(`profile ${profile.name}: ${days.length} days ${ymd(start)} → ${ymd(end)}`);
+    const hash = await hashOf(opts);
+    // never on a public installation: its password would be the documented demo password
+    if (opts.platformAdmin !== false) await ensurePlatformAdmin(db, hash);
+    let users = 0;
+    for (const o of profile.orgs) {
+      const org = await db.organization.create({ data: { name: n.org(o.name), isDemo: true } });
+      for (const c of ["TRY", "EUR", "USD"]) await db.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
+      const roleId: Record<string, string> = {};
+      for (const t of ROLE_TEMPLATES) roleId[t.key] = (await db.role.create({ data: { organizationId: org.id, key: t.key, name: t.name, allDepartments: t.allDepartments, permissions: t.permissions } })).id;
+      const hotelIds: string[] = [];
+      for (const hd of o.hotels) hotelIds.push((await db.hotel.create({ data: { organizationId: org.id, code: hd.code, name: n.hotel(hd.name), totalRooms: hd.rooms, priceAlertPct: 10, wasteApprovalValue: 2500, adjustmentApprovalValue: 15000, marginTargetPct: 65 } })).id);
+      const admin = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "companyadmin"), name: n.locale === "tr" ? `${n.org(o.name)} Yöneticisi` : `${o.name} Admin`, passwordHash: hash, roleId: roleId.admin! } });
+      await db.userHotelAccess.createMany({ data: hotelIds.map((hotelId) => ({ userId: admin.id, hotelId })) });
+      users++;
     }
-    users += await createOrgUsers(db, o, org.id, roleId, hotelRows.map((h) => h.id), hash, n);
+    return { users, hotels: 0 };
+  }
+  if (step.kind === "hotel" || step.kind === "buffet" || step.kind === "services") {
+    const o = profile.orgs.find((x) => x.hotels.some((h) => h.code === step.code))!;
+    const i = o.hotels.findIndex((h) => h.code === step.code);
+    const def = o.hotels[i]!;
+    const hotel = await db.hotel.findFirstOrThrow({ where: { code: def.code, organization: { isDemo: true } } });
+    const admin = await db.user.findUniqueOrThrow({ where: { email: emailFor(o, "companyadmin") } });
+    const ctx: Ctx = { db, profile, rnd: prng(hashSeed(`${profile.name}:${def.code}`)), orgId: hotel.organizationId, orgKey: o.key, hotelId: hotel.id, hotel: def, admin: (await actorForUser(admin.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", n, log: (s) => log(`  [${def.code}] ${s}`) };
+    if (step.kind === "hotel") {
+      if (await db.department.count({ where: { hotelId: hotel.id } })) throw new Error(`Demo hotel ${def.code} is already built`);
+      return { users: 0, hotels: 1, carry: JSON.parse(JSON.stringify(await buildHotelData(ctx, i))) as unknown };
+    }
+    const c = opts.carry as Carry | undefined;
+    if (!c?.dept) throw new Error(`Demo hotel ${def.code}: the previous step's data is missing`);
+    if (step.kind === "buffet" ? await db.buffetSession.count({ where: { hotelId: hotel.id } }) : await db.budget.count({ where: { hotelId: hotel.id } })) throw new Error(`Demo step ${demoStepId(step)} has already run`);
+    Object.assign(ctx, { dept: c.dept, wh: c.wh, products: c.products, suppliers: c.suppliers, rooms: c.rooms, periods: new Map(c.periods), scenarios: c.scenarios, rnd: prng(hashSeed(`${profile.name}:${def.code}:${step.kind}`)) });
+    for (const p of c.products) ctx.byCat.set(p.cat.code, [...(ctx.byCat.get(p.cat.code) ?? []), p]);
+    const pms: Pms = { nightly: new Map(c.pms.nightly), reservations: c.pms.reservations };
+    const sim: SimResult = { ...c.sim, buffetPlan: c.sim.buffetPlan.map((b) => ({ ...b, day: new Date(b.day) })) };
+    if (step.kind === "buffet") {
+      await buffetPhase(ctx, pms, sim);
+      return { users: 0, hotels: 0, carry: { ...c, scenarios: ctx.scenarios } satisfies Carry };
+    }
+    await buildHotelServices(ctx, c.recipes, pms, sim);
+    return { users: 0, hotels: 0 };
+  }
+  const hash = await hashOf(opts);
+  let users = 0;
+  for (const o of profile.orgs) {
+    const orgId = await demoOrgOf(db, o);
+    const roles = await db.role.findMany({ where: { organizationId: orgId }, select: { id: true, key: true } });
+    const roleId = Object.fromEntries(roles.map((r) => [r.key, r.id]));
+    const hotels = await db.hotel.findMany({ where: { organizationId: orgId }, select: { id: true, code: true } });
+    const hotelIds = o.hotels.map((h) => hotels.find((x) => x.code === h.code)!.id);
+    users += await createOrgUsers(db, o, orgId, roleId, hotelIds, hash, n);
   }
   await db.$executeRawUnsafe("ANALYZE");
+  return { users, hotels: 0 };
+}
+
+export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts: DemoRunOptions): Promise<DemoSummary> {
+  const t0 = Date.now();
+  const run = { ...opts, now: opts.now ?? new Date(), passwordHash: await hashOf(opts) };
+  let users = 0;
+  let hotels = 0;
+  let carry: unknown;
+  for (const step of demoSteps(profile)) {
+    const r = await runDemoStep(db, profile, step, { ...run, carry });
+    carry = r.carry;
+    users += r.users;
+    hotels += r.hotels;
+  }
   const counts = await demoCounts(db);
   return { profile: profile.name, organizations: profile.orgs.length, hotels, users, counts, seconds: Math.trunc((Date.now() - t0) / 1000 + 0.5) };
 }
@@ -248,7 +359,8 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
 
 // ───────────────────────── one hotel ─────────────────────────
 
-async function buildHotel(ctx: Ctx, index: number) {
+/** First half of a hotel: master data, recipes and the day-by-day simulation. */
+async function buildHotelData(ctx: Ctx, index: number): Promise<Carry> {
   const t = Date.now();
   await masterData(ctx, index);
   ctx.log(`master data: ${ctx.products.length} products, ${ctx.rooms.length} rooms (${Date.now() - t} ms)`);
@@ -257,6 +369,12 @@ async function buildHotel(ctx: Ctx, index: number) {
   const pms = planOccupancy(ctx);
   const sim = await simulate(ctx, recipes, pms);
   ctx.log(`simulation: ${sim.stock} stock rows, ${sim.sales} sale lines, ${sim.waste} waste (${Date.now() - t} ms)`);
+  return toCarry(ctx, recipes, pms, sim);
+}
+
+/** Last part: minibar, expenses, allocation, budget, targets, period close. */
+async function buildHotelServices(ctx: Ctx, recipes: Carry["recipes"], pms: Pms, sim: SimResult) {
+  const t = Date.now();
   await servicesPhase(ctx, pms, sim);
   ctx.log(`services phase done (${Date.now() - t} ms)`);
   if (ctx.isQa) await intentionalErrors(ctx, recipes);
@@ -955,8 +1073,11 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
 
 // ───────────────────────── services phase ─────────────────────────
 
-async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
-  const { db, rnd, hotelId: H, admin, n: N } = ctx;
+/** PMS driver data and the buffets (the slow part of a hotel: every line goes through the real services). */
+async function buffetPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
+  const { db, rnd, hotelId: H, admin } = ctx;
+  const t0 = Date.now();
+  const lap = (what: string) => ctx.log(`${what} (${Date.now() - t0} ms)`);
   // PMS (spec 72-75 driver data)
   await commitReservations(db, admin, H, `pms-reservations-${ctx.hotel.code}.csv`, pms.reservations);
   await commitOccupancy(db, admin, H, `pms-daily-${ctx.hotel.code}.csv`, ctx.days.map((d) => {
@@ -964,6 +1085,7 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
     return { business_date: ymd(d), available_rooms: String(ctx.rooms.length), occupied_rooms: String(Math.min(v.occ, ctx.rooms.length)), out_of_order: "0", guests: String(v.guests), room_revenue: v.rev.toFixed(2) };
   }));
 
+  lap("pms");
   // buffets through the real service (spec 68-70): production + refill, leftovers by severity level
   let buffets = 0;
   const overproduction: string[] = [];
@@ -996,11 +1118,20 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   }
   scenario(ctx, "S08_BUFFET_OVERPRODUCTION", "Buffets with 10-18 % leftovers (high / critical waste levels)", "EDGE_CASE", "Buffet waste % HIGH / CRITICAL; cost per cover", "BuffetSession", overproduction);
 
+  lap(`buffets ${buffets}`);
+}
+
+async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
+  const { db, admin, hotelId: H, n: N } = ctx;
+  const t0 = Date.now();
+  const lap = (what: string) => ctx.log(`${what} (${Date.now() - t0} ms)`);
   // minibar through the real service (spec 71; scenario 9 discrepancies)
   const mbRooms = await minibarPhase(ctx, sim);
 
   // operating expenses (spec 76-78): payroll from employees, utilities with a spike, contracts, repairs, daily small costs
+  lap("minibar");
   await operatingCosts(ctx, pms);
+  lap("operating costs");
 
   // allocation (spec 145) for every full month
   const opDepts = ["ROOMS", "HK", "LAUN", "REST", "CAFE", "BAR", "BRKF", "BANQ", "KITCH", "PAST"];
@@ -1011,6 +1142,7 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   const fullMonths = [...ctx.periods.entries()].filter(([code]) => code < ym(ctx.end) || new Date(Date.UTC(ctx.end.getUTCFullYear(), ctx.end.getUTCMonth() + 1, 0)).getTime() === ctx.end.getTime());
   for (const [, pid] of fullMonths) await postAllocation(db, admin, H, pid);
 
+  lap("allocation");
   // budget (spec 81): from the first full month's run rate, seasonality-weighted; scenario 13 overrun
   const first = fullMonths[0];
   if (first) {
@@ -1048,7 +1180,7 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   const sb = await createAction(db, admin, H, { driver: "SUPPLIER_PRICE", problem: N.t("Protein prices up 15-30 % at the main supplier"), rootCause: N.t("Single-source contract"), action: N.t("Tender with two alternative suppliers"), ownerName: N.position("Purchasing Manager"), targetSaving: "25000", dueDate: new Date(ctx.end.getTime() - 10 * DAY) });
   await updateAction(db, admin, H, sb.id, { status: "DONE", actualSaving: "19800" });
   await ensureDefaultTasks(db, H);
-  ctx.log(`buffets ${buffets}, minibar rooms ${mbRooms.length}`);
+  ctx.log(`minibar rooms ${mbRooms.length}`);
 }
 
 /** Minibar through the real service (spec 71; scenario 9 discrepancies). */
@@ -1196,7 +1328,7 @@ async function operatingCosts(ctx: Ctx, pms: Pms) {
 
 // ───────────────────────── intentional errors (QA tenant) ─────────────────────────
 
-async function intentionalErrors(ctx: Ctx, recipes: RecipeInfo[]) {
+async function intentionalErrors(ctx: Ctx, recipes: Carry["recipes"]) {
   const { db, hotelId: H, n: N } = ctx;
   const userId = ctx.admin.userId;
   const today = ymd(ctx.end);

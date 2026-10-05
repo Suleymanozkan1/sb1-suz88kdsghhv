@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Input, Label } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
@@ -28,11 +28,34 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
       setErr(x instanceof Error ? x.message : String(x));
     }
   }, []);
+  // the dataset is built one step per request (each fits the hosting time limit); one request at a time
+  const stepping = useRef(false);
   useEffect(() => {
-    if (s.state !== "running") return;
-    const id = setInterval(() => void refresh(), 4000);
-    return () => clearInterval(id);
-  }, [s.state, refresh]);
+    if (s.state !== "running" || stepping.current) return;
+    stepping.current = true;
+    let alive = true;
+    void (async () => {
+      let prev = -1;
+      try {
+        for (;;) {
+          const next = await call<DemoState>("POST", "/api/setup/demo/step");
+          if (!alive) return;
+          setS(next);
+          if (next.state !== "running") return;
+          // another tab is running the current step: wait instead of asking again at once
+          if (next.done === prev) await new Promise((r) => setTimeout(r, 3000));
+          prev = next.done;
+        }
+      } catch (x) {
+        if (alive) setErr(x instanceof Error ? x.message : String(x));
+      } finally {
+        stepping.current = false;
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [s.state]);
 
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -51,7 +74,10 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
     <div className="mt-4 space-y-4 text-sm">
       {err && <Alert>{err}</Alert>}
       {s.state === "running" && (
-        <Alert tone="amber">{t("Demo data is being loaded. This usually takes 1-3 minutes; this page updates by itself.")} ({t("{n} hotels so far", { n: s.hotels })})</Alert>
+        <Alert tone="amber">
+          {t("Demo data is being loaded. Keep this page open; it takes a few minutes.")}{" "}
+          ({t("Step {d}/{n}", { d: s.done, n: s.total })}{s.next ? ` · ${s.next}` : ""})
+        </Alert>
       )}
       {s.state === "done" && (
         <>
