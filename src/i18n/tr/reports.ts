@@ -1,5 +1,16 @@
 /** Turkish strings: reports area. Key = English source text. */
 export const reports: Record<string, string> = {
+  "Standard / Previous Cost": "Standart / önceki maliyet",
+  "Actual Purchase Cost": "Gerçek alış maliyeti",
+  "PPV %": "Fiyat farkı %",
+  "Price Variance": "Fiyat farkı",
+  "Cost Increase (PPV)": "Maliyet artışı (fiyat farkı)",
+  "Current Stock": "Mevcut stok",
+  "Minimum": "Asgari",
+  "Recommended Order": "Önerilen sipariş",
+  "UNFAVOURABLE": "ALEYHTE",
+  "FAVOURABLE": "LEHTE",
+  "NO BASELINE": "KIYAS YOK",
   // ── management pack PDF ──
   "Management cost pack {period}": "Yönetim maliyet raporu {period}",
   "Monthly Management Cost Pack": "Aylık Yönetim Maliyet Raporu",
