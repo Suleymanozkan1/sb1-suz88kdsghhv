@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 const PASSWORD = process.env.DEMO_PASSWORD ?? "Demo!2026-QA";
-// public or session plumbing, or read-only POSTs that a viewer may call (check, live recipe cost preview)
-const ALLOWED = new Set(["/api/auth/login", "/api/auth/logout", "/api/auth/hotel", "/api/invites/accept", "/api/integrity/check", "/api/recipes/preview"]);
+// public or session plumbing (incl. first-run setup, which answers 409 once installed), or read-only POSTs a viewer may call
+const ALLOWED = new Set(["/api/auth/login", "/api/auth/logout", "/api/auth/hotel", "/api/invites/accept", "/api/integrity/check", "/api/recipes/preview", "/api/setup"]);
 const PARAM: Record<string, string> = { "[kind]": "expenses" };
 
 function routes(dir = "src/app/api", base = "/api"): Array<{ path: string; methods: string[] }> {

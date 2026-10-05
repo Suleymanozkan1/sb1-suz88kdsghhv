@@ -115,6 +115,8 @@ async function crawlUser(browser: Browser, email: string, hotelNames: Map<string
       if (status >= 500) findings.push({ user: email, ...current, kind: "http5xx", detail: String(status) });
       if (/Application error|server-side exception|Internal Server Error|Unhandled Runtime Error/i.test(text)) findings.push({ user: email, ...current, kind: "error-page", detail: text.slice(0, 200) });
       if (/\bNaN\b|undefined|\[object Object\]|Invalid Date/.test(text)) findings.push({ user: email, ...current, kind: "bad-render", detail: (text.match(/.{0,60}(\bNaN\b|undefined|\[object Object\]|Invalid Date).{0,60}/)?.[0] ?? "").replace(/\s+/g, " ") });
+      // QA builds with NEXT_PUBLIC_I18N_STRICT=1 mark untranslated Turkish keys as ⟦key⟧
+      for (const m of new Set(text.match(/⟦[^⟧]{1,120}⟧/g) ?? [])) findings.push({ user: email, ...current, kind: "missing-tr", detail: m });
       const html = await page.content();
       if (hydration && process.env.CRAWL_SNAPSHOTS) {
         const base = `${process.env.CRAWL_SNAPSHOTS}/${email.replace(/[@.]/g, "_")}_${code.replace(/\W+/g, "")}${path.replace(/\//g, "_")}`;
