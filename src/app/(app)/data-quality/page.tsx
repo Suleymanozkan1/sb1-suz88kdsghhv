@@ -28,11 +28,18 @@ export default async function DataQualityPage() {
         {checks.map((c) => (
           <Card key={c.key} title={<span className="flex items-center gap-2">{t(c.label)} <Badge tone={c.count === 0 ? "green" : "amber"}>{c.count < 0 ? t("never") : c.count}</Badge></span>}>
             {c.items.length === 0 ? <p className="text-sm text-ink-500">{c.count === 0 ? t("All good.") : t("See related screen.")}</p> : (
-              <ul className="max-h-48 space-y-1 overflow-auto text-sm" tabIndex={0}>{c.items.map((i) => <li key={i.id} className="truncate">{i.name}{"problem" in i ? <span className="block text-xs text-ink-500">{t(String((i as { problem: string }).problem))}</span> : null}</li>)}</ul>
+              <ul className="max-h-48 space-y-1 overflow-auto text-sm" tabIndex={0}>{c.items.map((i) => <li key={i.id} className="truncate">{i.name}{"problem" in i ? <span className="block text-xs text-ink-500">{issueText(String((i as { problem: string }).problem), t)}</span> : null}</li>)}</ul>
             )}
           </Card>
         ))}
       </div>
     </>
   );
+}
+
+/** Recipe problems arrive as "CODE (path), CODE (path)" or a sentence: translate the codes and known sentences. */
+function issueText(p: string, t: (k: string) => string): string {
+  const whole = t(p);
+  if (whole !== p) return whole;
+  return p.replace(/\b[A-Z][A-Z_]{3,}\b/g, (code) => t(code));
 }
