@@ -102,11 +102,16 @@ End Sub
         result["problems"].append(f"VBA harness failed to compile/run: {e}")
 
     doc.calculateAll()
-    rec = doc.Sheets.getByName("46_RECONCILIATION")
+    # the workbook may be English or Turkish: sheets are found by their number, words by language
+    byPrefix = lambda p: next(n for n in sheets if n.startswith(p))
+    turkish = sheets[0] != "01_CONTROL"
+    result["language"] = "tr" if turkish else "en"
+    PASS, WARNING, FAIL, STATUS = ("BAŞARILI", "UYARI", "HATALI", "Durum") if turkish else ("PASS", "WARNING", "FAIL", "Status")
+    rec = doc.Sheets.getByName(byPrefix("46_"))
     statuses = []
     # excel formula checks table: find header "Status" in row 6 to the right of server table
     for col in range(0, 30):
-        if rec.getCellByPosition(col, 5).String == "Status":
+        if rec.getCellByPosition(col, 5).String == STATUS:
             statuses.append(col)
     found = {}
     for col in statuses:
@@ -117,19 +122,19 @@ End Sub
                 break
             vals.append(v)
         found[col] = vals
-    result["statusColumns"] = {str(k): {"PASS": v.count("PASS"), "WARNING": v.count("WARNING"), "FAIL": v.count("FAIL")} for k, v in found.items()}
+    result["statusColumns"] = {str(k): {"PASS": v.count(PASS), "WARNING": v.count(WARNING), "FAIL": v.count(FAIL)} for k, v in found.items()}
     # Excel formula checks are the 2nd Status column
     if len(statuses) >= 2:
         excel = found[statuses[1]]
         result["excelFormulaChecks"] = excel
-        if "FAIL" in excel or not excel:
+        if FAIL in excel or not excel or any(v not in (PASS, WARNING) for v in excel):
             result["problems"].append("excel formula reconciliation has FAIL or is empty")
-    ctl = doc.Sheets.getByName("01_CONTROL")
+    ctl = doc.Sheets.getByName(sheets[0])
     result["definedNames"] = len(doc.NamedRanges.ElementNames)
     result["ctl_StartDate"] = doc.NamedRanges.getByName("ctl_StartDate").Content if doc.NamedRanges.hasByName("ctl_StartDate") else None
     dp = ctl.DrawPage
     result["controlShapes"] = [dp.getByIndex(i).Name for i in range(dp.Count)]
-    ex = doc.Sheets.getByName("02_EXECUTIVE_SUMMARY")
+    ex = doc.Sheets.getByName(byPrefix("02_"))
     result["tileActualCost"] = ex.getCellRangeByName("D6").Value
     doc.close(True)
 except Exception as e:

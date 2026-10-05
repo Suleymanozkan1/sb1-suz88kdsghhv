@@ -20,8 +20,8 @@ Private Const XL_CALC_MANUAL As Long = -4135
 ' Main button: "TUM COST RAPORLARINI OLUSTUR" / "GENERATE FULL COST REPORT"
 Public Sub GenerateFullCostReport()
     Dim mode As String
-    mode = LCase$(Trim$(CStr(CtlValue("ctl_RefreshMode"))))
-    RunPipeline (mode = "full rebuild")
+    mode = Trim$(CStr(CtlValue("ctl_RefreshMode")))
+    RunPipeline (mode = L("Full Rebuild"))
 End Sub
 
 Public Sub RefreshCurrentPeriod()
@@ -53,66 +53,66 @@ Private Sub RunPipeline(ByVal fullRebuild As Boolean)
     Application.EnableEvents = False
     Application.Calculation = XL_CALC_MANUAL
 
-    stage = "Read & validate control parameters"
+    stage = L("Read & validate control parameters")
     Status stage
     If Not ValidateParameters() Then
-        finalStatus = "EXPORT FAILED"
+        finalStatus = L("EXPORT FAILED")
         GoTo Finish
     End If
 
-    stage = "Fetch data from HotelCost API"
+    stage = L("Fetch data from HotelCost API")
     Status stage
     Set payload = FetchFullCost()
 
-    stage = "Validate raw data"
+    stage = L("Validate raw data")
     Status stage
     If Not ValidateExport(payload) Then
-        finalStatus = "EXPORT FAILED"
+        finalStatus = L("EXPORT FAILED")
         GoTo Finish
     End If
 
     UnprotectAll
     If fullRebuild Then
-        stage = "Full rebuild: clear generated tables"
+        stage = L("Full rebuild: clear generated tables")
         Status stage
         ClearGeneratedTables
     End If
 
-    stage = "Write raw data, calculations and reports"
+    stage = L("Write raw data, calculations and reports")
     Status stage
     gRecords = WriteAllSections(payload)
     WriteMetadata payload
 
-    stage = "Refresh pivot tables"
+    stage = L("Refresh pivot tables")
     Status stage
     RefreshPivots
 
-    stage = "Refresh charts"
+    stage = L("Refresh charts")
     Status stage
     RefreshCharts
 
-    stage = "Run reconciliation"
+    stage = L("Run reconciliation")
     Status stage
     Application.Calculate
     RunReconciliation payload
 
-    stage = "Format workbook"
+    stage = L("Format workbook")
     Status stage
     FormatWorkbook
     ProtectAll
 
     If gErrors > 0 Then
-        finalStatus = "EXPORT FAILED"
+        finalStatus = L("EXPORT FAILED")
     ElseIf gWarnings > 0 Then
-        finalStatus = "EXPORT COMPLETED WITH WARNINGS"
+        finalStatus = L("EXPORT COMPLETED WITH WARNINGS")
     Else
-        finalStatus = "EXPORT COMPLETED SUCCESSFULLY"
+        finalStatus = L("EXPORT COMPLETED SUCCESSFULLY")
     End If
     GoTo Finish
 
 Fail:
     LogError "modMain", stage, "RUNTIME", Err.Number & ": " & Err.Description, "CRITICAL"
-    finalStatus = "EXPORT FAILED"
+    finalStatus = L("EXPORT FAILED")
     Resume Finish
 
 Finish:
@@ -127,7 +127,7 @@ Finish:
     LogRun t0, finalStatus, gRecords
     ThisWorkbook.Worksheets(CONTROL_SHEET).Activate
     MsgBox finalStatus & vbCrLf & vbCrLf & CompletionSummary(payload), _
-        IIf(finalStatus = "EXPORT FAILED", vbCritical, IIf(gWarnings > 0, vbExclamation, vbInformation)), "HotelCost"
+        IIf(finalStatus = L("EXPORT FAILED"), vbCritical, IIf(gWarnings > 0, vbExclamation, vbInformation)), "HotelCost"
 End Sub
 
 Public Sub ExportManagementPdf()
@@ -135,11 +135,11 @@ Public Sub ExportManagementPdf()
     Dim target As String
     Dim folder As String
     On Error GoTo Fail
-    names = Array(CONTROL_SHEET, "02_EXECUTIVE_SUMMARY", "04_FOOD_COST", "05_BEVERAGE_COST", "09_CONSUMPTION_VARIANCE", _
-                  "11_WASTE_SUMMARY", "34_DEPARTMENT_COST", "45_UNEXPLAINED_VARIANCE", "46_RECONCILIATION", "53_DASHBOARD_CHARTS")
+    names = Array(CONTROL_SHEET, S("02_EXECUTIVE_SUMMARY"), S("04_FOOD_COST"), S("05_BEVERAGE_COST"), S("09_CONSUMPTION_VARIANCE"), _
+                  S("11_WASTE_SUMMARY"), S("34_DEPARTMENT_COST"), S("45_UNEXPLAINED_VARIANCE"), S("46_RECONCILIATION"), S("53_DASHBOARD_CHARTS"))
     folder = ThisWorkbook.Path
     If Len(folder) = 0 Then folder = Environ$("TEMP")
-    target = folder & Application.PathSeparator & "HotelCost_Management_Report_" & _
+    target = folder & Application.PathSeparator & L("HotelCost_Management_Report_") & _
              Format$(CtlValue("ctl_StartDate"), "yyyy_mm") & ".pdf"
     ThisWorkbook.Worksheets(names).Select
     ActiveSheet.ExportAsFixedFormat 0, target, 0, True, False, , , True
@@ -147,7 +147,7 @@ Public Sub ExportManagementPdf()
     Exit Sub
 Fail:
     LogError "modMain", "ExportManagementPdf", "PDF", Err.Number & ": " & Err.Description, "HIGH"
-    MsgBox "PDF export failed: " & Err.Description, vbCritical, "HotelCost"
+    MsgBox L("PDF export failed") & ": " & Err.Description, vbCritical, "HotelCost"
 End Sub
 
 Public Function CtlValue(ByVal rangeName As String) As Variant

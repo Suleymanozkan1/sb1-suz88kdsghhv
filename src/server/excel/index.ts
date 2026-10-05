@@ -20,7 +20,7 @@ export async function buildExcelReport(db: Db, actor: Actor, hotelId: string, pa
     db.warehouse.findMany({ where: { hotelId, ...(deptIds ? { departmentId: { in: deptIds } } : {}) }, orderBy: { name: "asc" } }),
   ]);
   const built = await buildWorkbook(e, { apiBaseUrl, locale, lists: { departments: departments.map((d) => ({ id: d.id, name: d.name, outlet: d.isOutlet })), warehouses: warehouses.map((w) => ({ id: w.id, name: w.name })) } });
-  const buffer = await toXlsm(built.buffer, built.definedNames, built.bulk);
+  const buffer = await toXlsm(built.buffer, built.definedNames, built.bulk, locale);
   const ym = e.meta.period.from.slice(0, 7).replace("-", "_");
   return { fileName: `HotelCost_Cost_Report_${e.meta.hotel.code}_${ym}.xlsm`, buffer, export: e };
 }

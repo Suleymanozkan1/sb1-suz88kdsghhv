@@ -4,7 +4,10 @@
 '==============================================================================
 Option Explicit
 
-Public Const CONTROL_SHEET As String = "01_CONTROL"
+' Sheet names are in the workbook's language (S() is replaced when the workbook is built).
+Public Function CONTROL_SHEET() As String
+    CONTROL_SHEET = S("01_CONTROL")
+End Function
 
 Public Function FindTable(ByVal tableName As String) As ListObject
     Dim ws As Worksheet
@@ -57,17 +60,17 @@ Public Function WriteSection(ByVal key As String, ByVal sec As Object) As Long
 
     Set lo = FindTable("tbl_" & key)
     If lo Is Nothing Then
-        LogError "modReport", key, "MISSING_TABLE", "Workbook has no table tbl_" & key & " (export is newer than workbook?).", "WARNING"
+        LogError "modReport", key, "MISSING_TABLE", L("Workbook has no table") & " tbl_" & key & " " & L("(export is newer than workbook?)"), "WARNING"
         Exit Function
     End If
     heads = sec("headers")
     If lo.ListColumns.Count <> sec("cols") Then
-        LogError "modReport", key, "SCHEMA", "Column count differs: workbook " & lo.ListColumns.Count & " vs export " & sec("cols"), "HIGH"
+        LogError "modReport", key, "SCHEMA", L("Column count differs") & ": " & L("workbook") & " " & lo.ListColumns.Count & ", " & L("export") & " " & sec("cols"), "HIGH"
         Exit Function
     End If
     For c = 1 To sec("cols")
         If lo.ListColumns(c).Name <> heads(c) Then
-            LogError "modReport", key, "SCHEMA", "Column " & c & " is '" & lo.ListColumns(c).Name & "' but export sends '" & heads(c) & "'", "HIGH"
+            LogError "modReport", key, "SCHEMA", L("Column") & " " & c & ": " & L("workbook") & " '" & lo.ListColumns(c).Name & "', " & L("export") & " '" & heads(c) & "'", "HIGH"
             Exit Function
         End If
     Next c
@@ -84,8 +87,8 @@ Public Function WriteSection(ByVal key As String, ByVal sec As Object) As Long
 
     Set statusCell = lo.HeaderRowRange.Cells(1, 1).Offset(-2, 0)
     note = CStr(sec("note"))
-    statusCell.Value = "Data status: " & sec("status") & IIf(Len(note) > 0, " - " & note, "") & "  |  rows: " & nRows
-    If sec("status") = "NOT_AVAILABLE" Then statusCell.Font.Color = RGB(180, 83, 9) Else statusCell.Font.Color = RGB(80, 92, 120)
+    statusCell.Value = L("Data status") & ": " & sec("status") & IIf(Len(note) > 0, " - " & note, "") & "  |  " & L("rows") & ": " & nRows
+    If sec("status") = L("NOT_AVAILABLE") Then statusCell.Font.Color = RGB(180, 83, 9) Else statusCell.Font.Color = RGB(80, 92, 120)
     WriteSection = nRows
 End Function
 
@@ -121,7 +124,7 @@ Public Sub WriteMetadata(ByVal payload As Object)
     SetCtl "ctl_Currency", m("currency")
     SetCtl "ctl_PeriodLabel", m("periodLabel")
     SetCtl "ctl_GeneratedAt", m("generatedAt")
-    SetCtl "ctl_GeneratedBy", m("generatedBy") & " (Excel user: " & Application.UserName & ")"
+    SetCtl "ctl_GeneratedBy", m("generatedBy") & " (" & L("Excel user") & ": " & Application.UserName & ")"
     SetCtl "ctl_DataThrough", m("dataThrough")
     SetCtl "ctl_ExportId", payload("exportId")
     SetCtl "ctl_ExportVersion", payload("exportVersion")
@@ -135,18 +138,18 @@ Public Function CompletionSummary(ByVal payload As Object) As String
     Dim i As Long
     Dim s As String
     If payload Is Nothing Then
-        CompletionSummary = "No data was written. See 48_EXPORT_ERRORS."
+        CompletionSummary = L("No data was written.") & " " & L("See") & " " & S("48_EXPORT_ERRORS") & "."
         Exit Function
     End If
     keys = Array("costDetail", "rawStockTransactions", "actualConsumption", "waste", "recipeSummary", "rawSales", "inventoryValue")
-    labels = Array("cost records", "stock transactions", "consumption records", "waste records", "recipes", "sales lines", "stock positions")
+    labels = Array(L("cost records"), L("stock transactions"), L("consumption records"), L("waste records"), L("recipes"), L("sales lines"), L("stock positions"))
     For i = 0 To UBound(keys)
         If payload("sections").Exists(keys(i)) Then
             s = s & ChrW(&H2714) & " " & Format$(payload("sections")(keys(i))("rows"), "#,##0") & " " & labels(i) & vbCrLf
         End If
     Next i
-    s = s & vbCrLf & "Data quality: " & CStr(CtlValue("ctl_ScoreDataQuality")) & "%" & vbCrLf & _
-        "Reconciliation: " & CStr(CtlValue("ctl_ScoreRecon")) & vbCrLf & _
-        "Warnings: " & gWarnings & vbCrLf & "Errors: " & gErrors
+    s = s & vbCrLf & L("Data quality") & ": " & CStr(CtlValue("ctl_ScoreDataQuality")) & "%" & vbCrLf & _
+        L("Reconciliation") & ": " & CStr(CtlValue("ctl_ScoreRecon")) & vbCrLf & _
+        L("Warnings") & ": " & gWarnings & vbCrLf & L("Errors") & ": " & gErrors
     CompletionSummary = s
 End Function

@@ -19,6 +19,8 @@ import { buildFullCostExport, toTsv, type FullCostExport } from "@/server/servic
 import { buildExcelReport } from "@/server/excel";
 import { readVbaProject } from "@/server/excel/vba-project";
 import { SHEETS, CONTROL_SHEET } from "@/server/excel/workbook";
+import { localizeExport, xlLang } from "@/server/excel/i18n";
+import { vbaString } from "@/server/excel/package";
 import type { Actor } from "@/server/auth/actor";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
@@ -245,5 +247,89 @@ describe(".xlsm workbook (spec 1-7, 86-90, 105-120, 129)", () => {
     expect(tile.formula).toContain('MATCH("actualCost"');
     expect(tile.result).toBe(20000);
     expect(wb.getWorksheet("51_README")!.getCell("A5").value).toBe("WHAT THIS WORKBOOK IS");
+  });
+});
+
+describe("Turkish workbook (everything the user reads is Turkish; formulas and macro stay consistent)", () => {
+  let tr: Buffer;
+  let wb: ExcelJS.Workbook;
+  const tables = new Map<string, string[]>();
+  beforeAll(async () => {
+    tr = (await buildExcelReport(prisma, cc, h.hotel.id, { from: FROM, to: TO }, "https://hotelcost.example", "tr")).buffer;
+    wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(tr as unknown as ArrayBuffer);
+    for (const ws of wb.worksheets) for (const t of Object.values((ws as unknown as { tables: Record<string, { table: { name: string; columns: { name: string }[] } }> }).tables)) tables.set(t.table.name, t.table.columns.map((c) => c.name));
+  }, 120_000);
+
+  it("has Turkish sheet names that Excel accepts", () => {
+    const names = wb.worksheets.map((w) => w.name);
+    expect(names[0]).toBe(xlLang("tr").sheet(CONTROL_SHEET));
+    expect(names).toContain("02_YÖNETİCİ_ÖZETİ");
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) {
+      expect(n.length, n).toBeLessThanOrEqual(31);
+      expect(n, n).not.toMatch(/[[\]:*?/\\]/);
+    }
+  });
+
+  it("has unique Turkish column headers that are safe in structured references", () => {
+    expect(tables.size).toBeGreaterThan(60);
+    for (const [t, cols] of tables) {
+      expect(new Set(cols).size, `${t}: ${cols.join(", ")}`).toBe(cols.length);
+      for (const c of cols) expect(c, `${t}[${c}]`).not.toMatch(/[[\]#']/);
+    }
+    expect(tables.get("tbl_costDetail")).toContain("Toplam maliyet");
+    expect(tables.get("tbl_waste")).toContain("Fire maliyeti");
+  });
+
+  it("every formula refers to a table column that exists", () => {
+    let refs = 0;
+    for (const ws of wb.worksheets) ws.eachRow((row) => row.eachCell((c) => {
+      const f = (c.value as { formula?: string } | null)?.formula;
+      if (!f) return;
+      for (const m of f.matchAll(/(tbl_\w+)\[((?:[^\]']|'.)+)\]/g)) {
+        refs++;
+        const col = m[2]!.replace(/'(.)/g, "$1");
+        expect(tables.get(m[1]!), `${ws.name}!${c.address}: ${m[0]}`).toContain(col);
+      }
+    }));
+    expect(refs).toBeGreaterThan(20);
+  });
+
+  it("formula checks evaluate to Turkish statuses and no check fails", () => {
+    const rec = wb.getWorksheet("46_MUTABAKAT")!;
+    const statuses: string[] = [];
+    rec.eachRow((row, n) => row.eachCell((c) => { const r = (c.value as { formula?: string; result?: unknown } | null); if (n > 6 && r?.formula && typeof r.result === "string") statuses.push(r.result); }));
+    expect(statuses.length).toBeGreaterThan(5);
+    for (const s of statuses) expect(["BAŞARILI", "UYARI"]).toContain(s);
+  });
+
+  it("the macro uses the same Turkish sheet names, headers and values; nothing is left to translate at run time", async () => {
+    const zip = await JSZip.loadAsync(tr);
+    const vba = readVbaProject(await zip.file("xl/vbaProject.bin")!.async("nodebuffer"));
+    const all = Object.values(vba.modules).join("\n");
+    expect(all).not.toMatch(/\b[LHS]\("/); // every marker was replaced
+    expect(all).toContain('"&lang=" & "tr"');
+    // non-ASCII text is built with ChrW (code page 1252 modules)
+    expect([...all].every((ch) => ch.charCodeAt(0) < 128)).toBe(true);
+    const lit = (s: string) => vbaString(s);
+    expect(all).toContain(lit("53_GRAFİKLER"));
+    expect(all).toContain(lit("Toplam maliyet"));
+    expect(all).toContain(lit("HATALI"));
+    for (const col of [["tbl_costDetail", "İz no"], ["tbl_rawStockTransactions", "Hareket no"], ["tbl_costTrend", "Ay"], ["tbl_departmentCost", "Toplam maliyet"]]) expect(tables.get(col[0]!)).toContain(col[1]);
+  });
+
+  it("the TSV refresh in Turkish sends the workbook's headers and values", () => {
+    const tsv = toTsv(localizeExport(exp, xlLang("tr")));
+    const lines = tsv.split("\n");
+    const head = lines[lines.findIndex((l) => l.startsWith("##SECTION\tcostDetail\t")) + 1]!;
+    expect(head.split("\t").map((x) => x.split(":").slice(2).join(":"))).toEqual(tables.get("tbl_costDetail"));
+    expect(tsv).not.toMatch(/\tPASS\t/);
+  });
+
+  it("an English workbook is unchanged: English names and headers", async () => {
+    const en = new ExcelJS.Workbook();
+    await en.xlsx.load(xlsm as unknown as ArrayBuffer);
+    expect(en.worksheets.map((w) => w.name)).toContain("02_EXECUTIVE_SUMMARY");
   });
 });

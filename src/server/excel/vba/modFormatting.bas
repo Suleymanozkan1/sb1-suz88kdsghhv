@@ -38,8 +38,7 @@ Public Sub FormatWorkbook()
 End Sub
 
 Public Function ButtonCaption() As String
-    ' "TUM COST RAPORLARINI OLUSTUR" with Turkish letters (U+00DC, U+015E)
-    ButtonCaption = "T" & ChrW(&HDC) & "M COST RAPORLARINI OLU" & ChrW(&H15E) & "TUR" & vbLf & "GENERATE FULL COST REPORT"
+    ButtonCaption = L("GENERATE FULL COST REPORT")
 End Function
 
 ' The packaged workbook already contains the button; this re-creates it if a user deleted it.
