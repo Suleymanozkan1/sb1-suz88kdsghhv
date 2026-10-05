@@ -38,7 +38,7 @@ export default async function PeriodsPage() {
               {c ? (
                 <Table>
                   <thead><tr><Th>{t("Month-end check")}</Th><Th>{t("Result")}</Th><Th>{t("Detail")}</Th></tr></thead>
-                  <tbody className="divide-y divide-ink-100">{c.map((x) => <tr key={x.key}><Td>{t(x.label)}{x.critical && <span className="ml-1 text-xs text-red-600">*</span>}</Td><Td><Badge tone={x.ok ? "green" : x.critical ? "red" : "amber"}>{x.ok ? t("OK") : t("OPEN")}</Badge></Td><Td className="text-xs text-ink-500">{detailText(t, x.detail)}</Td></tr>)}</tbody>
+                  <tbody className="divide-y divide-ink-100">{c.map((x) => <tr key={x.key}><Td>{t(x.label)}{x.critical && <span className="ml-1 text-xs text-red-600">*</span>}</Td><Td><Badge tone={x.ok ? "green" : x.critical ? "red" : "amber"}>{x.ok ? t("OK") : t("OPEN")}</Badge></Td><Td className="text-xs text-ink-500">{x.detail ? detailText(t, x.detail) : null}</Td></tr>)}</tbody>
                 </Table>
               ) : <p className="text-sm text-ink-500">{t("Closed {date}. Snapshot preserved.", { date: p.closedAt ? date(p.closedAt) : "" })}</p>}
             </Card>
