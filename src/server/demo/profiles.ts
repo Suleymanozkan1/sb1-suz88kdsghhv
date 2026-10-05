@@ -1,6 +1,6 @@
 /** Demo dataset sizes (spec 126–127). `staging` is the large realistic dataset; `dev` fits a laptop; `tiny` is for tests. */
 export interface DemoProfile {
-  name: "tiny" | "dev" | "staging";
+  name: "tiny" | "web" | "dev" | "staging";
   /** full months of history before the current month */
   months: number;
   /** organizations and hotels per organization */
@@ -59,6 +59,28 @@ export const PROFILES: Record<DemoProfile["name"], DemoProfile> = {
     minibarRoomsPerDay: 1,
     employeesPerHotel: 20,
     dailyExpenses: 2,
+  },
+  // loaded from the browser on a fresh cloud installation (/setup): one serverless request, so it stays small
+  web: {
+    name: "web",
+    months: 1,
+    orgs: [
+      { key: "A", name: "Demo Hotel Group", slug: "demo-hotel-group", extraUsers: 4, hotels: [
+        { code: "DHG-IST", name: "Demo Grand İstanbul", city: "İstanbul", resort: false, rooms: 40 },
+        { code: "DHG-AYT", name: "Demo Lara Antalya", city: "Antalya", resort: true, rooms: 30 },
+      ] },
+      { key: "E", name: "Demo All Inclusive", slug: "demo-all-inclusive", extraUsers: 2, hotels: [{ code: "DAI-BLK", name: "Demo All Inclusive Belek", city: "Antalya", resort: true, rooms: 25 }] },
+    ],
+    productsPerHotel: 80,
+    recipes: { finished: 15, semi: 4, versioned: 4 },
+    posSlots: 1,
+    issueSlots: 1,
+    freshByWeight: false,
+    wastePerDay: 2,
+    buffetSessions: 6,
+    minibarRoomsPerDay: 1,
+    employeesPerHotel: 30,
+    dailyExpenses: 3,
   },
   dev: { name: "dev", months: 2, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 2, issueSlots: 1, freshByWeight: false, wastePerDay: 6, buffetSessions: 20, minibarRoomsPerDay: 2, employeesPerHotel: 500, dailyExpenses: 8 },
   staging: { name: "staging", months: 13, orgs: ORGS_FULL, productsPerHotel: 200, recipes: { finished: 50, semi: 10, versioned: 15 }, posSlots: 4, issueSlots: 2, freshByWeight: true, wastePerDay: 15, buffetSessions: 100, minibarRoomsPerDay: 3, employeesPerHotel: 500, dailyExpenses: 28 },

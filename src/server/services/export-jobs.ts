@@ -10,6 +10,7 @@ import { authorize } from "../auth/actor";
 import { actorForUser } from "../auth/actors";
 import { DomainError } from "@/domain/errors";
 import type { ExportParams } from "./export";
+import { normalizeLocale, type Locale } from "@/i18n/core";
 
 const STALE_MINUTES = 30;
 const MAX_ACTIVE_PER_USER = 2;
@@ -25,6 +26,8 @@ interface StoredParams {
   warehouseId: string | null;
   categoryGroup: string | null;
   apiBaseUrl: string;
+  /** language of the human-facing workbook text; absent on jobs queued before it was stored (English) */
+  locale?: Locale;
 }
 
 const publicJob = <T extends { file?: unknown }>(j: T) => {
@@ -42,14 +45,14 @@ async function housekeeping(db: Db, hotelId: string) {
   await db.exportJob.updateMany({ where: { hotelId, expiresAt: { lt: now }, NOT: { file: null } }, data: { file: null } });
 }
 
-export async function queueExportJob(db: Db, actor: Actor, hotelId: string, p: ExportParams, apiBaseUrl: string) {
+export async function queueExportJob(db: Db, actor: Actor, hotelId: string, p: ExportParams, apiBaseUrl: string, locale: Locale = "en") {
   authorize(actor, "report:export", { hotelId });
   if (p.to <= p.from) throw new DomainError("VALIDATION", "End date must be on or after the start date");
   if (p.departmentId && actor.departmentIds !== "ALL" && !actor.departmentIds.includes(p.departmentId)) throw new DomainError("FORBIDDEN", "No access to this department");
   await housekeeping(db, hotelId);
   const active = await db.exportJob.count({ where: { hotelId, userId: actor.userId, status: { in: ["PENDING", "RUNNING"] } } });
   if (active >= MAX_ACTIVE_PER_USER) throw new DomainError("CONFLICT", `You already have ${active} exports in progress - wait for one to finish`);
-  const params: StoredParams = { from: p.from.toISOString(), to: p.to.toISOString(), departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null, apiBaseUrl };
+  const params: StoredParams = { from: p.from.toISOString(), to: p.to.toISOString(), departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null, apiBaseUrl, locale };
   const job = await db.exportJob.create({ data: { hotelId, userId: actor.userId, kind: "XLSM", params: params as never } });
   await db.auditLog.create({ data: { userId: actor.userId, hotelId, action: "EXPORT_QUEUED", entityType: "ExportJob", entityId: job.id, source: "WEB", after: params as never } });
   return publicJob(job);
@@ -66,7 +69,7 @@ export async function runExportJob(db: Db, jobId: string): Promise<void> {
     authorize(actor, "report:export", { hotelId: job.hotelId });
     const s = job.params as unknown as StoredParams;
     const { buildExcelReport } = await import("../excel");
-    const r = await buildExcelReport(db, actor, job.hotelId, { from: new Date(s.from), to: new Date(s.to), departmentId: s.departmentId, warehouseId: s.warehouseId, categoryGroup: s.categoryGroup }, s.apiBaseUrl);
+    const r = await buildExcelReport(db, actor, job.hotelId, { from: new Date(s.from), to: new Date(s.to), departmentId: s.departmentId, warehouseId: s.warehouseId, categoryGroup: s.categoryGroup }, s.apiBaseUrl, normalizeLocale(s.locale) ?? "en");
     await db.exportJob.update({
       where: { id: jobId },
       data: { status: "COMPLETED", finishedAt: new Date(), file: new Uint8Array(r.buffer), size: r.buffer.length, fileName: r.fileName, exportId: r.export.exportId, reconciliation: r.export.score.reconciliation, expiresAt: new Date(Date.now() + ttlHours() * 3600_000) },

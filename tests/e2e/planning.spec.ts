@@ -20,7 +20,7 @@ test("budget vs actual and targets (spec 192–194)", async ({ page }) => {
 test("forecast with scenarios and a what-if question (spec 195–198)", async ({ page }) => {
   await login(page, "controller");
   await page.goto("/forecast");
-  await expect(page.getByRole("heading", { name: "Scenarios (spec 197)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scenarios" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "FOOD", exact: true })).toBeVisible();
   await page.getByLabel("Ingredient").selectOption({ label: "Chicken Breast" });
   await page.getByLabel("Price %").fill("20");

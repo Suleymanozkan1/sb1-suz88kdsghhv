@@ -5,18 +5,20 @@ import { adminOverview, CATEGORY_GROUPS } from "@/server/services/admin";
 import { listInvites } from "@/server/services/tenancy";
 import { Alert, PageHeader } from "@/components/ui";
 import { AdminConsole } from "./console";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Administration" };
 
 export default async function AdminPage() {
   const { actor, hotelId } = await pageContext();
+  const t = await getT();
   const res = await guarded(() => Promise.all([adminOverview(prisma, actor, hotelId), listInvites(prisma, actor, hotelId)]));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const [o, invites] = res.data;
   const orgHotels = await prisma.hotel.findMany({ where: { organizationId: actor.organizationId, id: { in: [...actor.hotelIds] } }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, active: true } });
   return (
     <>
-      <PageHeader title="Administration" subtitle={`${o.hotel.name} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.`} />
+      <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} />
       <AdminConsole
         me={actor.userId}
         canHotels={can(actor, "admin:hotels")}

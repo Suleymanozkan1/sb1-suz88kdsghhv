@@ -38,6 +38,7 @@
     "demo:verify": "tsx scripts/demo.ts verify",
     "demo:crawl": "tsx scripts/qa/crawl-demo.ts",
     "test:demo-ui": "playwright test -c playwright.demo.config.ts",
+    "test:setup-ui": "playwright test -c playwright.setup.config.ts",
     "test:reconciliation": "vitest run --project integration tests/integration/demo-dataset.test.ts tests/integration/demo-engine.test.ts",
     "test:excel": "vitest run --project unit tests/unit/excel-bulk.test.ts tests/unit/vba-project.test.ts && vitest run --project integration tests/integration/excel-export.test.ts",
     "vercel-build": "node scripts/check-build-env.mjs && prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && next build",

@@ -5,6 +5,8 @@ import type { Actor } from "./auth/actor";
 import type { Permission } from "./auth/permissions";
 import { prisma } from "./db";
 import { isDomainError } from "@/domain/errors";
+import { translateMessage } from "@/i18n/core";
+import { getLocale } from "@/i18n/server";
 
 export async function pageContext(): Promise<{ actor: Actor; hotelId: string; hotel: { id: string; name: string; baseCurrency: string; timezone: string } }> {
   const actor = await currentActor();
@@ -19,7 +21,7 @@ export async function guarded<T>(fn: () => Promise<T>): Promise<{ ok: true; data
   try {
     return { ok: true, data: await fn() };
   } catch (e) {
-    if (isDomainError(e)) return { ok: false, error: e.message };
+    if (isDomainError(e)) return { ok: false, error: translateMessage(await getLocale(), e.message) };
     throw e;
   }
 }

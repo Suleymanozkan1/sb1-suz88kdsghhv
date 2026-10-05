@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/server/db";
-import { errorResponse } from "@/server/http/handler";
+import { errorResponse, requestLocale } from "@/server/http/handler";
 import { rateLimit } from "@/server/auth/session";
 import { acceptInvite, describeInvite } from "@/server/services/tenancy";
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     await rateLimit(`invite:${ip(req)}`, 30);
     return NextResponse.json(await describeInvite(prisma, req.nextUrl.searchParams.get("token") ?? ""));
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, requestLocale(req));
   }
 }
 
@@ -24,6 +24,6 @@ export async function POST(req: NextRequest) {
     await rateLimit(`invite:${ip(req)}`, 30);
     return NextResponse.json(await acceptInvite(prisma, await req.json()));
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, requestLocale(req));
   }
 }

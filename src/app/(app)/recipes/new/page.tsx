@@ -3,11 +3,13 @@ import { departmentScope } from "@/server/auth/actor";
 import { RECIPE_TYPES } from "@/server/services/recipes";
 import { prisma } from "@/server/db";
 import { PageHeader } from "@/components/ui";
+import { getT } from "@/i18n/server";
 import { RecipeWizard } from "./wizard";
 
 export const metadata = { title: "New Recipe" };
 
 export default async function NewRecipePage() {
+  const t = await getT();
   const { actor, hotelId } = await pageContext();
   requirePageAccess(actor, "recipe:manage", hotelId);
   const [departments, subs] = await Promise.all([
@@ -16,7 +18,7 @@ export default async function NewRecipePage() {
   ]);
   return (
     <>
-      <PageHeader title="New recipe" subtitle="Type → product → ingredients (searched) → quantities, units, yield, waste → live cost → review → save." />
+      <PageHeader title={t("New recipe")} subtitle={t("Type → product → ingredients (searched) → quantities, units, yield, waste → live cost → review → save.")} />
       <RecipeWizard types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} />
     </>
   );

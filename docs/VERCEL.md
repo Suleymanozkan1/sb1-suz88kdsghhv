@@ -35,7 +35,15 @@ Every later push redeploys and applies only new migrations.
 
 ## 5. First company and administrators
 
-Run once from your computer against the production database (copy the direct URL from Vercel → Storage):
+Open `https://<project>.vercel.app`. On an empty database every page leads to **/setup** (first setup):
+
+1. **Setup code**: the database password. In Vercel open **Settings → Environment Variables → PGPASSWORD**, click the eye icon and copy the value. This proves you own the installation. To use your own code instead, add a `SETUP_TOKEN` variable and redeploy.
+2. Enter the company, the first hotel and the administrator (password: at least 10 characters).
+3. Optional: **Also load demo companies**. This adds two sample companies with three hotels and one month of data, in the background (about 1-3 minutes), and shows the progress at `/setup/demo`. The demo users (`companyadmin@test.local`, `controller@test.local`, `chef@test.local`, `warehouse@test.local`, `viewer@test.local` …) get the administrator's password. No platform administrator is created. Remove the demo data at `/setup/demo` at any time, or load it later from there.
+
+The page refuses once any user exists. The default departments, warehouses and categories are created in the language chosen on the page (TR/EN). Users, hotels, departments and warehouses are then managed under **Administration**.
+
+The command-line alternative still works (copy the direct URL from Vercel → Storage):
 
 ```bash
 DATABASE_URL="<direct url>" npm run setup:first-company -- --company="My Hotel Group" --hotel="My Hotel" \
@@ -43,8 +51,6 @@ DATABASE_URL="<direct url>" npm run setup:first-company -- --company="My Hotel G
 # optional: the SaaS operator who creates further companies at /platform
 DATABASE_URL="<direct url>" npm run setup:first-company -- --platform-admin=ops@example.com --platform-password='<12+ chars>'
 ```
-
-Then open `https://<project>.vercel.app` and sign in. Users, hotels, departments and warehouses are managed under **Administration**. New companies are created at `/platform`.
 
 ### A demo / training deployment
 
@@ -75,10 +81,16 @@ Sign in as `companyadmin@test.local` / `Demo!2026-QA`, or `superadmin@test.local
 
 The build checks this first (`scripts/check-build-env.mjs`) and never prints the URL.
 
+## Language
+
+The interface is Turkish by default, with English available from the TR/EN switch (stored per browser). Set `DEFAULT_LOCALE=en` to make English the default.
+
 ## Verify a deployment
 
 ```bash
-curl https://<project>.vercel.app/api/health   # {"status":"ok", …}
+curl https://<project>.vercel.app/api/health   # {"status":"ok", "dbLatencyMs": …, "region": …}
 ```
+
+`dbLatencyMs` should be a few milliseconds. Tens of milliseconds mean the functions (`vercel.json` → `regions`, default `fra1`) and the Neon database run in different regions, and every page will be slow; create the database in the same region (Frankfurt) or change `regions`.
 
 Then sign in, open the dashboard and download one Excel workbook.

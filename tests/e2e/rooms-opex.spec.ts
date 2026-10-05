@@ -47,7 +47,7 @@ test("operating cost modules show laundry unit cost, energy and cost per asset",
   await page.getByRole("link", { name: "Energy", exact: true }).click();
   await expect(page.getByRole("cell", { name: "ELECTRICITY" }).first()).toBeVisible();
   await page.getByRole("link", { name: "Engineering", exact: true }).click();
-  await expect(page.getByText("Cost per asset (spec 113)")).toBeVisible();
+  await expect(page.getByText("Cost per asset")).toBeVisible();
 });
 
 test("allocation: preview shows the split; posted run is listed", async ({ page }) => {

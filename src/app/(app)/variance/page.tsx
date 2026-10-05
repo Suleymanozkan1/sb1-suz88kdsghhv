@@ -6,11 +6,13 @@ import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Theoretical vs Actual" };
 
 export default async function VariancePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string; group?: string }> }) {
   const sp = await searchParams;
+  const tr = await getT();
   const { actor, hotelId, hotel } = await pageContext();
   const range = monthRange(sp);
   const departments = await prisma.department.findMany({ where: { hotelId, ...(actor.departmentIds === "ALL" ? {} : { id: { in: [...actor.departmentIds] } }), ...departmentScope(actor, "id") }, orderBy: { name: "asc" } });
@@ -24,11 +26,11 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader
-        title="Theoretical vs actual"
-        subtitle="What should have happened, what actually happened, and why they differ."
+        title={tr("Theoretical vs actual")}
+        subtitle={tr("What should have happened, what actually happened, and why they differ.")}
         actions={
           can(actor, "report:export") ? (
-            <a href={exportUrl} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium hover:bg-ink-50"><Download className="h-4 w-4" aria-hidden /> Export CSV</a>
+            <a href={exportUrl} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium hover:bg-ink-50"><Download className="h-4 w-4" aria-hidden /> {tr("Export CSV")}</a>
           ) : null
         }
       />
@@ -40,11 +42,11 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
           departmentId={sp.departmentId}
           extra={
             <div>
-              <Label htmlFor="group">Category</Label>
+              <Label htmlFor="group">{tr("Category")}</Label>
               <Select id="group" name="group" defaultValue={sp.group ?? ""} className="w-36">
-                <option value="">All</option>
-                <option value="FOOD">Food</option>
-                <option value="BEVERAGE">Beverage</option>
+                <option value="">{tr("All")}</option>
+                <option value="FOOD">{tr("Food")}</option>
+                <option value="BEVERAGE">{tr("Beverage")}</option>
               </Select>
             </div>
           }
@@ -52,15 +54,15 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
       </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Actual cost" value={money(t.actualCost, cur, 0)} hint={`${pct(t.actualCostPct)} of revenue`} />
-        <Stat label="Theoretical cost" value={money(t.theoreticalCost, cur, 0)} hint={`${pct(t.theoreticalCostPct)} of revenue`} />
-        <Stat label="Variance" value={money(t.variance, cur, 0)} tone={Number(t.variance) > 0 ? "bad" : "good"} hint={`${pct(t.costPctVariancePts, 2)} pts`} />
-        <Stat label="Recorded waste" value={money(t.waste, cur, 0)} />
-        <Stat label="Unexplained" value={money(t.unexplained, cur, 0)} tone="warn" hint={`${pct(t.unexplainedPct)} of theoretical`} />
+        <Stat label={tr("Actual cost")} value={money(t.actualCost, cur, 0)} hint={tr("{pct} of revenue", { pct: pct(t.actualCostPct) })} />
+        <Stat label={tr("Theoretical cost")} value={money(t.theoreticalCost, cur, 0)} hint={tr("{pct} of revenue", { pct: pct(t.theoreticalCostPct) })} />
+        <Stat label={tr("Variance")} value={money(t.variance, cur, 0)} tone={Number(t.variance) > 0 ? "bad" : "good"} hint={tr("{pct} pts", { pct: pct(t.costPctVariancePts, 2) })} />
+        <Stat label={tr("Recorded waste")} value={money(t.waste, cur, 0)} />
+        <Stat label={tr("Unexplained")} value={money(t.unexplained, cur, 0)} tone="warn" hint={tr("{pct} of theoretical", { pct: pct(t.unexplainedPct) })} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Inventory reconciliation (value)">
+        <Card title={tr("Inventory reconciliation (value)")}>
           <Table>
             <tbody className="divide-y divide-ink-100">
               {[
@@ -70,38 +72,38 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
                 ["− Transfers out", t.transfersOut],
                 ["− Closing inventory", t.closing],
               ].map(([l, v]) => (
-                <tr key={l as string}><Td>{l as string}</Td><Td align="right">{money(v as never, cur)}</Td></tr>
+                <tr key={l as string}><Td>{tr(l as string)}</Td><Td align="right">{money(v as never, cur)}</Td></tr>
               ))}
-              <tr className="bg-ink-50 font-semibold"><Td>= Actual usage (COGS)</Td><Td align="right">{money(t.actualCost, cur)}</Td></tr>
+              <tr className="bg-ink-50 font-semibold"><Td>{tr("= Actual usage (COGS)")}</Td><Td align="right">{money(t.actualCost, cur)}</Td></tr>
             </tbody>
           </Table>
         </Card>
-        <Card title="Variance breakdown">
+        <Card title={tr("Variance breakdown")}>
           <Table>
             <tbody className="divide-y divide-ink-100">
-              <tr><Td>Actual − theoretical</Td><Td align="right" className="font-semibold">{money(r.breakdown.total, cur)}</Td></tr>
+              <tr><Td>{tr("Actual − theoretical")}</Td><Td align="right" className="font-semibold">{money(r.breakdown.total, cur)}</Td></tr>
               {r.breakdown.components.map((c) => (
                 <tr key={c.cause} className={c.cause === "UNEXPLAINED" ? "bg-amber-50 font-semibold" : ""}>
-                  <Td>{c.cause === "UNEXPLAINED" ? "= Unexplained" : `− ${c.cause.replace("_", " ").toLowerCase()}`}{c.evidence && <span className="block text-xs font-normal text-ink-400">{c.evidence}</span>}</Td>
+                  <Td>{c.cause === "UNEXPLAINED" ? tr("= Unexplained") : `− ${tr(c.cause.replace("_", " ").toLowerCase())}`}{c.evidence && <span className="block text-xs font-normal text-ink-400">{tr(c.evidence)}</span>}</Td>
                   <Td align="right">{money(c.amount, cur)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></Td>
                 </tr>
               ))}
             </tbody>
           </Table>
           {r.dataQuality.unmappedSaleLines > 0 && (
-            <div className="mt-3"><Alert tone="amber">{r.dataQuality.unmappedSaleLines} sale lines ({money(r.dataQuality.unmappedRevenue, cur, 0)} revenue) have no recipe mapping — theoretical cost is understated.</Alert></div>
+            <div className="mt-3"><Alert tone="amber">{tr("{n} sale lines ({revenue} revenue) have no recipe mapping — theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, cur, 0) })}</Alert></div>
           )}
         </Card>
       </div>
 
-      <Card title="Usage gap by ingredient" className="mt-4" padded={false}>
+      <Card title={tr("Usage gap by ingredient")} className="mt-4" padded={false}>
         {r.products.length === 0 ? (
-          <div className="p-4"><Empty title="No movements or sales in this period" /></div>
+          <div className="p-4"><Empty title={tr("No movements or sales in this period")} /></div>
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Ingredient</Th><Th align="right">Opening</Th><Th align="right">Purchases</Th><Th align="right">Closing</Th><Th align="right">Actual</Th><Th align="right">Theoretical</Th><Th align="right">Waste</Th><Th align="right">Variance %</Th><Th align="right">Unexplained qty</Th><Th align="right">Unexplained value</Th>
+                <Th>{tr("Ingredient")}</Th><Th align="right">{tr("Opening")}</Th><Th align="right">{tr("Purchases")}</Th><Th align="right">{tr("Closing")}</Th><Th align="right">{tr("Actual")}</Th><Th align="right">{tr("Theoretical")}</Th><Th align="right">{tr("Waste")}</Th><Th align="right">{tr("Variance %")}</Th><Th align="right">{tr("Unexplained qty")}</Th><Th align="right">{tr("Unexplained value")}</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
@@ -109,7 +111,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
                 const u = Number(p.unexplainedValue);
                 return (
                   <tr key={p.productId} className="hover:bg-ink-50">
-                    <Td><span className="font-medium">{p.name}</span> <Badge>{p.categoryGroup}</Badge><span className="block text-xs text-ink-400">{p.sku} · avg {money(p.avgCost, cur)}/{p.unit}</span></Td>
+                    <Td><span className="font-medium">{p.name}</span> <Badge>{tr(p.categoryGroup)}</Badge><span className="block text-xs text-ink-400">{p.sku} · {tr("avg")} {money(p.avgCost, cur)}/{p.unit}</span></Td>
                     <Td align="right">{qty(p.opening.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.purchases.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.closing.qty, p.unit)}</Td>
@@ -127,7 +129,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
         )}
       </Card>
       <p className="mt-3 text-xs text-ink-500">
-        Actual usage comes from the stock ledger; closing stock is only physical when a stock count was posted at period end. Theoretical usage uses the recipe version effective on each sale date. Variance values are at period average cost. Unexplained usage is factual evidence for investigation, not an accusation.
+        {tr("Actual usage comes from the stock ledger; closing stock is only physical when a stock count was posted at period end. Theoretical usage uses the recipe version effective on each sale date. Variance values are at period average cost. Unexplained usage is factual evidence for investigation, not an accusation.")}
       </p>
     </>
   );

@@ -13,6 +13,7 @@ import { buildFullCostExport, PERIOD_BOUND_SECTIONS, type FullCostExport } from 
 import { closeChecklist, reconciliationStatus } from "./period";
 import { theoreticalVsActual, serializeVariance } from "./variance";
 import { renderManagementPack } from "../reports/pack-pdf";
+import type { Locale } from "@/i18n/core";
 
 const dayAfter = (d: Date) => new Date(d.getTime() + 86_400_000);
 
@@ -63,14 +64,14 @@ export async function verifyReproducibility(db: Db, actor: Actor, hotelId: strin
 }
 
 /** Monthly management cost pack (spec 254) as PDF; archived with its hashes. */
-export async function managementPack(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
+export async function managementPack(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }, locale: Locale = "en") {
   authorize(actor, "report:export", { hotelId });
   if (actor.departmentIds !== "ALL") throw new DomainError("FORBIDDEN", "The management pack is hotel-wide: needs an all-department role");
   const e: FullCostExport = await buildFullCostExport(db, actor, hotelId, q, { noArchive: true });
   const period = await db.costPeriod.findFirst({ where: { hotelId, startDate: { lte: q.from }, endDate: { gte: q.from } } });
   const closeChecks = period ? await closeChecklist(db, hotelId, period) : [];
   const reconciliation = reconciliationStatus(closeChecks, e.score.errors);
-  const pdf = await renderManagementPack(e, { reconciliation, closeChecks, periodStatus: period?.status ?? "NO PERIOD" });
+  const pdf = await renderManagementPack(e, { reconciliation, closeChecks, periodStatus: period?.status ?? "NO PERIOD" }, locale);
   const pdfHash = createHash("sha256").update(pdf).digest("hex");
   const r = await db.report.create({ data: { hotelId, reportType: "MANAGEMENT_PACK", periodId: period?.id ?? null, periodFrom: q.from, periodTo: q.to, params: {}, generatedById: actor.userId, contentHash: e.meta.contentHash, periodHash: e.meta.periodHash, data: JSON.parse(JSON.stringify({ exportId: e.exportId, pdfHash, pages: null, reconciliation, summary: e.summary, sectionHashes: e.meta.sectionHashes, score: e.score })) } });
   await audit(db, actor, { hotelId, action: "REPORT_MANAGEMENT_PACK", entityType: "Report", entityId: r.id, after: { period: e.meta.period, reconciliation, pdfHash } });

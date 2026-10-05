@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { api } from "@/server/http/handler";
+import { api, requestLocale } from "@/server/http/handler";
 import { buildExcelReport, parseExportParams } from "@/server/excel";
 import { rateLimit } from "@/server/auth/session";
 import { prisma } from "@/server/db";
@@ -11,7 +11,7 @@ export const maxDuration = 120;
 export const GET = api(async ({ actor, hotelId, query, req }) => {
   await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
-  const r = await buildExcelReport(prisma, actor, hotelId, parseExportParams(query), base);
+  const r = await buildExcelReport(prisma, actor, hotelId, parseExportParams(query), base, requestLocale(req));
   return new NextResponse(new Uint8Array(r.buffer), {
     headers: {
       "content-type": "application/vnd.ms-excel.sheet.macroEnabled.12",

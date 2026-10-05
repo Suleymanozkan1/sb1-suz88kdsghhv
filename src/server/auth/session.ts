@@ -58,6 +58,12 @@ export async function login(email: string, password: string, ip: string): Promis
   return { token, expiresAt };
 }
 
+/** Re-check a signed-in user's password before a sensitive action. */
+export async function verifyPassword(userId: string, password: string): Promise<boolean> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+  return !!u && (await bcrypt.compare(password, u.passwordHash));
+}
+
 export async function logout(token: string | undefined) {
   if (!token) return;
   await prisma.session.deleteMany({ where: { id: hash(token) } });

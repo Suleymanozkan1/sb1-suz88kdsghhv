@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { z } from "zod";
-import { api } from "@/server/http/handler";
+import { api, requestLocale } from "@/server/http/handler";
 import { prisma } from "@/server/db";
 import { rateLimit } from "@/server/auth/session";
 import { parseExportParams } from "@/server/excel";
@@ -24,7 +24,7 @@ export const POST = api(async ({ actor, hotelId, body: read, req }) => {
   const b = body.parse(await read());
   const q = new URLSearchParams({ from: b.from, to: b.to, departmentId: b.departmentId, warehouseId: b.warehouseId, group: b.group });
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
-  const job = await queueExportJob(prisma, actor, hotelId, parseExportParams(q), base);
+  const job = await queueExportJob(prisma, actor, hotelId, parseExportParams(q), base, requestLocale(req));
   after(() => runExportJob(prisma, job.id));
   return job;
 }, { perm: "report:export" });

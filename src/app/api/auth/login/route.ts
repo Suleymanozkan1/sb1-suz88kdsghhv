@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { login, SESSION_COOKIE } from "@/server/auth/session";
-import { errorResponse } from "@/server/http/handler";
+import { errorResponse, requestLocale } from "@/server/http/handler";
 
 const body = z.object({ email: z.string().email().max(200), password: z.string().min(1).max(200) });
 
@@ -18,6 +18,6 @@ export async function POST(req: NextRequest) {
     res.cookies.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1", path: "/", expires: expiresAt });
     return res;
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, requestLocale(req));
   }
 }

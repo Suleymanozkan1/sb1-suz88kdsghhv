@@ -3,11 +3,13 @@ import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { money, qty, date } from "@/lib/format";
+import { getT } from "@/i18n/server";
 import { ReceiptForm } from "./receipt-form";
 
 export const metadata = { title: "Purchasing" };
 
 export default async function PurchasingPage() {
+  const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "purchase:view", hotelId);
   const [receipts, suppliers, warehouses, prices] = await Promise.all([
@@ -19,17 +21,17 @@ export default async function PurchasingPage() {
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader title="Purchasing & receiving" subtitle="Goods receipts post landed cost to the stock ledger and record supplier price history." />
+      <PageHeader title={t("Purchasing & receiving")} subtitle={t("Goods receipts post landed cost to the stock ledger and record supplier price history.")} />
       {can(actor, "inventory:receive") && (
-        <Card title="Receive goods" className="mb-4">
+        <Card title={t("Receive goods")} className="mb-4">
           <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} />
         </Card>
       )}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card title="Recent receipts" className="xl:col-span-2" padded={false}>
-          {receipts.length === 0 ? <div className="p-4"><Empty title="No receipts" /></div> : (
+        <Card title={t("Recent receipts")} className="xl:col-span-2" padded={false}>
+          {receipts.length === 0 ? <div className="p-4"><Empty title={t("No receipts")} /></div> : (
             <Table>
-              <thead><tr><Th>Date</Th><Th>GRN</Th><Th>Supplier</Th><Th>Invoice</Th><Th>Lines</Th><Th align="right">Net</Th><Th align="right">Tax</Th><Th align="right">Landed</Th></tr></thead>
+              <thead><tr><Th>{t("Date")}</Th><Th>{t("GRN")}</Th><Th>{t("Supplier")}</Th><Th>{t("Invoice")}</Th><Th>{t("Lines")}</Th><Th align="right">{t("Net")}</Th><Th align="right">{t("Tax")}</Th><Th align="right">{t("Landed")}</Th></tr></thead>
               <tbody className="divide-y divide-ink-100">
                 {receipts.map((r) => (
                   <tr key={r.id}>
@@ -42,8 +44,8 @@ export default async function PurchasingPage() {
             </Table>
           )}
         </Card>
-        <Card title="Supplier price changes" padded={false}>
-          {prices.length === 0 ? <div className="p-4"><Empty title="No price history" /></div> : (
+        <Card title={t("Supplier price changes")} padded={false}>
+          {prices.length === 0 ? <div className="p-4"><Empty title={t("No price history")} /></div> : (
             <ul className="divide-y divide-ink-100 text-sm">
               {prices.map((p) => {
                 const ch = Number(p.changePct);
