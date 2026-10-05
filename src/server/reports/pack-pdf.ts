@@ -5,7 +5,7 @@
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import type { Column, FullCostExport, Section } from "../services/export";
-import { makeT, type Locale } from "@/i18n/core";
+import { makeT, type Locale, translateMessage } from "@/i18n/core";
 import { TR } from "@/i18n/tr";
 
 const FONT = path.join(process.cwd(), "assets", "fonts", "DejaVuSans.ttf");
@@ -16,7 +16,7 @@ const BRAND = "#0f766e";
 const STATUS_COLOR: Record<string, string> = { GREEN: "#15803d", YELLOW: "#b45309", RED: "#b91c1c", PASS: "#15803d", WARNING: "#b45309", FAIL: "#b91c1c" };
 
 /** text columns holding fixed engine words (statement lines, enums, statuses, notes); other text columns are user data */
-const TEXT_KEYS = new Set(["line", "metric", "type", "driver", "category", "utility", "channel", "status", "note", "detail", "check", "item"]);
+const TEXT_KEYS = new Set(["line", "metric", "type", "driver", "category", "utility", "channel", "status", "note", "detail", "check", "item", "impact"]);
 
 export interface PackExtras {
   reconciliation: "GREEN" | "YELLOW" | "RED";
@@ -47,7 +47,8 @@ function fmt(v: string | null | undefined, type: Column["type"], cur: string): s
 export async function renderManagementPack(e: FullCostExport, x: PackExtras, locale: Locale = "en"): Promise<Buffer> {
   const t = makeT(locale);
   /** engine words (statement lines, enums, notes, check names): translated when the dictionary knows them, else as is */
-  const tx = (v: string): string => (locale === "en" ? v : (TR[v] ?? v));
+  // engine words and server texts with numbers inside ("10.4% price", "3 pending")
+  const tx = (v: string): string => (locale === "en" ? v : (TR[v] ?? translateMessage(locale, v)));
   const cur = e.meta.hotel.currency;
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true, info: { Title: t("Management cost pack {period}", { period: e.meta.period.label }), Author: "HotelCost", Subject: e.meta.hotel.name, CreationDate: new Date(e.meta.generatedAt) } });
   doc.registerFont("body", FONT);
@@ -74,6 +75,9 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
   };
   /** Table from an export section: chosen columns, widths as fractions. */
   const table = (s: Section | undefined, cols: Array<[string, number]>, opts: { max?: number; title?: string; filter?: (r: Record<string, string | null>) => boolean } = {}) => {
+    // a column the export does not have is a layout bug: fail loudly outside production (even for empty sections)
+    const unknown = s ? cols.filter(([k]) => !s.columns.some((c) => c.key === k)).map(([k]) => k) : [];
+    if (unknown.length && process.env.NODE_ENV !== "production") throw new Error(`management pack: section ${s!.key} has no column ${unknown.join(", ")}`);
     if (opts.title) {
       ensure(40);
       doc.font("bold").fontSize(10).fillColor(INK).text(opts.title, 40);
@@ -185,15 +189,15 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
   table(S.assetCost, [["asset", 0.18], ["name", 0.32], ["periodCost", 0.18], ["periodJobs", 0.12], ["cumulativeCost", 0.2]], { title: t("Cost per asset (top)"), max: 8 });
 
   h1(t("5. Purchasing & supplier changes"));
-  table(S.ppv, [["product", 0.34], ["previousPrice", 0.16], ["currentPrice", 0.16], ["changePct", 0.12], ["ppv", 0.22]], { title: t("Purchase price variance"), max: 12 });
-  table(S.topCostDrivers, [["rank", 0.08], ["product", 0.32], ["priceChange", 0.2], ["costImpact", 0.2], ["affectedRecipes", 0.2]], { title: t("Top cost drivers"), max: 10 });
+  table(S.ppv, [["product", 0.28], ["standardCost", 0.14], ["actualPurchaseCost", 0.14], ["ppvPct", 0.1], ["priceVariance", 0.16], ["impact", 0.18]], { title: t("Purchase price variance"), max: 12 });
+  table(S.topCostDrivers, [["rank", 0.07], ["product", 0.3], ["supplier", 0.25], ["costIncrease", 0.18], ["impact", 0.2]], { title: t("Top cost drivers"), max: 10 });
 
   h1(t("6. Waste"));
   table(S.wasteSummary, [["metric", 0.6], ["value", 0.4]], { title: t("Waste summary"), max: 12 });
-  table(S.topWaste, [["rank", 0.08], ["product", 0.4], ["wasteCost", 0.26], ["qty", 0.26]], { title: t("Top waste drivers"), max: 10 });
+  table(S.topWaste, [["rank", 0.08], ["key", 0.44], ["records", 0.14], ["cost", 0.2], ["pct", 0.14]], { title: t("Top waste drivers"), max: 10 });
 
   h1(t("7. Stock"));
-  table(S.criticalStock, [["product", 0.36], ["current", 0.14], ["min", 0.14], ["status", 0.16], ["suggestedOrder", 0.2]], { title: t("Critical stock (at generation time)"), max: 12 });
+  table(S.criticalStock, [["product", 0.3], ["currentStock", 0.14], ["unit", 0.08], ["minimum", 0.14], ["recommendedOrder", 0.16], ["status", 0.18]], { title: t("Critical stock (at generation time)"), max: 12 });
 
   h1(t("8. Variance & unexplained usage"));
   table(S.topVariance, [["rank", 0.08], ["product", 0.32], ["theoreticalCost", 0.2], ["actualCost", 0.2], ["variance", 0.2]], { title: t("Top theoretical vs actual differences"), max: 10 });

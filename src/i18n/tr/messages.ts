@@ -9,6 +9,7 @@
 export const TR_MESSAGES: Record<string, string> = {
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
+  "{0}% price": "fiyat %{0}",
   // stock-ledger reasons written by the buffet and minibar services (shown in the ledger)
   "Buffet leftover {0}": "Büfe artığı {0}",
   "Buffet {0} {1}": "Büfe {0} {1}",
