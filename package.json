@@ -2,7 +2,7 @@
   "name": "hotelcost",
   "version": "0.1.0",
   "private": true,
-  "description": "HotelCost \u2014 hotel cost intelligence & cost-control platform",
+  "description": "HotelCost — hotel cost intelligence & cost-control platform",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -40,7 +40,7 @@
     "test:demo-ui": "playwright test -c playwright.demo.config.ts",
     "test:reconciliation": "vitest run --project integration tests/integration/demo-dataset.test.ts tests/integration/demo-engine.test.ts",
     "test:excel": "vitest run --project unit tests/unit/excel-bulk.test.ts tests/unit/vba-project.test.ts && vitest run --project integration tests/integration/excel-export.test.ts",
-    "vercel-build": "prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && next build",
+    "vercel-build": "node scripts/check-build-env.mjs && prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && next build",
     "setup:first-company": "tsx scripts/first-company.ts"
   },
   "prisma": {
@@ -55,10 +55,10 @@
     "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
     "lucide-react": "^1.51.0",
-    "next": "^15.5.4",
+    "next": "^15.5.27",
     "pdfkit": "^0.17.2",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "~19.1.9",
+    "react-dom": "~19.1.9",
     "zod": "^3.25.76"
   },
   "devDependencies": {

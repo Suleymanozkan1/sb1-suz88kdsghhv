@@ -9,7 +9,7 @@ HotelCost runs on Vercel as a regular Next.js project. The only external piece i
 
 ## 2. Database
 
-In the new project: **Storage → Create Database → Neon (Postgres)**, region Frankfurt, connected to the project for all environments. Neon sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) automatically. The build uses the direct URL for migrations and the app uses the pooled one.
+In the new project: **Storage → Create Database → Neon (Postgres)**, region Frankfurt, connected to the project for **all** environments (Production, Preview and Development). A deployment of an environment without the database fails at build time. Neon sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) automatically. The build uses the direct URL for migrations and the app uses the pooled one.
 
 Any other PostgreSQL 15+ also works (Supabase, AWS RDS, Azure, your own server). Set `DATABASE_URL`, plus `DATABASE_URL_UNPOOLED` if the main URL goes through a pooler.
 
@@ -19,7 +19,6 @@ Any other PostgreSQL 15+ also works (Supabase, AWS RDS, Azure, your own server).
 |---|---|
 | `DATABASE_URL` | Set by the Neon integration (pooled). With PgBouncer add `?pgbouncer=true&connection_limit=1`. |
 | `DATABASE_URL_UNPOOLED` | Set by the Neon integration (direct; used for migrations at build time) |
-| `SESSION_SECRET` | A long random string, e.g. `openssl rand -base64 48` |
 | `PUBLIC_BASE_URL` | Optional: `https://<your-domain>`, written into the Excel workbook's CONTROL sheet |
 
 Do **not** set `ALLOW_DEMO_DATA` in production.
@@ -65,6 +64,16 @@ Sign in as `companyadmin@test.local` / `Demo!2026-QA`, or `superadmin@test.local
 - **PDF fonts** are traced into the functions (`outputFileTracingIncludes`).
 - **Backups:** use the provider's point-in-time restore (Neon branches / PITR). `npm run ops:backup` with `pg_dump` also works against the direct URL.
 - **Limits:** on the Hobby plan, check the maximum function duration. A 100k-line month needs about 80 s for Excel, so use background export or the Pro plan for very large hotels.
+
+## Build fails with P1012 / empty DATABASE_URL
+
+`P1012 ... The environment variable DATABASE_URL resolved to an empty string` (or the build's own message *"HotelCost cannot be built: no database is configured"*) means this deployment's environment has no database:
+
+1. **Storage**: the Neon database must be connected to the project and to this environment (Production for `main`, Preview for other branches).
+2. **Settings → Environment Variables**: `DATABASE_URL` must have a value for this environment. Delete any `DATABASE_URL` added by hand with an empty value; it overrides the integration's.
+3. **Deployments → Redeploy**.
+
+The build checks this first (`scripts/check-build-env.mjs`) and never prints the URL.
 
 ## Verify a deployment
 

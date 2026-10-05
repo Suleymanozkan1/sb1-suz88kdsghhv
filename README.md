@@ -128,7 +128,7 @@ Details: [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md).
 
 ## Cloud deployment (Vercel)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSuleymanozkan1%2Fsb1-suz88kdsghhv&env=SESSION_SECRET&envDescription=Long%20random%20string%20for%20sessions&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22neon%22%2C%22productSlug%22%3A%22neon%22%7D%5D)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSuleymanozkan1%2Fsb1-suz88kdsghhv&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22neon%22%2C%22productSlug%22%3A%22neon%22%7D%5D)
 
 The deploy uses:
 - Next.js on Vercel with a Neon PostgreSQL database;
