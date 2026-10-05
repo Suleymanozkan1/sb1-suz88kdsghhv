@@ -9,25 +9,14 @@
 import ExcelJS from "exceljs";
 import type { Column, FullCostExport, Section } from "../services/export";
 import { EXPORT_VERSION, APP_VERSION } from "../services/export";
-import { makeT, type Locale, type T } from "@/i18n/core";
-import { TR } from "@/i18n/tr";
+import type { Locale } from "@/i18n/core";
+import { colRef, localizeExport, xlLang, type XlLang } from "./i18n";
 
 /**
- * Language of the human-facing text only (titles, CONTROL labels, notes, README). Sheet names, table
- * names, defined names, table column headers, CONTROL values read by the VBA and number formats are the
- * data contract and stay English in every language.
+ * Everything the user reads is in the workbook's language (see ./i18n): sheet names, column headers, values,
+ * formulas' references. Table names (tbl_*), defined names (ctl_*, lst_*) and number formats never change.
  */
-interface Lang {
-  t: T;
-  /** engine text (section titles / notes): dictionary hit or unchanged */
-  tx: (v: string) => string;
-  upper: (v: string) => string;
-}
-const lang = (locale: Locale): Lang => ({
-  t: makeT(locale),
-  tx: (v) => (locale === "en" ? v : (TR[v] ?? v)),
-  upper: (v) => (locale === "tr" ? v.toLocaleUpperCase("tr-TR") : v.toUpperCase()),
-});
+type Lang = XlLang;
 
 export const WORKBOOK_VERSION = "1.0.0";
 export const CONTROL_SHEET = "01_CONTROL";
@@ -192,22 +181,23 @@ export interface BulkTable {
 }
 
 function title(ws: ExcelJS.Worksheet, text: string, sub: string, lg: Lang) {
+  const control = lg.sheet(CONTROL_SHEET);
   ws.getCell("A1").value = text;
   ws.getCell("A1").font = { bold: true, size: 16, color: { argb: INK } };
   ws.getCell("A2").value = sub;
   ws.getCell("A2").font = { size: 10, color: { argb: MUTED } };
   const back = lg.t("← Dashboard'a Dön / Back to CONTROL");
-  ws.getCell("A3").value = { formula: `HYPERLINK("#'${CONTROL_SHEET}'!A1","${back.replace(/"/g, '""')}")`, result: back };
+  ws.getCell("A3").value = { formula: `HYPERLINK("#'${control}'!A1","${back.replace(/"/g, '""')}")`, result: back };
   ws.getCell("A3").font = { color: { argb: BRAND }, underline: true, size: 10 };
 }
 
-function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[], lg: Lang = lang("en")) {
+function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[], lg: Lang = xlLang("en")) {
   const status = ws.getCell(headerRow - 2, startCol);
-  // status codes stay as in the tables (conditional formats, VBA); only the wording around them is translated
-  status.value = lg.t("Data status: {status}{note}  |  rows: {rows}", { status: sec.status, note: sec.note ? ` - ${lg.tx(sec.note)}` : "", rows: sec.rows.length });
+  // sections arrive localized (title, note, headers, values); the status is a code until here
+  status.value = lg.t("Data status: {status}{note}  |  rows: {rows}", { status: lg.val(sec.status), note: sec.note ? ` - ${sec.note}` : "", rows: sec.rows.length });
   status.font = { size: 9, italic: true, color: { argb: sec.status === "NOT_AVAILABLE" ? "FFB45309" : MUTED } };
   const sub = ws.getCell(headerRow - 1, startCol);
-  sub.value = lg.tx(sec.title);
+  sub.value = sec.title;
   sub.font = { bold: true, size: 11, color: { argb: INK } };
   // large tables: ExcelJS writes the first data row (it fixes every column's cell style); the rest is streamed
   const deferred = bulk && sec.rows.length > BULK_THRESHOLD;
@@ -251,16 +241,16 @@ function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, heade
     ws.addConditionalFormatting({
       ref,
       rules: [
-        { type: "containsText", operator: "containsText", text: "FAIL", priority: 1, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: "CRITICAL", priority: 2, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: "OUT_OF_STOCK", priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: "Dead Stock", priority: 4, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: "UNFAVOURABLE", priority: 5, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: "WARNING", priority: 6, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
-        { type: "containsText", operator: "containsText", text: "LOW", priority: 7, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
-        { type: "containsText", operator: "containsText", text: "Slow", priority: 8, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
-        { type: "containsText", operator: "containsText", text: "NOT_AVAILABLE", priority: 9, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
-        { type: "containsText", operator: "containsText", text: "PASS", priority: 10, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD6F5E3" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("FAIL"), priority: 1, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("CRITICAL"), priority: 2, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("OUT_OF_STOCK"), priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("Dead Stock"), priority: 4, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("UNFAVOURABLE"), priority: 5, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("WARNING"), priority: 6, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("LOW"), priority: 7, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("Slow"), priority: 8, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("NOT_AVAILABLE"), priority: 9, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
+        { type: "containsText", operator: "containsText", text: lg.val("PASS"), priority: 10, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD6F5E3" } } } },
       ],
     });
   });
@@ -313,9 +303,12 @@ const FORMULAS: Array<[string, string, string]> = [
   ["Recommended Order / Önerilen Sipariş", "= Expected Consumption + Safety Stock + Lead-time Demand − Current Stock − Open PO (rounded up to purchase units)", "Beklenen tüketim + Emniyet stoku + Tedarik süresi talebi − Mevcut stok − Açık sipariş"],
 ];
 
-export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: string; locale?: Locale; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
-  const lg = lang(opts.locale ?? "en");
-  const { t } = lg;
+export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: string; locale?: Locale; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
+  const lg = xlLang(opts.locale ?? "en");
+  const { t, val, hdr } = lg;
+  const e = localizeExport(source, lg);
+  const CONTROL = lg.sheet(CONTROL_SHEET);
+  const ALL = val("All");
   const bulk: BulkTable[] = [];
   const wb = new ExcelJS.Workbook();
   wb.creator = "HotelCost";
@@ -327,7 +320,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   const locations: BuiltWorkbook["tableLocations"] = {};
 
   // ── 01_CONTROL ──
-  const ctl = wb.addWorksheet(CONTROL_SHEET, { properties: { tabColor: { argb: BRAND } }, views: [{ showGridLines: false }] });
+  const ctl = wb.addWorksheet(CONTROL, { properties: { tabColor: { argb: BRAND } }, views: [{ showGridLines: false }] });
   ctl.getColumn(1).width = 3;
   ctl.getColumn(2).width = 26;
   ctl.getColumn(3).width = 44;
@@ -339,9 +332,10 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   ctl.getCell("B2").font = { bold: true, size: 14, color: { argb: INK } };
   ctl.getCell("C2").value = `${e.meta.hotel.name} · ${e.meta.period.label}`;
   ctl.getCell("C2").font = { size: 12, color: { argb: MUTED } };
-  const deptList = ["All", ...opts.lists.departments.map((d) => d.name)];
-  const outletList = ["All", ...opts.lists.departments.filter((d) => d.outlet).map((d) => d.name)];
-  const whList = ["All", ...opts.lists.warehouses.map((w) => w.name)];
+  const deptList = [ALL, ...opts.lists.departments.map((d) => d.name)];
+  const outletList = [ALL, ...opts.lists.departments.filter((d) => d.outlet).map((d) => d.name)];
+  const whList = [ALL, ...opts.lists.warehouses.map((w) => w.name)];
+  const categories = ["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING"];
   const params: Array<[string, string, ExcelJS.CellValue, { input?: boolean; list?: string; date?: boolean; fmt?: string }]> = [
     ["Hotel", "ctl_Hotel", e.meta.hotel.name, {}],
     ["Hotel ID", "ctl_HotelId", e.meta.hotel.id, { input: true }],
@@ -349,11 +343,11 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ["Start Date", "ctl_StartDate", new Date(`${e.meta.period.from}T00:00:00Z`), { input: true, date: true, fmt: "yyyy-mm-dd" }],
     ["End Date", "ctl_EndDate", new Date(`${e.meta.period.to}T00:00:00Z`), { input: true, date: true, fmt: "yyyy-mm-dd" }],
     ["Currency", "ctl_Currency", cur, {}],
-    ["Department", "ctl_Department", e.meta.filters.department ?? "All", { input: true, list: "lst_DepartmentNames" }],
-    ["Outlet", "ctl_Outlet", "All", { input: true, list: "lst_OutletNames" }],
-    ["Warehouse", "ctl_Warehouse", e.meta.filters.warehouse ?? "All", { input: true, list: "lst_WarehouseNames" }],
-    ["Category", "ctl_Category", e.meta.filters.categoryGroup ?? "All", { input: true, list: "lst_CategoryNames" }],
-    ["Refresh Mode", "ctl_RefreshMode", "Refresh Current Period", { input: true, list: '"Refresh Current Period,Full Rebuild"' }],
+    ["Department", "ctl_Department", e.meta.filters.department ?? ALL, { input: true, list: "lst_DepartmentNames" }],
+    ["Outlet", "ctl_Outlet", ALL, { input: true, list: "lst_OutletNames" }],
+    ["Warehouse", "ctl_Warehouse", e.meta.filters.warehouse ?? ALL, { input: true, list: "lst_WarehouseNames" }],
+    ["Category", "ctl_Category", e.meta.filters.categoryGroup ? val(e.meta.filters.categoryGroup) : ALL, { input: true, list: "lst_CategoryNames" }],
+    ["Refresh Mode", "ctl_RefreshMode", val("Refresh Current Period"), { input: true, list: `"${val("Refresh Current Period")},${val("Full Rebuild")}"` }],
     ["API Base URL", "ctl_ApiUrl", opts.apiBaseUrl, { input: true }],
   ];
   let r = 4;
@@ -372,7 +366,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     }
     if (o.list) c.dataValidation = { type: "list", allowBlank: false, formulae: [o.list.startsWith('"') ? o.list : `=${o.list}`], showErrorMessage: true, errorTitle: "HotelCost", error: t("Choose a value from the list.") };
     if (o.date) c.dataValidation = { type: "date", operator: "greaterThan", allowBlank: false, formulae: [new Date("2000-01-01T00:00:00Z")], showErrorMessage: true, error: t("Enter a valid date (yyyy-mm-dd).") };
-    names.push({ name, ref: `'${CONTROL_SHEET}'!$C$${r}` });
+    names.push({ name, ref: `'${CONTROL}'!$C$${r}` });
     r++;
   }
   r++;
@@ -388,14 +382,14 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ["Application Version", "ctl_AppVersion", e.appVersion],
     ["Workbook Version", "ctl_WorkbookVersion", WORKBOOK_VERSION],
     ["Content Hash (SHA-256)", "ctl_ContentHash", e.meta.contentHash],
-    ["Scope", "ctl_Scope", e.meta.scope.departments === "ALL" ? "All departments" : e.meta.scope.departments.join(", ")],
+    ["Scope", "ctl_Scope", e.meta.scope.departments === "ALL" ? val("All departments") : e.meta.scope.departments.join(", ")],
     ["Last Run Status", "ctl_RunStatus", t("Prefilled by HotelCost server (macros not run yet)")],
   ];
   for (const [label, name, value] of metaRows) {
     ctl.getCell(`B${r}`).value = t(label);
     ctl.getCell(`B${r}`).font = { color: { argb: MUTED } };
     ctl.getCell(`C${r}`).value = value;
-    names.push({ name, ref: `'${CONTROL_SHEET}'!$C$${r}` });
+    names.push({ name, ref: `'${CONTROL}'!$C$${r}` });
     r++;
   }
   // score panel
@@ -415,14 +409,14 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     c.value = value;
     c.font = { bold: true, size: 12 };
     c.alignment = { horizontal: "center" };
-    names.push({ name, ref: `'${CONTROL_SHEET}'!$G$${row}` });
+    names.push({ name, ref: `'${CONTROL}'!$G$${row}` });
   });
   ctl.addConditionalFormatting({
     ref: "G13:H13",
     rules: [
-      { type: "containsText", operator: "containsText", text: "FAIL", priority: 1, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-      { type: "containsText", operator: "containsText", text: "WARNING", priority: 2, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
-      { type: "containsText", operator: "containsText", text: "PASS", priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD6F5E3" } } } },
+      { type: "containsText", operator: "containsText", text: lg.val("FAIL"), priority: 1, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
+      { type: "containsText", operator: "containsText", text: lg.val("WARNING"), priority: 2, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
+      { type: "containsText", operator: "containsText", text: lg.val("PASS"), priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFD6F5E3" } } } },
     ],
   });
   ctl.getCell("F21").value = t("Button not working? Enable macros (File > Info > Enable Content). The prefilled data below is valid without macros.");
@@ -435,7 +429,8 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   const navStart = r;
   SHEETS.filter((s) => !s.hidden).forEach((s, i) => {
     const row = navStart + i;
-    ctl.getCell(`B${row}`).value = { formula: `HYPERLINK("#'${s.name}'!A1","${s.name}")`, result: s.name };
+    const name = lg.sheet(s.name);
+    ctl.getCell(`B${row}`).value = { formula: `HYPERLINK("#'${name}'!A1","${name}")`, result: name };
     ctl.getCell(`B${row}`).font = { color: { argb: BRAND }, underline: true };
     ctl.getCell(`C${row}`).value = t(s.description);
     ctl.getCell(`C${row}`).font = { size: 9, color: { argb: MUTED } };
@@ -445,19 +440,19 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   // ── report / raw sheets ──
   const sectionSheet: Record<string, string> = {};
   for (const spec of SHEETS) {
-    const ws = wb.addWorksheet(spec.name, { state: spec.hidden ? "hidden" : "visible", views: [{ state: "frozen", ySplit: spec.headerRow ?? HEADER_ROW, showGridLines: false }] });
-    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? t("HOTELCOST — FULL COST REPORT") : spec.hidden && spec.title === spec.name ? spec.title : t(spec.title), t("{hotel} · {period} · {currency} · Generated {at} by {user} · Export {version}", { hotel: e.meta.hotel.name, period: e.meta.period.label, currency: cur, at: e.meta.generatedAt.slice(0, 16).replace("T", " "), user: e.meta.generatedBy, version: e.exportVersion }), lg);
+    const ws = wb.addWorksheet(lg.sheet(spec.name), { state: spec.hidden ? "hidden" : "visible", views: [{ state: "frozen", ySplit: spec.headerRow ?? HEADER_ROW, showGridLines: false }] });
+    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? t("HOTELCOST — FULL COST REPORT") : spec.hidden && spec.title === spec.name ? lg.sheet(spec.title) : t(spec.title), t("{hotel} · {period} · {currency} · Generated {at} by {user} · Export {version}", { hotel: e.meta.hotel.name, period: e.meta.period.label, currency: cur, at: e.meta.generatedAt.slice(0, 16).replace("T", " "), user: e.meta.generatedBy, version: e.exportVersion }), lg);
     let col = 1;
     for (const key of spec.sections) {
       const sec = e.sections[key];
       if (!sec) continue;
       col = writeTable(ws, sec, col, spec.headerRow ?? HEADER_ROW, cur, locations, spec.sections.length === 1 ? bulk : undefined, lg);
-      sectionSheet[key] = spec.name;
+      sectionSheet[key] = ws.name;
     }
     if (spec.print) ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: `${spec.headerRow ?? HEADER_ROW}:${spec.headerRow ?? HEADER_ROW}` };
     else ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
   }
-  const sheet = (n: string) => wb.getWorksheet(n)!;
+  const sheet = (n: string) => wb.getWorksheet(lg.sheet(n))!;
 
   // ── Executive summary KPI tiles (live formulas over tbl_executiveSummary) ──
   const ex = sheet("02_EXECUTIVE_SUMMARY");
@@ -475,8 +470,10 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     ex.getCell(`${L}${rowBase}`).font = { size: 9, bold: true, color: { argb: MUTED } };
     const v = e.summary[key];
     const cell = ex.getCell(`${L}${rowBase + 1}`);
-    const cached = v?.value === null || v?.value === undefined ? v?.status ?? "n/a" : Number(v.value);
-    cell.value = { formula: `IFERROR(IF(INDEX(tbl_executiveSummary[Value],MATCH("${key}",tbl_executiveSummary[Metric],0))="",INDEX(tbl_executiveSummary[Data Status],MATCH("${key}",tbl_executiveSummary[Metric],0)),INDEX(tbl_executiveSummary[Value],MATCH("${key}",tbl_executiveSummary[Metric],0))),"n/a")`, result: cached as never };
+    const cached = v?.value === null || v?.value === undefined ? v?.status ?? val("n/a") : Number(v.value);
+    const [V, M, DS] = [colRef("tbl_executiveSummary", hdr("Value")), colRef("tbl_executiveSummary", hdr("Metric")), colRef("tbl_executiveSummary", hdr("Data Status"))];
+    const k = val(key);
+    cell.value = { formula: `IFERROR(IF(INDEX(${V},MATCH("${k}",${M},0))="",INDEX(${DS},MATCH("${k}",${M},0)),INDEX(${V},MATCH("${k}",${M},0))),"${val("n/a")}")`, result: cached as never };
     cell.numFmt = kind === "pct" ? "0.00%" : key === "stockTurnover" || key === "daysOfStock" ? "#,##0.00" : numFmt("money", cur)!;
     cell.font = { size: 16, bold: true, color: { argb: key === "unexplainedVariance" ? "FFB45309" : INK } };
     for (const rr of [rowBase, rowBase + 1]) ex.getCell(`${L}${rr}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT } };
@@ -486,64 +483,82 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
 
   // ── 46_RECONCILIATION ──
   const rec = sheet("46_RECONCILIATION");
+  const chkCols = (withNote: boolean, type: Column["type"] = "money"): Column[] => [
+    { key: "check", header: hdr("Check"), type: "text" }, { key: "expected", header: hdr("Expected"), type }, { key: "actual", header: hdr("Actual"), type },
+    ...(type === "money" ? [{ key: "difference", header: hdr("Difference"), type } as Column] : []), { key: "status", header: hdr("Status"), type: "text" },
+    ...(withNote ? [{ key: "note", header: hdr("Note"), type: "text" } as Column] : []),
+  ];
   const serverSec: Section = {
     key: "serverChecks", title: t("Server-side checks (same engine as the application)"), status: "OK", source: "export.checks",
-    columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "money" }, { key: "actual", header: "Actual", type: "money" }, { key: "difference", header: "Difference", type: "money" }, { key: "status", header: "Status", type: "text" }, { key: "note", header: "Note", type: "text" }],
+    columns: chkCols(true),
     rows: e.checks.map((c) => ({ check: c.check, expected: c.expected, actual: c.actual, difference: c.difference, status: c.status, note: c.note })),
   };
   let rc = writeTable(rec, serverSec, 1, HEADER_ROW, cur, locations, undefined, lg);
-  const S = (k: string) => `INDEX(tbl_executiveSummary[Value],MATCH("${k}",tbl_executiveSummary[Metric],0))`;
+  const ES = (k: string) => `INDEX(${colRef("tbl_executiveSummary", hdr("Value"))},MATCH("${val(k)}",${colRef("tbl_executiveSummary", hdr("Metric"))},0))`;
+  const C = (table: string, header: string) => colRef(table, hdr(header));
   const num = (k: string) => Number(e.summary[k]?.value ?? 0);
   const sumCol = (k: string, col: string, pred?: (r: Record<string, string | null>) => boolean) => (e.sections[k]?.rows ?? []).filter((x) => !pred || pred(x)).reduce((a, x) => a + Number(x[col] ?? 0), 0);
   const filtered = !!(e.meta.filters.departmentId || e.meta.filters.warehouseId) || e.meta.scope.departments !== "ALL";
+  const [PURCHASE, EXPENSE, ALLOCATION, POSTED] = [val("PURCHASE (inventory)"), val("EXPENSE"), val("ALLOCATION"), val("POSTED")];
+  const TT = C("tbl_costDetail", "Transaction Type");
+  const costDetailTotal = C("tbl_costDetail", "Total Cost");
+  // check labels name the sheet and column the way this workbook shows them
+  const ref = (sheetName: string, header: string) => `${lg.sheet(sheetName)}[${hdr(header)}]`;
+  const L = (key: string, vars: Record<string, string>) => t(key, vars);
   const excelChecks: Array<[string, string, number, string, number, string?]> = [
-    ["Executive Actual Cost = Σ 09_CONSUMPTION_VARIANCE[Actual Cost]", S("actualCost"), num("actualCost"), "SUM(tbl_consumptionVariance[Actual Cost])", sumCol("consumptionVariance", "actualCost")],
-    ["Executive Actual Cost = Σ 03_COST_DETAIL[Total Cost] (inventory postings)", S("actualCost"), num("actualCost"), `SUMIFS(tbl_costDetail[Total Cost],tbl_costDetail[Transaction Type],"<>PURCHASE (inventory)",tbl_costDetail[Transaction Type],"<>EXPENSE",tbl_costDetail[Transaction Type],"<>ALLOCATION")`, sumCol("costDetail", "totalCost", (x) => !["PURCHASE (inventory)", "EXPENSE", "ALLOCATION"].includes(x.transactionType ?? "")), "FILTER"],
-    ["Executive Total Cost = Σ 03_COST_DETAIL[Total Cost] (excl. purchases)", S("totalCost"), num("totalCost"), `SUMIFS(tbl_costDetail[Total Cost],tbl_costDetail[Transaction Type],"<>PURCHASE (inventory)")`, sumCol("costDetail", "totalCost", (x) => x.transactionType !== "PURCHASE (inventory)")],
-    ["Executive Stock Value = Σ 29_MONTHLY_STOCK[Closing Value]", S("totalStockValue"), num("totalStockValue"), "SUM(tbl_monthlyStock[Closing Value])", sumCol("monthlyStock", "closingValue")],
-    ["Executive Waste = Σ 10_WASTE[Waste Cost] (posted)", S("totalWasteCost"), num("totalWasteCost"), `SUMIFS(tbl_waste[Waste Cost],tbl_waste[Status],"POSTED")`, sumCol("waste", "wasteCost", (x) => x.status === "POSTED")],
-    ["Executive Unexplained = Σ 09_CONSUMPTION_VARIANCE[Unexplained Usage]", S("unexplainedVariance"), num("unexplainedVariance"), "SUM(tbl_consumptionVariance[Unexplained Usage])", sumCol("consumptionVariance", "unexplained")],
-    ["Executive Theoretical = Σ RAW_SALES[Theoretical Cost]", S("theoreticalCost"), num("theoreticalCost"), "SUM(tbl_rawSales[Theoretical Cost])", sumCol("rawSales", "theoreticalCost"), "CATEGORY"],
-    ["Σ 34_DEPARTMENT_COST[Total Cost] = Σ 03_COST_DETAIL (excl. purchases)", `SUMIFS(tbl_costDetail[Total Cost],tbl_costDetail[Transaction Type],"<>PURCHASE (inventory)")`, sumCol("costDetail", "totalCost", (x) => x.transactionType !== "PURCHASE (inventory)"), "SUM(tbl_departmentCost[Total Cost])", sumCol("departmentCost", "totalCost")],
-    ["Σ 03_COST_DETAIL purchases = Σ 25_PURCHASE_COST[Landed Value]", `SUMIFS(tbl_costDetail[Total Cost],tbl_costDetail[Transaction Type],"PURCHASE (inventory)")`, sumCol("costDetail", "totalCost", (x) => x.transactionType === "PURCHASE (inventory)"), "SUM(tbl_purchaseCost[Landed Value])", sumCol("purchaseCost", "landedValue")],
-    ["38_PNL Cost of Sales = Executive Actual Cost", S("actualCost"), num("actualCost"), "INDEX(tbl_pnl[Value],5)", Number(e.sections.pnl?.rows[4]?.value ?? 0), "FILTER"],
+    [L("Executive Actual Cost = Σ {ref}", { ref: ref("09_CONSUMPTION_VARIANCE", "Actual Cost") }), ES("actualCost"), num("actualCost"), `SUM(${C("tbl_consumptionVariance", "Actual Cost")})`, sumCol("consumptionVariance", "actualCost")],
+    [L("Executive Actual Cost = Σ {ref} (inventory postings)", { ref: ref("03_COST_DETAIL", "Total Cost") }), ES("actualCost"), num("actualCost"), `SUMIFS(${costDetailTotal},${TT},"<>${PURCHASE}",${TT},"<>${EXPENSE}",${TT},"<>${ALLOCATION}")`, sumCol("costDetail", "totalCost", (x) => ![PURCHASE, EXPENSE, ALLOCATION].includes(x.transactionType ?? "")), "FILTER"],
+    [L("Executive Total Cost = Σ {ref} (excl. purchases)", { ref: ref("03_COST_DETAIL", "Total Cost") }), ES("totalCost"), num("totalCost"), `SUMIFS(${costDetailTotal},${TT},"<>${PURCHASE}")`, sumCol("costDetail", "totalCost", (x) => x.transactionType !== PURCHASE)],
+    [L("Executive Stock Value = Σ {ref}", { ref: ref("29_MONTHLY_STOCK", "Closing Value") }), ES("totalStockValue"), num("totalStockValue"), `SUM(${C("tbl_monthlyStock", "Closing Value")})`, sumCol("monthlyStock", "closingValue")],
+    [L("Executive Waste = Σ {ref} (posted)", { ref: ref("10_WASTE", "Waste Cost") }), ES("totalWasteCost"), num("totalWasteCost"), `SUMIFS(${C("tbl_waste", "Waste Cost")},${C("tbl_waste", "Status")},"${POSTED}")`, sumCol("waste", "wasteCost", (x) => x.status === POSTED)],
+    [L("Executive Unexplained = Σ {ref}", { ref: ref("09_CONSUMPTION_VARIANCE", "Unexplained Usage") }), ES("unexplainedVariance"), num("unexplainedVariance"), `SUM(${C("tbl_consumptionVariance", "Unexplained Usage")})`, sumCol("consumptionVariance", "unexplained")],
+    [L("Executive Theoretical = Σ {ref}", { ref: ref("RAW_SALES", "Theoretical Cost") }), ES("theoreticalCost"), num("theoreticalCost"), `SUM(${C("tbl_rawSales", "Theoretical Cost")})`, sumCol("rawSales", "theoreticalCost"), "CATEGORY"],
+    [L("Σ {ref} = Σ {sheet} (excl. purchases)", { ref: ref("34_DEPARTMENT_COST", "Total Cost"), sheet: lg.sheet("03_COST_DETAIL") }), `SUMIFS(${costDetailTotal},${TT},"<>${PURCHASE}")`, sumCol("costDetail", "totalCost", (x) => x.transactionType !== PURCHASE), `SUM(${C("tbl_departmentCost", "Total Cost")})`, sumCol("departmentCost", "totalCost")],
+    [L("Σ {sheet} purchases = Σ {ref}", { sheet: lg.sheet("03_COST_DETAIL"), ref: ref("25_PURCHASE_COST", "Landed Value") }), `SUMIFS(${costDetailTotal},${TT},"${PURCHASE}")`, sumCol("costDetail", "totalCost", (x) => x.transactionType === PURCHASE), `SUM(${C("tbl_purchaseCost", "Landed Value")})`, sumCol("purchaseCost", "landedValue")],
+    [L("{sheet} Cost of Sales = Executive Actual Cost", { sheet: lg.sheet("38_PNL") }), ES("actualCost"), num("actualCost"), `INDEX(${C("tbl_pnl", "Value")},5)`, Number(e.sections.pnl?.rows[4]?.value ?? 0), "FILTER"],
   ];
   const exSec: Section = {
     key: "excelChecks", title: t("Workbook formula checks (live)"), status: "OK", source: "Excel formulas",
-    columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "money" }, { key: "actual", header: "Actual", type: "money" }, { key: "difference", header: "Difference", type: "money" }, { key: "status", header: "Status", type: "text" }],
+    columns: chkCols(false),
     rows: excelChecks.map(([c]) => ({ check: c, expected: null, actual: null, difference: null, status: null })),
   };
   const exStart = rc;
   rc = writeTable(rec, exSec, exStart, HEADER_ROW, cur, locations, undefined, lg);
+  const [PASS, FAIL, WARNING] = [val("PASS"), val("FAIL"), val("WARNING")];
   excelChecks.forEach(([, fExp, vExp, fAct, vAct, guard], i) => {
     const row = HEADER_ROW + 1 + i;
-    const [B, C, D, E] = [colLetter(exStart + 1), colLetter(exStart + 2), colLetter(exStart + 3), colLetter(exStart + 4)];
+    const [B, Cc, D, E] = [colLetter(exStart + 1), colLetter(exStart + 2), colLetter(exStart + 3), colLetter(exStart + 4)];
     rec.getCell(`${B}${row}`).value = { formula: fExp, result: vExp };
-    rec.getCell(`${C}${row}`).value = { formula: fAct, result: vAct };
-    rec.getCell(`${D}${row}`).value = { formula: `${C}${row}-${B}${row}`, result: vAct - vExp };
+    rec.getCell(`${Cc}${row}`).value = { formula: fAct, result: vAct };
+    rec.getCell(`${D}${row}`).value = { formula: `${Cc}${row}-${B}${row}`, result: vAct - vExp };
     const ok = Math.abs(vAct - vExp) <= 0.01;
-    const guardExpr = guard === "FILTER" ? `OR(ctl_Department<>"All",ctl_Warehouse<>"All",ctl_Scope<>"All departments")` : guard === "CATEGORY" ? `ctl_Category<>"All"` : null;
+    const guardExpr = guard === "FILTER" ? `OR(ctl_Department<>"${ALL}",ctl_Warehouse<>"${ALL}",ctl_Scope<>"${val("All departments")}")` : guard === "CATEGORY" ? `ctl_Category<>"${ALL}"` : null;
     const guardActive = guard === "FILTER" ? filtered : guard === "CATEGORY" ? !!e.meta.filters.categoryGroup : false;
-    const base = `IF(ABS(${D}${row})<=0.01,"PASS","FAIL")`;
-    rec.getCell(`${E}${row}`).value = { formula: guardExpr ? `IF(${guardExpr},"WARNING",${base})` : base, result: guardActive ? "WARNING" : ok ? "PASS" : "FAIL" };
+    const base = `IF(ABS(${D}${row})<=0.01,"${PASS}","${FAIL}")`;
+    rec.getCell(`${E}${row}`).value = { formula: guardExpr ? `IF(${guardExpr},"${WARNING}",${base})` : base, result: guardActive ? WARNING : ok ? PASS : FAIL };
   });
   const vbaSec: Section = {
     key: "vbaChecks", title: t("Macro checks (row counts, duplicates) — filled on refresh"), status: "OK", source: "modReconciliation",
-    columns: [{ key: "check", header: "Check", type: "text" }, { key: "expected", header: "Expected", type: "int" }, { key: "actual", header: "Actual", type: "int" }, { key: "status", header: "Status", type: "text" }],
-    rows: Object.values(e.sections).map((s) => ({ check: `Row count ${s.key}`, expected: String(s.rows.length), actual: String(s.rows.length), status: "PASS" })),
+    columns: chkCols(false, "int"),
+    rows: Object.values(e.sections).map((s) => ({ check: `${val("Row count")} ${s.key}`, expected: String(s.rows.length), actual: String(s.rows.length), status: PASS })),
   };
   writeTable(rec, vbaSec, rc, HEADER_ROW, cur, locations, undefined, lg);
 
   // ── 48_EXPORT_ERRORS / RUN_LOG ──
-  writeTable(sheet("48_EXPORT_ERRORS"), { key: "errors", title: t("Export errors and warnings"), status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations, undefined, lg);
-  writeTable(sheet("RUN_LOG"), { key: "runLog", title: t("Run log"), status: "OK", source: "modErrorHandling", columns: ["Run ID", "Date", "User", "Hotel", "Period", "Start Time", "End Time", "Status", "Records Processed", "Errors", "Warnings"].map((h, i) => ({ key: `c${i}`, header: h, type: i === 1 ? "date" : i === 5 || i === 6 ? "datetime" : i >= 8 ? "int" : "text" })), rows: [{ c0: e.exportId, c1: e.meta.generatedAt.slice(0, 10), c2: e.meta.generatedBy, c3: e.meta.hotel.name, c4: e.meta.period.label, c5: e.meta.generatedAt, c6: e.meta.generatedAt, c7: `SERVER PREFILL (${e.score.reconciliation})`, c8: String(Object.values(e.counts).reduce((a, b) => a + b, 0)), c9: String(e.score.errors), c10: String(e.score.warnings) }] }, 1, HEADER_ROW, cur, locations, undefined, lg);
+  writeTable(sheet("48_EXPORT_ERRORS"), { key: "errors", title: t("Export errors and warnings"), status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: hdr(h), type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations, undefined, lg);
+  writeTable(sheet("RUN_LOG"), { key: "runLog", title: t("Run log"), status: "OK", source: "modErrorHandling", columns: ["Run ID", "Date", "User", "Hotel", "Period", "Start Time", "End Time", "Status", "Records Processed", "Errors", "Warnings"].map((h, i) => ({ key: `c${i}`, header: hdr(h), type: i === 1 ? "date" : i === 5 || i === 6 ? "datetime" : i >= 8 ? "int" : "text" })), rows: [{ c0: e.exportId, c1: e.meta.generatedAt.slice(0, 10), c2: e.meta.generatedBy, c3: e.meta.hotel.name, c4: e.meta.period.label, c5: e.meta.generatedAt, c6: e.meta.generatedAt, c7: `${val("SERVER PREFILL")} (${e.score.reconciliation})`, c8: String(Object.values(e.counts).reduce((a, b) => a + b, 0)), c9: String(e.score.errors), c10: String(e.score.warnings) }] }, 1, HEADER_ROW, cur, locations, undefined, lg);
 
   // ── 49_FORMULAS / 50_SOURCE_MAP / 51_README ──
-  writeTable(sheet("49_FORMULAS"), { key: "formulas", title: t("Formula dictionary (EN / TR)"), status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: "Metric", type: "text" }, { key: "b", header: "Formula (EN)", type: "text" }, { key: "c", header: "Formül (TR)", type: "text" }], rows: FORMULAS.map(([a, b, c]) => ({ a, b, c })) }, 1, HEADER_ROW, cur, locations, undefined, lg);
+  // Turkish workbook: Turkish names and formulas only; English keeps the bilingual dictionary
+  const formulas: Section = lg.locale === "en"
+    ? { key: "formulas", title: "Formula dictionary (EN / TR)", status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: "Metric", type: "text" }, { key: "b", header: "Formula (EN)", type: "text" }, { key: "c", header: "Formül (TR)", type: "text" }], rows: FORMULAS.map(([a, b, c]) => ({ a, b, c })) }
+    : { key: "formulas", title: t("Formula dictionary"), status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: hdr("Metric"), type: "text" }, { key: "c", header: hdr("Formula"), type: "text" }], rows: FORMULAS.map(([a, , c]) => ({ a: a.split(" / ").slice(1).join(" / ") || a, c: `= ${c}` })) };
+  writeTable(sheet("49_FORMULAS"), formulas, 1, HEADER_ROW, cur, locations, undefined, lg);
   writeTable(sheet("50_SOURCE_MAP"), {
     key: "sourceMap", title: t("Source map"), status: "OK", source: "export contract",
-    columns: [{ key: "a", header: "Excel Sheet", type: "text" }, { key: "b", header: "Excel Table", type: "text" }, { key: "c", header: "Dataset", type: "text" }, { key: "d", header: "Source (module / table)", type: "text" }, { key: "e", header: "Source API", type: "text" }, { key: "f", header: "Data Status", type: "text" }, { key: "g", header: "Rows", type: "int" }],
-    rows: Object.values(e.sections).map((s) => ({ a: sectionSheet[s.key] ?? "(not placed)", b: `tbl_${s.key}`, c: s.title, d: s.source, e: `GET /api/export/full-cost → sections.${s.key}`, f: s.status, g: String(s.rows.length) })),
+    // the source column names program modules: an English workbook only (the developers' map)
+    columns: [{ key: "a", header: hdr("Excel Sheet"), type: "text" }, { key: "b", header: hdr("Excel Table"), type: "text" }, { key: "c", header: hdr("Dataset"), type: "text" }, ...(lg.locale === "en" ? [{ key: "d", header: "Source (module / table)", type: "text" } as Column] : []), { key: "e", header: hdr("Source API"), type: "text" }, { key: "f", header: hdr("Data Status"), type: "text" }, { key: "g", header: hdr("Rows"), type: "int" }],
+    rows: Object.values(e.sections).map((s) => ({ a: sectionSheet[s.key] ?? val("(not placed)"), b: `tbl_${s.key}`, c: s.title, d: s.source, e: `GET /api/export/full-cost → sections.${s.key}`, f: s.status, g: String(s.rows.length) })),
   }, 1, HEADER_ROW, cur, locations, undefined, lg);
   const readme = sheet("51_README");
   const lines = [
@@ -563,7 +578,7 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     "Source code of every module is visible in the VBA editor (Alt+F11) and in the HotelCost repository (src/server/excel/vba).",
     "",
     "SHEETS",
-    ...SHEETS.filter((s) => !s.hidden).map((s) => `${s.name} — ${t(s.description)}`),
+    ...SHEETS.filter((s) => !s.hidden).map((s) => `${lg.sheet(s.name)} — ${t(s.description)}`),
     "RAW_* sheets (hidden, protected) contain the raw datasets used by pivots. RUN_LOG and _LISTS are hidden helper sheets.",
     "",
     "COLOURS",
@@ -583,12 +598,12 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
     "",
     `Workbook ${WORKBOOK_VERSION} · Export schema ${EXPORT_VERSION} · Application ${APP_VERSION}`,
   ];
-  const sheetLine = /^\d\d_[A-Z_]+ — /;
+  const sheetLine = /^\d\d_[\p{Lu}_]+ — /u;
   lines.forEach((line, i) => {
     const c = readme.getCell(`A${5 + i}`);
     // headings are detected on the English source; sheet lines and the version line are already composed
     c.value = !line || sheetLine.test(line) || line.startsWith("Workbook ") ? (line.startsWith("Workbook ") ? t("Workbook {wb} · Export schema {schema} · Application {app}", { wb: WORKBOOK_VERSION, schema: EXPORT_VERSION, app: APP_VERSION }) : line) : t(line);
-    if (line === line.toUpperCase() && line.length > 3 && !line.includes("—")) c.font = { bold: true, color: { argb: BRAND } };
+    if (line === line.toUpperCase() && line.length > 3 && !line.includes(" — ")) c.font = { bold: true, color: { argb: BRAND } };
   });
   readme.getColumn(1).width = 160;
   sheet("53_DASHBOARD_CHARTS").getCell("A5").value = t("Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.");
@@ -597,18 +612,20 @@ export async function buildWorkbook(e: FullCostExport, opts: { apiBaseUrl: strin
   // ── _LISTS ──
   const lst = sheet("_LISTS");
   const listTable = (key: string, col: number, header: string[], rows: string[][]) => {
-    writeTable(lst, { key, title: key, status: "OK", source: "lists", columns: header.map((h, i) => ({ key: `c${i}`, header: h, type: "text" })), rows: rows.map((rr) => Object.fromEntries(rr.map((v, i) => [`c${i}`, v]))) }, col, HEADER_ROW, cur, locations, undefined, lg);
+    writeTable(lst, { key, title: key, status: "OK", source: "lists", columns: header.map((h, i) => ({ key: `c${i}`, header: hdr(h), type: "text" })), rows: rows.map((rr) => Object.fromEntries(rr.map((v, i) => [`c${i}`, v]))) }, col, HEADER_ROW, cur, locations, undefined, lg);
   };
   listTable("lstDepartments", 1, ["Name", "ID"], opts.lists.departments.map((d) => [d.name, d.id]));
   listTable("lstWarehouses", 4, ["Name", "ID"], opts.lists.warehouses.map((w) => [w.name, w.id]));
+  // category names as shown in the list → the export's code (the macro sends the code)
+  listTable("lstCategories", 13, ["Name", "Code"], categories.map((c) => [val(c), c]));
   const writeList = (col: string, items: string[], name: string) => {
     items.forEach((v, i) => (lst.getCell(`${col}${HEADER_ROW + 1 + i}`).value = v));
-    names.push({ name, ref: `'_LISTS'!$${col}$${HEADER_ROW + 1}:$${col}$${HEADER_ROW + items.length}` });
+    names.push({ name, ref: `'${lst.name}'!$${col}$${HEADER_ROW + 1}:$${col}$${HEADER_ROW + items.length}` });
   };
   writeList("H", deptList, "lst_DepartmentNames");
   writeList("I", outletList, "lst_OutletNames");
   writeList("J", whList, "lst_WarehouseNames");
-  writeList("K", ["All", "FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING"], "lst_CategoryNames");
+  writeList("K", [ALL, ...categories.map(val)], "lst_CategoryNames");
 
   // ── protection (no password: prevents accidental edits; VBA re-protects after refresh) ──
   for (const ws of wb.worksheets) {

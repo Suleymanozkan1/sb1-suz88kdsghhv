@@ -6,30 +6,29 @@ Option Explicit
 Private Const XL_LINE As Long = 4
 Private Const XL_COLUMN_CLUSTERED As Long = 51
 Private Const XL_BAR_CLUSTERED As Long = 57
-Private Const CHART_SHEET As String = "53_DASHBOARD_CHARTS"
 Private Const W As Double = 470
 Private Const H As Double = 260
 
 Public Sub RefreshCharts()
     Dim ws As Worksheet
     Dim i As Long
-    Set ws = ThisWorkbook.Worksheets(CHART_SHEET)
+    Set ws = ThisWorkbook.Worksheets(S("53_DASHBOARD_CHARTS"))
     For i = ws.ChartObjects.Count To 1 Step -1
         ws.ChartObjects(i).Delete
     Next i
     For i = ws.Shapes.Count To 1 Step -1
         If Left$(ws.Shapes(i).Name, 4) = "txt_" Then ws.Shapes(i).Delete
     Next i
-    LineChart ws, "Cost Trend (actual vs theoretical)", "tbl_costTrend", "Month", Array("Actual Cost", "Theoretical Cost"), 10, 60, False
-    LineChart ws, "Food Cost % Trend", "tbl_costTrend", "Month", Array("Actual Cost %", "Theoretical Cost %"), 10 + W + 20, 60, True
-    LineChart ws, "Waste % Trend", "tbl_costTrend", "Month", Array("Waste %"), 10, 60 + H + 20, True
-    LineChart ws, "Stock Value (month end)", "tbl_costTrend", "Month", Array("Stock Value (month end)"), 10 + W + 20, 60 + H + 20, False
-    BarChart ws, "Department Cost", "tbl_departmentCost", "Department", "Total Cost", 10, 60 + 2 * (H + 20), 15
-    BarChart ws, "Top Cost Drivers (PPV)", "tbl_topCostDrivers", "Product", "Cost Increase (PPV)", 10 + W + 20, 60 + 2 * (H + 20), 10
-    BarChart ws, "Top Waste Products", "tbl_topWaste", "Product", "Waste Cost", 10, 60 + 3 * (H + 20), 10
+    LineChart ws, L("Cost Trend (actual vs theoretical)"), "tbl_costTrend", H("Month"), Array(H("Actual Cost"), H("Theoretical Cost")), 10, 60, False
+    LineChart ws, L("Food Cost % Trend"), "tbl_costTrend", H("Month"), Array(H("Actual Cost %"), H("Theoretical Cost %")), 10 + W + 20, 60, True
+    LineChart ws, L("Waste % Trend"), "tbl_costTrend", H("Month"), Array(H("Waste %")), 10, 60 + H + 20, True
+    LineChart ws, L("Stock Value (month end)"), "tbl_costTrend", H("Month"), Array(H("Stock Value (month end)")), 10 + W + 20, 60 + H + 20, False
+    BarChart ws, L("Department Cost"), "tbl_departmentCost", H("Department"), H("Total Cost"), 10, 60 + 2 * (H + 20), 15
+    BarChart ws, L("Top Cost Drivers (PPV)"), "tbl_topCostDrivers", H("Product"), H("Cost Increase (PPV)"), 10 + W + 20, 60 + 2 * (H + 20), 10
+    BarChart ws, L("Top Waste Products"), "tbl_topWaste", H("Product"), H("Waste Cost"), 10, 60 + 3 * (H + 20), 10
     PriceTrendChart ws, 10 + W + 20, 60 + 3 * (H + 20)
-    NotAvailable ws, "Room Cost / Occupied Night", 10, 60 + 4 * (H + 20)
-    LineChart ws, "Buffet Cost / Cover", "tbl_buffetCost", "Date", Array("Cost / Cover", "Waste / Cover"), 10 + W + 20, 60 + 4 * (H + 20), False
+    NotAvailable ws, L("Room Cost / Occupied Night"), 10, 60 + 4 * (H + 20)
+    LineChart ws, L("Buffet Cost / Cover"), "tbl_buffetCost", H("Date"), Array(H("Cost / Cover"), H("Waste / Cover")), 10 + W + 20, 60 + 4 * (H + 20), False
 End Sub
 
 Private Function HasData(ByVal lo As ListObject) As Boolean
@@ -48,7 +47,7 @@ Private Sub LineChart(ByVal ws As Worksheet, ByVal title As String, ByVal tableN
     On Error GoTo Fail
     Set lo = FindTable(tableName)
     If Not HasData(lo) Then
-        NotAvailable ws, title & " (no data)", x, y
+        NotAvailable ws, title & " " & L("(no data)"), x, y
         Exit Sub
     End If
     Set ch = ws.ChartObjects.Add(x, y, W, H).Chart
@@ -76,7 +75,7 @@ Private Sub BarChart(ByVal ws As Worksheet, ByVal title As String, ByVal tableNa
     On Error GoTo Fail
     Set lo = FindTable(tableName)
     If Not HasData(lo) Then
-        NotAvailable ws, title & " (no data)", x, y
+        NotAvailable ws, title & " " & L("(no data)"), x, y
         Exit Sub
     End If
     n = lo.ListRows.Count
@@ -109,7 +108,7 @@ Private Sub PriceTrendChart(ByVal ws As Worksheet, ByVal x As Double, ByVal y As
     On Error GoTo Fail
     Set lo = FindTable("tbl_priceTrend")
     If Not HasData(lo) Then
-        NotAvailable ws, "Ingredient Price Trend (no data)", x, y
+        NotAvailable ws, L("Ingredient Price Trend") & " " & L("(no data)"), x, y
         Exit Sub
     End If
     Set products = CreateObject("Scripting.Dictionary")
@@ -133,7 +132,7 @@ Private Sub PriceTrendChart(ByVal ws As Worksheet, ByVal x As Double, ByVal y As
         ser.XValues = xs
     Next p
     ch.HasTitle = True
-    ch.ChartTitle.Text = "Ingredient Price Trend (top spend)"
+    ch.ChartTitle.Text = L("Ingredient Price Trend (top spend)")
     Exit Sub
 Fail:
     LogError "modCharts", "PriceTrend", "CHART", Err.Number & ": " & Err.Description, "WARNING"
@@ -143,6 +142,6 @@ Private Sub NotAvailable(ByVal ws As Worksheet, ByVal title As String, ByVal x A
     Dim shp As Shape
     Set shp = ws.Shapes.AddTextbox(1, x, y, W, H)
     shp.Name = "txt_" & ws.Shapes.Count
-    shp.TextFrame.Characters.Text = title & vbLf & vbLf & "Module not yet available in HotelCost - no data is shown rather than estimated values."
+    shp.TextFrame.Characters.Text = title & vbLf & vbLf & L("Module not yet available in HotelCost - no data is shown rather than estimated values.")
     shp.Line.ForeColor.RGB = RGB(213, 217, 226)
 End Sub

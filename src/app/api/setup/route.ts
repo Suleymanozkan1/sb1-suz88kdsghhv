@@ -1,12 +1,12 @@
-import { NextResponse, after, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
 import { login, rateLimit, SESSION_COOKIE, actorForUser } from "@/server/auth/session";
 import { errorResponse, requestLocale } from "@/server/http/handler";
 import { DomainError } from "@/domain/errors";
-import { checkSetupSecret, needsSetup, runDemoLoad, runSetup, startDemoLoad } from "@/server/setup";
+import { checkSetupSecret, needsSetup, runSetup, startDemoLoad } from "@/server/setup";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const body = z.object({ secret: z.string().max(500), loadDemo: z.boolean().default(false) }).passthrough();
 
@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     const { token, expiresAt } = await login(String(input.adminEmail), password, ip);
     if (loadDemo) {
       const actor = (await actorForUser(r.adminId))!;
-      await startDemoLoad(prisma, actor);
-      after(() => runDemoLoad(prisma, actor, password, locale));
+      // the demo itself is built step by step from /setup/demo (each step fits one request)
+      await startDemoLoad(prisma, actor, locale);
     }
     const res = NextResponse.json({ ok: true, demo: loadDemo });
     res.cookies.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1", path: "/", expires: expiresAt });

@@ -27,6 +27,7 @@ test("first-run setup in Turkish with demo data", async ({ page, browser }) => {
   await page.locator("#secret").fill(dbPassword());
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
   await expect(page).toHaveURL(/\/setup\/demo$/, { timeout: 60_000 });
+  await expect(page.getByText(/Adım \d+\/11/)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/Demo veri hazır: 2 şirket, 3 otel/)).toBeVisible({ timeout: 300_000 });
 
   await page.getByRole("link", { name: "Gösterge paneline git" }).click();

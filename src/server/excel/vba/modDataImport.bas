@@ -11,8 +11,8 @@ Private mToken As String
 Public Function ApiToken() As String
     If Len(mToken) = 0 Then mToken = Environ$("HOTELCOST_TOKEN")
     If Len(mToken) = 0 Then
-        mToken = InputBox("Paste your HotelCost API token (web app > Excel Export > Create token)." & vbCrLf & _
-                          "It is kept in memory only and is never saved in this workbook.", "HotelCost API token")
+        mToken = InputBox(L("Paste your HotelCost API token (web app > Excel Export > Create token).") & vbCrLf & _
+                          L("It is kept in memory only and is never saved in this workbook."), L("HotelCost API token"))
     End If
     ApiToken = Trim$(mToken)
 End Function
@@ -31,7 +31,8 @@ Public Function BuildExportUrl() As String
         "&to=" & Format$(CtlValue("ctl_EndDate"), "yyyy-mm-dd") & _
         "&departmentId=" & UrlEncode(SelectedDepartmentId()) & _
         "&warehouseId=" & UrlEncode(LookupId("tbl_lstWarehouses", CStr(CtlValue("ctl_Warehouse")))) & _
-        "&group=" & UrlEncode(CategoryParam(CStr(CtlValue("ctl_Category"))))
+        "&group=" & UrlEncode(LookupId("tbl_lstCategories", CStr(CtlValue("ctl_Category")))) & _
+        "&lang=" & "@@LANG@@"
 End Function
 
 ' Department wins; if Department is "All" the Outlet selection is used.
@@ -40,16 +41,12 @@ Public Function SelectedDepartmentId() As String
     If Len(SelectedDepartmentId) = 0 Then SelectedDepartmentId = LookupId("tbl_lstDepartments", CStr(CtlValue("ctl_Outlet")))
 End Function
 
-Private Function CategoryParam(ByVal v As String) As String
-    If UCase$(v) = "ALL" Or Len(v) = 0 Then CategoryParam = "" Else CategoryParam = UCase$(v)
-End Function
-
 ' Lookup "name -> id" in a two-column hidden list table (name, id). "All" -> "".
 Public Function LookupId(ByVal tableName As String, ByVal displayName As String) As String
     Dim lo As ListObject
     Dim r As Long
     LookupId = ""
-    If Len(displayName) = 0 Or LCase$(Left$(displayName, 3)) = "all" Then Exit Function
+    If Len(displayName) = 0 Or displayName = L("All") Then Exit Function
     Set lo = FindTable(tableName)
     If lo Is Nothing Then Exit Function
     If lo.DataBodyRange Is Nothing Then Exit Function
@@ -105,7 +102,7 @@ Public Function HttpGetText(ByVal url As String) As String
     Dim errText As String
     Dim token As String
     token = ApiToken()
-    If Len(token) = 0 Then Err.Raise vbObjectError + 401, "HttpGetText", "No API token provided."
+    If Len(token) = 0 Then Err.Raise vbObjectError + 401, "HttpGetText", L("No API token provided.")
     For attempt = 1 To 4
         st = 0: body = "": errText = ""
         If TryGet(url, token, st, body, errText) Then
@@ -114,16 +111,16 @@ Public Function HttpGetText(ByVal url As String) As String
                 Exit Function
             ElseIf st = 401 Or st = 403 Then
                 ForgetToken
-                Err.Raise vbObjectError + st, "HttpGetText", "Access denied (HTTP " & st & "). Check the API token and your export permission."
+                Err.Raise vbObjectError + st, "HttpGetText", L("Access denied") & " (HTTP " & st & "). " & L("Check the API token and your export permission.")
             ElseIf st <> 429 And st < 500 Then
-                Err.Raise vbObjectError + st, "HttpGetText", "HotelCost API returned HTTP " & st & ": " & Left$(body, 300)
+                Err.Raise vbObjectError + st, "HttpGetText", L("HotelCost API returned") & " HTTP " & st & ": " & Left$(body, 300)
             End If
             errText = "HTTP " & st
         End If
-        LogError "modDataImport", "attempt " & attempt, "NETWORK", errText, "WARNING"
+        LogError "modDataImport", L("attempt") & " " & attempt, "NETWORK", errText, "WARNING"
         If attempt < 4 Then Application.Wait Now + TimeSerial(0, 0, 2 ^ attempt)
     Next attempt
-    Err.Raise vbObjectError + 503, "HttpGetText", "HotelCost API unreachable after 4 attempts (" & errText & ")."
+    Err.Raise vbObjectError + 503, "HttpGetText", L("HotelCost API unreachable after 4 attempts") & " (" & errText & ")."
 End Function
 
 ' Parses the TSV contract into a Dictionary:
@@ -150,9 +147,9 @@ Public Function ParseExport(ByVal text As String) As Object
     Set checks = New Collection
     text = Replace(text, vbCr, "")
     lines = Split(text, vbLf)
-    If UBound(lines) < 0 Then Err.Raise vbObjectError + 1, "ParseExport", "Empty export"
+    If UBound(lines) < 0 Then Err.Raise vbObjectError + 1, "ParseExport", L("Empty export")
     f = Split(lines(0), vbTab)
-    If f(0) <> "##EXPORT" Then Err.Raise vbObjectError + 2, "ParseExport", "Not a HotelCost export (missing ##EXPORT header)"
+    If f(0) <> "##EXPORT" Then Err.Raise vbObjectError + 2, "ParseExport", L("Not a HotelCost export (missing ##EXPORT header)")
     result("exportVersion") = f(1)
     result("exportId") = f(2)
 
@@ -190,9 +187,9 @@ Public Function ParseExport(ByVal text As String) As Object
                 If nRows > 0 Then
                     ReDim data(1 To nRows, 1 To nCols)
                     For r = 1 To nRows
-                        If i + r > UBound(lines) Then Err.Raise vbObjectError + 3, "ParseExport", "Truncated section " & sec("key")
+                        If i + r > UBound(lines) Then Err.Raise vbObjectError + 3, "ParseExport", L("Truncated section") & " " & sec("key")
                         f = Split(lines(i + r), vbTab)
-                        If UBound(f) + 1 <> nCols Then Err.Raise vbObjectError + 4, "ParseExport", "Column count mismatch in " & sec("key") & " row " & r
+                        If UBound(f) + 1 <> nCols Then Err.Raise vbObjectError + 4, "ParseExport", L("Column count mismatch") & ": " & sec("key") & ", " & L("row") & " " & r
                         For c = 1 To nCols
                             data(r, c) = ConvertCell(f(c - 1), types(c))
                         Next c
@@ -215,7 +212,7 @@ Public Function ParseExport(ByVal text As String) As Object
         End If
         i = i + 1
     Loop
-    If Not result.Exists("complete") Then Err.Raise vbObjectError + 5, "ParseExport", "Export truncated (no ##END marker) - incomplete data is never written."
+    If Not result.Exists("complete") Then Err.Raise vbObjectError + 5, "ParseExport", L("Export truncated (no ##END marker) - incomplete data is never written.")
     Set result("meta") = meta
     Set result("summary") = summary
     Set result("sections") = sections

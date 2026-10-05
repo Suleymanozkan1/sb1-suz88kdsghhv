@@ -5,8 +5,9 @@
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import type { Column, FullCostExport, Section } from "../services/export";
-import { makeT, type Locale, translateMessage } from "@/i18n/core";
+import { makeT, type Locale } from "@/i18n/core";
 import { TR } from "@/i18n/tr";
+import { xlLang } from "../excel/i18n";
 
 const FONT = path.join(process.cwd(), "assets", "fonts", "DejaVuSans.ttf");
 const FONT_BOLD = path.join(process.cwd(), "assets", "fonts", "DejaVuSans-Bold.ttf");
@@ -48,7 +49,9 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
   const t = makeT(locale);
   /** engine words (statement lines, enums, notes, check names): translated when the dictionary knows them, else as is */
   // engine words and server texts with numbers inside ("10.4% price", "3 pending")
-  const tx = (v: string): string => (locale === "en" ? v : (TR[v] ?? translateMessage(locale, v)));
+  // UI wording first; generated phrases (saving opportunities, notes with numbers) as in the Excel workbook
+  const xl = xlLang(locale);
+  const tx = (v: string): string => (locale === "en" ? v : (TR[v] ?? xl.val(v)));
   const cur = e.meta.hotel.currency;
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true, info: { Title: t("Management cost pack {period}", { period: e.meta.period.label }), Author: "HotelCost", Subject: e.meta.hotel.name, CreationDate: new Date(e.meta.generatedAt) } });
   doc.registerFont("body", FONT);

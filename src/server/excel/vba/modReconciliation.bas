@@ -31,8 +31,8 @@ Public Sub RunReconciliation(ByVal payload As Object)
             data(i, 4) = ConvertCell(chk(3), "money")
             data(i, 5) = chk(4)
             data(i, 6) = chk(5)
-            If chk(4) = "FAIL" Then nFail = nFail + 1
-            If chk(4) = "WARNING" Then nWarn = nWarn + 1
+            If chk(4) = L("FAIL") Then nFail = nFail + 1
+            If chk(4) = L("WARNING") Then nWarn = nWarn + 1
         Next chk
         If Not lo.DataBodyRange Is Nothing Then lo.DataBodyRange.ClearContents
         lo.Resize lo.HeaderRowRange.Resize(payload("checks").Count + 1)
@@ -46,17 +46,17 @@ Public Sub RunReconciliation(ByVal payload As Object)
         Set t = FindTable("tbl_" & k)
         If Not t Is Nothing Then
             If sec("rows") = 0 Then actual = 0 Else actual = t.ListRows.Count
-            vba.Add Array("Row count " & k, sec("rows"), actual, IIf(actual = sec("rows"), "PASS", "FAIL"))
+            vba.Add Array(L("Row count") & " " & k, sec("rows"), actual, IIf(actual = sec("rows"), L("PASS"), L("FAIL")))
         End If
     Next k
-    vba.Add DuplicateCheck("tbl_costDetail", "Trace ID")
-    vba.Add DuplicateCheck("tbl_rawStockTransactions", "Transaction ID")
+    vba.Add DuplicateCheck("tbl_costDetail", H("Trace ID"))
+    vba.Add DuplicateCheck("tbl_rawStockTransactions", H("Transaction ID"))
     Set lo = FindTable("tbl_vbaChecks")
     If Not lo Is Nothing Then
         ReDim data(1 To vba.Count, 1 To 4)
         For i = 1 To vba.Count
             data(i, 1) = vba(i)(0): data(i, 2) = vba(i)(1): data(i, 3) = vba(i)(2): data(i, 4) = vba(i)(3)
-            If vba(i)(3) = "FAIL" Then nFail = nFail + 1
+            If vba(i)(3) = L("FAIL") Then nFail = nFail + 1
         Next i
         If Not lo.DataBodyRange Is Nothing Then lo.DataBodyRange.ClearContents
         lo.Resize lo.HeaderRowRange.Resize(vba.Count + 1)
@@ -69,17 +69,17 @@ Public Sub RunReconciliation(ByVal payload As Object)
     If Not lo Is Nothing Then
         If Not lo.DataBodyRange Is Nothing Then
             For i = 1 To lo.ListRows.Count
-                Select Case CStr(lo.ListColumns("Status").DataBodyRange.Cells(i, 1).Value)
-                    Case "FAIL": nFail = nFail + 1
-                    Case "WARNING": nWarn = nWarn + 1
+                Select Case CStr(lo.ListColumns(H("Status")).DataBodyRange.Cells(i, 1).Value)
+                    Case L("FAIL"): nFail = nFail + 1
+                    Case L("WARNING"): nWarn = nWarn + 1
                 End Select
             Next i
         End If
     End If
 
-    If nFail > 0 Then LogError "modReconciliation", "checks", "RECONCILIATION", nFail & " reconciliation check(s) failed - see 46_RECONCILIATION", "HIGH"
+    If nFail > 0 Then LogError "modReconciliation", "checks", "RECONCILIATION", nFail & " " & L("reconciliation check(s) failed - see") & " " & S("46_RECONCILIATION"), "HIGH"
     SetCtl "ctl_ScoreDataQuality", payload("meta")("dataQuality")
-    SetCtl "ctl_ScoreRecon", IIf(nFail > 0, "FAIL", IIf(nWarn > 0, "WARNING", "PASS"))
+    SetCtl "ctl_ScoreRecon", IIf(nFail > 0, L("FAIL"), IIf(nWarn > 0, L("WARNING"), L("PASS")))
     SetCtl "ctl_ScoreWarnings", nWarn
     SetCtl "ctl_ScoreErrors", nFail
     gWarnings = gWarnings + nWarn
@@ -92,7 +92,7 @@ Private Function DuplicateCheck(ByVal tableName As String, ByVal colName As Stri
     Dim r As Long, dup As Long
     Set lo = FindTable(tableName)
     If lo Is Nothing Then
-        DuplicateCheck = Array("Duplicates " & tableName, 0, 0, "WARNING")
+        DuplicateCheck = Array(L("Duplicates") & " " & tableName, 0, 0, L("WARNING"))
         Exit Function
     End If
     Set seen = CreateObject("Scripting.Dictionary")
@@ -106,5 +106,5 @@ Private Function DuplicateCheck(ByVal tableName As String, ByVal colName As Stri
             Next r
         End If
     End If
-    DuplicateCheck = Array("Duplicate " & colName & " in " & tableName, 0, dup, IIf(dup = 0, "PASS", "FAIL"))
+    DuplicateCheck = Array(L("Duplicates") & ": " & colName & " (" & tableName & ")", 0, dup, IIf(dup = 0, L("PASS"), L("FAIL")))
 End Function
