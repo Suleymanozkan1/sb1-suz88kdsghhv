@@ -10,6 +10,8 @@ import { ledger } from "./reports/ledger";
 import { orders, purchasing } from "./reports/purchasing";
 import { counts, countSummaryReport } from "./reports/counts";
 import { waste } from "./reports/waste";
+import { buffet, buffetSession } from "./reports/buffet";
+import { minibar } from "./reports/minibar";
 import { budget } from "./reports/budget";
 import { forecast } from "./reports/forecast";
 import { allocation } from "./reports/allocation";
@@ -39,6 +41,9 @@ export const REPORTS: Record<string, ReportDef> = {
   counts,
   "count-summary": countSummaryReport,
   waste,
+  buffet,
+  "buffet-session": buffetSession,
+  minibar,
   budget,
   forecast,
   allocation,

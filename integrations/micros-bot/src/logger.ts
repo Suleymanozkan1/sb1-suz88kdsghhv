@@ -11,8 +11,11 @@ let secrets: string[] = [];
 let minLevel: Level = "info";
 const fileSinks = new Set<string>();
 let silent = false;
+let allToStderr = false;
 
-export function configureLogger(opts: { secrets?: string[]; level?: Level; silent?: boolean }): void {
+/** silent: no console output (tests); stderr: everything to stderr (dry-run keeps stdout for the JSON) */
+export function configureLogger(opts: { secrets?: string[]; level?: Level; silent?: boolean; stderr?: boolean }): void {
+  if (opts.stderr !== undefined) allToStderr = opts.stderr;
   if (opts.secrets) secrets = [...new Set(opts.secrets.filter((s) => s && s.length >= 3))].sort((a, b) => b.length - a.length);
   if (opts.level) minLevel = opts.level;
   if (opts.silent !== undefined) silent = opts.silent;
@@ -35,7 +38,7 @@ function write(level: Level, msg: string, extra?: unknown): void {
   let text = msg;
   if (extra !== undefined) text += " " + (extra instanceof Error ? extra.message : typeof extra === "string" ? extra : JSON.stringify(extra));
   const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} ${redact(text)}`;
-  if (!silent) (level === "error" || level === "warn" ? console.error : console.log)(line);
+  if (!silent) (allToStderr || level === "error" || level === "warn" ? console.error : console.log)(line);
   for (const file of fileSinks) {
     try {
       fs.appendFileSync(file, line + "\n");

@@ -341,3 +341,24 @@ export async function forecast(db: Db, actor: Actor, hotelId: string, f: { depar
   const fc = forecastBuffet(history, f.expectedCovers, f.bufferPct ?? 10);
   return { ...fc, basisRule: sameDay.length >= 4 ? "same weekday" : "all comparable days", items: fc.items.map((i) => ({ ...i, name: names.get(i.key)?.name ?? i.key })) };
 }
+
+/**
+ * Pre-fill of a new session (nothing typed by hand): covers sold for the day, outlet and meal (read from Micros by
+ * the automation) and occupied rooms / guests of that night (Opera night audit). Each value says where it came
+ * from; the form keeps them editable.
+ */
+export async function sessionDefaults(db: Db, actor: Actor, hotelId: string, q: { date: string; departmentId: string; type: string }) {
+  authorize(actor, "buffet:view", { hotelId });
+  const day = new Date(`${q.date}T00:00:00Z`);
+  const [covers, occ] = await Promise.all([
+    db.coverCount.findUnique({ where: { hotelId_businessDate_departmentId_meal: { hotelId, businessDate: day, departmentId: q.departmentId, meal: q.type } } }),
+    db.occupancyImport.findUnique({ where: { hotelId_businessDate: { hotelId, businessDate: day } } }),
+  ]);
+  return {
+    covers: covers?.covers ?? null,
+    coversSource: covers?.source ?? null,
+    occupiedRooms: occ?.occupiedRooms ?? null,
+    guests: occ?.guests ?? null,
+    occupancySource: occ?.source ?? null,
+  };
+}

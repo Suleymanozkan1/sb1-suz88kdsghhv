@@ -167,7 +167,7 @@ test("buffet (F&B manager): open session, issue, leftovers, close → cost per c
   await page.goto("/buffet");
   await page.getByLabel("Meal").selectOption("SPECIAL_EVENT");
   await page.getByLabel("Issue from").selectOption({ label: "Main Warehouse" });
-  await page.getByLabel("Expected covers").fill("120");
+  await page.getByLabel("Covers sold").fill("120");
   for (let back = 0; back < 25; back++) {
     const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
     await page.getByLabel("Date", { exact: true }).fill(d);

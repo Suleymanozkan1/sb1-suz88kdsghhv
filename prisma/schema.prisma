@@ -249,6 +249,13 @@ enum LeftoverClass {
 
 // ──────────────────────── Tenancy & org ────────────────────────
 
+/// Packages (Temel / Orta / Üst). Which feature belongs to which plan: src/server/plans.ts.
+enum Plan {
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
 model Organization {
   id         String       @id @default(cuid())
   name       String
@@ -258,6 +265,8 @@ model Organization {
   active     Boolean      @default(true)
   /// the platform operator's own organization (super administrators live here, it owns no hotels)
   isPlatform Boolean      @default(false)
+  /// subscription package: features are switched on per plan (src/server/plans.ts)
+  plan       Plan         @default(BASIC)
   createdAt  DateTime     @default(now())
   invites    UserInvite[]
   auditLogs  AuditLog[]
@@ -337,6 +346,7 @@ model Hotel {
   costTargets       CostTarget[]
   savingActions     SavingAction[]
   calendarTasks     CalendarTask[]
+  autoOrderRules    AutoOrderRule[]
 
   @@unique([organizationId, code])
 }
@@ -582,6 +592,7 @@ model Product {
   buffetLines      BuffetLine[]
   minibarPars      MinibarPar[]
   minibarMovements MinibarMovement[]
+  autoOrders       AutoOrderRule[]
 
   @@unique([hotelId, sku])
   @@index([hotelId, name])
@@ -599,6 +610,7 @@ model Supplier {
   taxNumber    String?
   email        String?
   phone        String?
+  address      String?
   leadTimeDays Int?
   currency     String          @default("TRY")
   active       Boolean         @default(true)
@@ -607,8 +619,52 @@ model Supplier {
   orders       PurchaseOrder[]
   receipts     GoodsReceipt[]
   invoices     Invoice[]
+  autoOrders   AutoOrderRule[]
 
   @@unique([hotelId, code])
+}
+
+/// Automatic ordering (premium plan): when stock falls below the reorder point, the order goes to the supplier by
+/// e-mail. Basic plans see the products that reached their reorder point without sending anything.
+model AutoOrderRule {
+  id           String    @id @default(cuid())
+  hotelId      String
+  hotel        Hotel     @relation(fields: [hotelId], references: [id])
+  supplierId   String
+  supplier     Supplier  @relation(fields: [supplierId], references: [id])
+  productId    String
+  product      Product   @relation(fields: [productId], references: [id])
+  /// in the product's stock unit
+  reorderPoint Decimal   @db.Decimal(20, 6)
+  safetyStock  Decimal?  @db.Decimal(20, 6)
+  orderQty     Decimal   @db.Decimal(20, 6)
+  /// where the order is sent (defaults to the supplier's e-mail)
+  email        String?
+  /// paused rules wait as they are (e.g. a product not bought in the low season)
+  active       Boolean   @default(true)
+  lastOrderedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sends        AutoOrderSend[]
+
+  @@unique([hotelId, productId])
+  @@index([hotelId, active])
+}
+
+model AutoOrderSend {
+  id        String        @id @default(cuid())
+  hotelId   String
+  ruleId    String
+  rule      AutoOrderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  sentAt    DateTime      @default(now())
+  quantity  Decimal       @db.Decimal(20, 6)
+  stockQty  Decimal       @db.Decimal(20, 6)
+  email     String
+  /// SENT | FAILED | SKIPPED (no mail server configured)
+  status    String
+  error     String?
+
+  @@index([hotelId, sentAt])
 }
 
 // Immutable price history. One row per observed price (receipt, contract, quote).
@@ -710,6 +766,8 @@ model GoodsReceipt {
   warehouse        Warehouse              @relation(fields: [warehouseId], references: [id])
   receiptDate      DateTime
   invoiceNo        String?
+  /// MANUAL (entered here) | MICROS (read by the automation) | IMPORT
+  source           String                 @default("MANUAL")
   currency         String                 @default("TRY")
   exchangeRate     Decimal                @default(1) @db.Decimal(20, 8)
   freight          Decimal                @default(0) @db.Decimal(20, 6)
@@ -1892,4 +1950,68 @@ model DemoScenario {
 
   @@index([organizationId, status])
   @@index([hotelId])
+}
+
+/// Covers sold per business day, outlet and meal (e.g. breakfasts sold, read from Micros): fills the buffet.
+model CoverCount {
+  id           String   @id @default(cuid())
+  hotelId      String
+  businessDate DateTime @db.Date
+  departmentId String
+  meal         String
+  covers       Int
+  source       String
+  updatedAt    DateTime @updatedAt
+
+  @@unique([hotelId, businessDate, departmentId, meal])
+}
+
+/// API key of the automation that writes into a hotel (stored hashed; shown once when created).
+model IntegrationKey {
+  id          String    @id @default(cuid())
+  hotelId     String
+  name        String
+  prefix      String
+  keyHash     String    @unique
+  createdById String
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  @@index([hotelId])
+}
+
+/// One automation run (Micros / Opera bot) and what it delivered: the import log screen.
+model IntegrationRun {
+  id           String    @id @default(cuid())
+  hotelId      String
+  /// the bot's run id
+  runId        String
+  source       String
+  businessDay  String?
+  /// STARTED | SUCCEEDED | FAILED
+  status       String
+  message      String?
+  /// per kind: { checks: { received, accepted, duplicates, errors }, ... }
+  stats        Json?
+  requestId    String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([hotelId, runId])
+  @@index([hotelId, startedAt])
+}
+
+/// "Run now" pressed by a user: the bot picks it up on its next poll.
+model IntegrationRequest {
+  id            String    @id @default(cuid())
+  hotelId       String
+  source        String
+  businessDay   String?
+  requestedById String
+  createdAt     DateTime  @default(now())
+  pickedAt      DateTime?
+
+  @@index([hotelId, pickedAt])
 }

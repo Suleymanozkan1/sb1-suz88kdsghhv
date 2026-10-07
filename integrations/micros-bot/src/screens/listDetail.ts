@@ -7,7 +7,7 @@
  * A problem with ONE record (unreadable number, empty lines) skips that record with a warning; a missing
  * element (ScreenChangedError) or a timeout stops the whole screen.
  */
-import { BotError, ParseError, ScreenChangedError, SelectorNotConfiguredError } from "../errors";
+import { ParseError, ScreenChangedError } from "../errors";
 import { log } from "../logger";
 import type { Screen } from "../browser/screen";
 
@@ -15,11 +15,9 @@ export interface DetailResult<T> { items: T[]; warnings: string[] }
 
 const MAX_PAGES = 500;
 
+/** Only a record-level parse problem is skipped; everything else (missing element, timeout, network) stops the screen. */
 function isFatal(err: unknown): boolean {
-  if (err instanceof ScreenChangedError || err instanceof SelectorNotConfiguredError) return true;
-  if (err instanceof ParseError) return false;
-  if (err instanceof BotError) return false;
-  return true; // timeouts, navigation / network errors
+  return !(err instanceof ParseError);
 }
 
 export async function traverseListDetail<T>(screen: Screen, label: string, readDetail: () => Promise<T | null>): Promise<DetailResult<T>> {
@@ -61,6 +59,11 @@ export async function traverseListDetail<T>(screen: Screen, label: string, readD
       if ((await nextLoc.count()) === 0 || (await nextLoc.isDisabled().catch(() => false))) break;
       await nextLoc.click();
       await page.waitForLoadState("domcontentloaded");
+    }
+    if (links.length === 0) {
+      // the list is there but no row matched: with a "noData" marker configured this means the row selector is wrong
+      if (screen.sel("noData", true)) throw new ScreenChangedError(screen.name, "row", screen.sel("row"));
+      log.warn(`[${screen.name}] list is empty (no rows matched ${screen.sel("row")})`);
     }
     log.info(`[${screen.name}] ${links.length} ${label} found, reading details`);
     for (let i = 0; i < links.length; i++) {

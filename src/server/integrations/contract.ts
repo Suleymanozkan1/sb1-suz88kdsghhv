@@ -8,7 +8,7 @@
  *   GET  /api/integrations/runs/next   "run now" requests made by a user in HotelCost (the bot polls)
  *
  * Idempotency: a check is identified by its check number + business day, an invoice by supplier + invoice
- * number, covers / occupancy by business day (+ outlet / meal). Sending the same day again never duplicates;
+ * number, a minibar charge by its folio reference, covers / occupancy by business day (+ outlet / meal). Sending the same day again never duplicates;
  * a re-sent check or invoice is reported as a duplicate and skipped.
  */
 import { z } from "zod";
@@ -61,10 +61,22 @@ export const occupancySchema = z.object({
   occupiedRoomNumbers: z.array(z.string().trim().max(20)).optional(),
 });
 
+/** Minibar items charged to a room (Opera folio postings or the Micros minibar outlet). */
+export const minibarSchema = z.object({
+  room: z.string().trim().min(1).max(20),
+  itemCode: z.string().trim().max(64).optional().nullable(),
+  itemName: z.string().trim().min(1).max(200),
+  qty: num.refine((n) => n > 0, "Quantity must be positive"),
+  /** folio / posting reference: identifies the charge (idempotency) */
+  reference: z.string().trim().min(1).max(64),
+  postedAt: z.string().datetime({ offset: true }).optional(),
+});
+
 export const ingestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("checks"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(checkSchema).max(20000) }),
   z.object({ kind: z.literal("invoices"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(invoiceSchema).max(5000) }),
   z.object({ kind: z.literal("covers"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(coversSchema).max(500) }),
+  z.object({ kind: z.literal("minibar"), source: z.enum(["OPERA", "MICROS", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(minibarSchema).max(5000) }),
   z.object({ kind: z.literal("occupancy"), source: z.enum(["OPERA", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(occupancySchema).length(1) }),
 ]);
 export type IngestInput = z.infer<typeof ingestSchema>;

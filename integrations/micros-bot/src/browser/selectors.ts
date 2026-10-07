@@ -47,9 +47,23 @@ export interface MicrosSelectors {
   covers: { steps: Step[]; table: SelectorValue; row: SelectorValue; noData?: SelectorValue; columns: { outlet: SelectorValue; meal: SelectorValue; covers: SelectorValue }; defaultMeal?: string | null; skipOutletPattern?: string | null };
 }
 
+/** A flat table of minibar postings (one row = one item charged to a room). */
+export interface MinibarScreen {
+  steps: Step[];
+  table: SelectorValue;
+  row: SelectorValue;
+  noData?: SelectorValue;
+  nextPage?: SelectorValue;
+  columns: { room: SelectorValue; itemCode?: SelectorValue; itemName: SelectorValue; qty: SelectorValue; reference: SelectorValue; postedAt?: SelectorValue };
+  postedAtFormat?: string | null;
+  /** regex on the item name: rows to ignore (e.g. totals, non-minibar transaction codes) */
+  skipItemNamePattern?: string | null;
+}
+
 export interface OperaSelectors {
   numberFormat?: NumberFormat;
   dateFormat?: string;
+  dateTimeFormat?: string;
   login: LoginSelectors;
   statistics: {
     steps: Step[];
@@ -57,6 +71,7 @@ export interface OperaSelectors {
     fields: { availableRooms: SelectorValue; occupiedRooms: SelectorValue; guests: SelectorValue; roomRevenue?: SelectorValue; outOfOrder?: SelectorValue };
     rooms?: { steps?: Step[]; row: SelectorValue; roomNumber: SelectorValue; noData?: SelectorValue } | null;
   };
+  minibar?: MinibarScreen | null;
 }
 
 export function loadSelectors<T>(file: string): T {
