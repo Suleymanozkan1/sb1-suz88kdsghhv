@@ -10,7 +10,7 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement } from "./ledger";
-import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
+import { assertHotelRefs, requireWarehouseScope, warehouseScope } from "../auth/scope";
 
 const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
 
@@ -136,4 +136,58 @@ export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: 
   await tx.stockCount.update({ where: { id: c.id }, data: { status: "POSTED", postedAt: new Date(), approvedById: opts.approved ? actor.userId : null } });
   await audit(tx, actor, { hotelId, action: "COUNT_POST", entityType: "StockCount", entityId: c.id, after: { postedValue: posted.toString(), approved: opts.approved } });
   return posted;
+}
+
+/**
+ * Count summary per warehouse for a period (spec: "Sayım özeti"): stock value at the start, what came in
+ * (purchases, transfers in), what went out (consumption, waste, staff meals, complimentary, transfers out),
+ * the count differences posted, and the value at the end — plus the counts taken in the period.
+ * Values only: quantities of different products cannot be added up.
+ */
+export async function countSummary(db: Db, actor: Actor, hotelId: string, range: { from: Date; to: Date }) {
+  authorize(actor, "inventory:view", { hotelId });
+  const warehouses = await db.warehouse.findMany({ where: { hotelId, ...warehouseScope(actor) }, orderBy: { name: "asc" } });
+  const ids = warehouses.map((w) => w.id);
+  const [before, during, counts] = await Promise.all([
+    db.stockTransaction.groupBy({ by: ["warehouseId"], where: { hotelId, warehouseId: { in: ids }, txDate: { lt: range.from } }, _sum: { totalCost: true } }),
+    db.stockTransaction.groupBy({ by: ["warehouseId", "type"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
+    db.stockCount.findMany({ where: { hotelId, warehouseId: { in: ids }, countDate: { gte: range.from, lt: range.to } }, include: { lines: { select: { systemQty: true, countedQty: true, varianceValue: true, unitCost: true } } } }),
+  ]);
+  const IN = ["PURCHASE", "TRANSFER_IN", "OPENING", "PRODUCTION_IN"];
+  const OUT = ["CONSUMPTION", "WASTE", "STAFF_MEAL", "COMPLIMENTARY", "TRANSFER_OUT", "PRODUCTION_OUT"];
+  const num = (v: { toString(): string } | null | undefined) => D(v?.toString() ?? 0);
+  const rows = warehouses.map((w) => {
+    const opening = num(before.find((b) => b.warehouseId === w.id)?._sum.totalCost);
+    const mine = during.filter((d) => d.warehouseId === w.id);
+    const sumOf = (types: string[]) => mine.filter((d) => types.includes(d.type)).reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    const received = sumOf(IN);
+    const used = sumOf(OUT).neg();
+    const consumed = sumOf(["CONSUMPTION"]).neg();
+    const waste = sumOf(["WASTE"]).neg();
+    const countDiff = sumOf(["COUNT_ADJUSTMENT"]);
+    const other = mine.filter((d) => !IN.includes(d.type) && !OUT.includes(d.type) && d.type !== "COUNT_ADJUSTMENT").reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    const closing = opening.plus(received).minus(used).plus(countDiff).plus(other);
+    const wc = counts.filter((c) => c.warehouseId === w.id);
+    const posted = wc.filter((c) => c.status === "POSTED");
+    return {
+      warehouseId: w.id,
+      warehouse: w.name,
+      opening,
+      received,
+      consumed,
+      waste,
+      otherOut: used.minus(consumed).minus(waste),
+      countDiff,
+      otherAdjustments: other,
+      closing,
+      counts: wc.length,
+      postedCounts: posted.length,
+      lastCount: wc.reduce<Date | null>((a, c) => (!a || c.countDate > a ? c.countDate : a), null),
+      countedValue: posted.reduce((a, c) => a.plus(c.lines.reduce((s, l) => s.plus(num(l.countedQty).times(num(l.unitCost))), ZERO)), ZERO),
+      shortage: posted.reduce((a, c) => a.plus(c.lines.reduce((s, l) => (num(l.varianceValue).lt(0) ? s.plus(num(l.varianceValue)) : s), ZERO)), ZERO),
+      surplus: posted.reduce((a, c) => a.plus(c.lines.reduce((s, l) => (num(l.varianceValue).gt(0) ? s.plus(num(l.varianceValue)) : s), ZERO)), ZERO),
+    };
+  });
+  const total = (k: keyof (typeof rows)[number]) => rows.reduce((a, r) => a.plus(r[k] as Decimal), ZERO);
+  return { rows, totals: { opening: total("opening"), received: total("received"), consumed: total("consumed"), waste: total("waste"), otherOut: total("otherOut"), countDiff: total("countDiff"), otherAdjustments: total("otherAdjustments"), closing: total("closing"), shortage: total("shortage"), surplus: total("surplus"), countedValue: total("countedValue") } };
 }

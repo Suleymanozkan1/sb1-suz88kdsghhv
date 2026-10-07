@@ -127,7 +127,7 @@ export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from
   authorize(actor, "waste:view", { hotelId });
   // an explicit department filter can only narrow the user's scope, never widen it
   if (f.departmentId) requireDepartment(actor, f.departmentId);
-  return db.wasteRecord.findMany({
+  const rows = await db.wasteRecord.findMany({
     where: {
       hotelId,
       ...departmentScope(actor),
@@ -136,7 +136,51 @@ export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from
       ...(f.from || f.to ? { wasteDate: { ...(f.from ? { gte: f.from } : {}), ...(f.to ? { lt: f.to } : {}) } } : {}),
     },
     include: { product: { include: { category: true } }, department: true, warehouse: true },
-    orderBy: { wasteDate: "desc" },
+    orderBy: [{ wasteDate: "desc" }, { createdAt: "desc" }],
     take: 500,
   });
+  // who entered each record (and who approved it): every waste line is attributable
+  const users = new Map((await db.user.findMany({ where: { id: { in: [...new Set(rows.flatMap((r) => [r.userId, r.approvedById ?? ""]))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  return rows.map((r) => ({ ...r, enteredBy: users.get(r.userId) ?? null, approvedBy: r.approvedById ? (users.get(r.approvedById) ?? null) : null }));
+}
+
+export const wasteBatchInput = z.object({
+  departmentId: z.string().min(1),
+  warehouseId: z.string().min(1),
+  wasteDate: z.coerce.date(),
+  lines: z
+    .array(z.object({ productId: z.string().min(1), quantity: dec.refine((v) => Number(v) > 0, "Quantity must be positive"), unit: z.string().min(1), wasteType: z.enum(WASTE_TYPES).default("SPOILED"), reason: z.string().max(500).optional().nullable() }))
+    .min(1)
+    .max(200),
+});
+
+/**
+ * End-of-day waste list: staff note waste during the day ("5 of 50 eggs"), the chef enters the whole list at once.
+ * All lines are saved together or none (one bad line rolls the batch back and names the line).
+ */
+export async function recordWasteBatch(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "waste:record", { hotelId });
+  const input = wasteBatchInput.parse(raw);
+  return inTx(
+    db,
+    async (tx) => {
+      let posted = 0;
+      let pending = 0;
+      let cost = ZERO;
+      for (const [i, l] of input.lines.entries()) {
+        try {
+          const r = await recordWaste(tx, actor, hotelId, { departmentId: input.departmentId, warehouseId: input.warehouseId, wasteDate: input.wasteDate, ...l });
+          if (r.status === "POSTED") {
+            posted++;
+            cost = cost.plus(D(r.record.costValue?.toString() ?? 0));
+          } else pending++;
+        } catch (e) {
+          if (e instanceof DomainError) throw new DomainError(e.code, `Line ${i + 1}: ${e.message}`, e.details);
+          throw e;
+        }
+      }
+      return { posted, pending, cost: cost.toString() };
+    },
+    { timeout: 60_000 },
+  );
 }

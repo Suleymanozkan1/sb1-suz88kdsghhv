@@ -31,7 +31,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader title={t("Waste / zayiat")} subtitle={t("Valued at cost (frozen from the ledger at posting). High-value records require approval.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
+      <PageHeader exportKey="waste" title={t("Waste / zayiat")} subtitle={t("Valued at cost (frozen from the ledger at posting). High-value records require approval.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
       {can(actor, "waste:record") && <Card title={t("Record waste")} className="mb-4"><WasteForm types={[...WASTE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} /></Card>}
       <div className="grid gap-3 md:grid-cols-4">
         <Stat label={t("Posted waste cost")} value={money(total, cur, 0)} hint={t("{n} records", { n: posted.length })} />
@@ -42,7 +42,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
       <Card className="mt-4" padded={false} title={t("Waste records")}>
         {rows.length === 0 ? <div className="p-4"><Empty title={t("No waste in this period")} /></div> : (
           <Table>
-            <thead><tr><Th>{t("Date")}</Th><Th>{t("Department")}</Th><Th>{t("Product")}</Th><Th>{t("Reason")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Cost")}</Th><Th>{t("Status")}</Th></tr></thead>
+            <thead><tr><Th>{t("Date")}</Th><Th>{t("Department")}</Th><Th>{t("Product")}</Th><Th>{t("Reason")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Cost")}</Th><Th>{t("Entered by")}</Th><Th>{t("Status")}</Th></tr></thead>
             <tbody className="divide-y divide-ink-100">
               {rows.map((r) => (
                 <tr key={r.id}>
@@ -51,6 +51,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
                   <Td align="right">{qty(r.quantity.toString(), r.unit)}</Td>
                   <Td align="right">{money(r.unitCost?.toString(), cur)}</Td>
                   <Td align="right">{money(r.costValue?.toString(), cur)}</Td>
+                  <Td><span className="text-xs">{r.enteredBy ?? "—"}</span></Td>
                   <Td><Badge tone={r.status === "APPROVED" ? "green" : r.status === "PENDING" ? "amber" : "red"}>{t(r.status === "APPROVED" ? "POSTED" : r.status)}</Badge></Td>
                 </tr>
               ))}
