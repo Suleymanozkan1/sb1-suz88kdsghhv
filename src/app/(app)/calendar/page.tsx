@@ -32,7 +32,7 @@ export default async function CalendarPage() {
   const r = res.data;
   return (
     <>
-      <PageHeader title={t("Cost control calendar")} subtitle={t("Recurring controls: weekly counts, month-end inventory, recipe, supplier price, waste and buffet reviews, cost closing and the management report. System evidence is shown next to each due date; completing a control is a recorded, audited action.")} />
+      <PageHeader title={t("Cost control calendar")} subtitle={t("Recurring controls: weekly counts, month-end inventory, recipe, supplier price, waste and buffet reviews, cost closing and the management report. System evidence is shown next to each due date; completing a control is a recorded, audited action.")} exportKey="calendar" />
       <div className="grid grid-cols-3 gap-3">
         <Stat label={t("Overdue")} value={r.counts.overdue} tone={r.counts.overdue ? "bad" : "good"} />
         <Stat label={t("Done (last 4 weeks)")} value={r.counts.done} />

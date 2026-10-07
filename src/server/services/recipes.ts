@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Prisma, Recipe, RecipeIngredient, RecipeVersion } from "@prisma/client";
 import { D, Decimal, str, pct } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
-import { costRecipe, serializeCost, validateRecipeDef, type CostResolver, type ProductCostInfo, type RecipeCostResult, type RecipeDef } from "@/domain/recipe-cost";
+import { COST_MODEL, costRecipe, serializeCost, validateRecipeDef, type CostResolver, type ProductCostInfo, type RecipeCostResult, type RecipeDef } from "@/domain/recipe-cost";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
@@ -16,9 +16,14 @@ const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine
 
 export const RECIPE_TYPES = ["RESTAURANT", "CAFE", "BAR", "BREAKFAST", "PASTRY", "BANQUET", "ROOM_SERVICE", "MINIBAR", "STAFF_MEAL", "COMPLIMENTARY", "PRODUCTION", "SEMI_FINISHED"] as const;
 
+/**
+ * A version is the portions it makes (a dish) or the quantity it makes in kg / l / pc (a sauce, dough...).
+ * Yield %, waste %, production loss % and per-batch other costs are not used in costing any more: still accepted
+ * from old clients, always stored neutral (100 % / 0).
+ */
 export const versionInput = z.object({
-  batchYieldQty: dec,
-  yieldUnit: z.string().min(1),
+  batchYieldQty: dec.optional(),
+  yieldUnit: z.string().min(1).optional(),
   portions: dec,
   portionSize: dec.optional().nullable(),
   portionUnit: z.string().optional().nullable(),
@@ -45,7 +50,8 @@ export const versionInput = z.object({
 });
 
 export const recipeInput = z.object({
-  code: z.string().trim().min(1).max(32),
+  /** optional: generated (R-0001…) when empty */
+  code: z.string().trim().max(32).optional().nullable(),
   name: z.string().trim().min(1).max(200),
   type: z.enum(RECIPE_TYPES),
   departmentId: z.string().optional().nullable(),
@@ -153,23 +159,30 @@ async function assertRefs(db: Db, hotelId: string, lines: z.infer<typeof version
 
 function versionData(v: z.infer<typeof versionInput>) {
   return {
-    batchYieldQty: v.batchYieldQty,
-    yieldUnit: v.yieldUnit,
+    batchYieldQty: v.batchYieldQty ?? v.portions,
+    yieldUnit: v.yieldUnit ?? "portion",
     portions: v.portions,
     portionSize: v.portionSize ?? null,
     portionUnit: v.portionUnit ?? null,
     sellingPrice: v.sellingPrice ?? null,
-    packagingCost: v.packagingCost ?? "0",
-    laborCost: v.laborCost ?? "0",
-    energyCost: v.energyCost ?? "0",
-    otherCost: v.otherCost ?? "0",
-    productionLossPct: v.productionLossPct ?? "0",
+    packagingCost: "0",
+    laborCost: "0",
+    energyCost: "0",
+    otherCost: "0",
+    productionLossPct: "0",
     reason: v.reason ?? null,
   };
 }
 
 function lineData(lines: z.infer<typeof versionInput>["lines"]) {
-  return lines.map((l, i) => ({ sortOrder: i, productId: l.productId || null, subRecipeId: l.subRecipeId || null, quantity: l.quantity, unit: l.unit, yieldPct: l.yieldPct ?? null, wastePct: l.wastePct ?? "0", note: l.note ?? null }));
+  return lines.map((l, i) => ({ sortOrder: i, productId: l.productId || null, subRecipeId: l.subRecipeId || null, quantity: l.quantity, unit: l.unit, yieldPct: null, wastePct: "0", note: l.note ?? null }));
+}
+
+/** Next free automatic recipe code: R-0001, R-0002… */
+async function nextRecipeCode(db: Db, hotelId: string): Promise<string> {
+  const used = await db.recipe.findMany({ where: { hotelId, code: { startsWith: "R-" } }, select: { code: true } });
+  const max = used.reduce((m, r) => Math.max(m, Number(/^R-(\d+)$/.exec(r.code)?.[1] ?? 0)), 0);
+  return `R-${String(max + 1).padStart(4, "0")}`;
 }
 
 export async function createRecipe(db: Db, actor: Actor, hotelId: string, raw: unknown) {
@@ -177,14 +190,15 @@ export async function createRecipe(db: Db, actor: Actor, hotelId: string, raw: u
   const input = recipeInput.parse(raw);
   requireDepartment(actor, input.departmentId ?? null);
   return inTx(db, async (tx) => {
-    if (await tx.recipe.findFirst({ where: { hotelId, code: input.code } })) throw new DomainError("DUPLICATE", `Recipe code ${input.code} exists`);
+    const code = input.code || (await nextRecipeCode(tx, hotelId));
+    if (await tx.recipe.findFirst({ where: { hotelId, code } })) throw new DomainError("DUPLICATE", `Recipe code ${code} exists`);
     if (input.departmentId && !(await tx.department.findFirst({ where: { id: input.departmentId, hotelId } }))) throw new DomainError("VALIDATION", "Department not found");
     if (input.outputProductId && !(await tx.product.findFirst({ where: { id: input.outputProductId, hotelId } }))) throw new DomainError("VALIDATION", "Output product not found");
     await assertRefs(tx, hotelId, input.version.lines);
     const recipe = await tx.recipe.create({
       data: {
         hotelId,
-        code: input.code,
+        code,
         name: input.name,
         type: input.type,
         departmentId: input.departmentId ?? null,
@@ -381,4 +395,57 @@ export async function priceImpact(db: Db, actor: Actor, hotelId: string, product
     }
   }
   return { product: { id: product.id, name: product.name, oldUnitCost: str(product.unitCost === null ? null : D(product.unitCost), 4), newUnitCost: str(D(newUnitCost), 4) }, recipes: rows.sort((a, b) => Number(b.costChange ?? 0) - Number(a.costChange ?? 0)) };
+}
+
+type SnapLine = { kind: string; refId: string; unitCost: string | null; children?: SnapTree };
+type SnapTree = { recipeId: string; versionId?: string; model?: number; lines: SnapLine[] };
+
+/**
+ * One-off correction after the costing rule changed (COST_MODEL 2: a recipe quantity is the raw quantity used).
+ * Re-costs the frozen snapshot of every approved / superseded version that was costed with yield and waste,
+ * with the SAME unit costs it was frozen with (read from the old snapshot) and the same sub-recipe versions, so
+ * only the rule changes, not the prices. Idempotent: snapshots already on model 2 are skipped.
+ */
+export async function refreezeSnapshots(db: Db, hotelId: string): Promise<number> {
+  const versions = await db.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } }, include: { recipe: true, lines: true } });
+  const todo = versions.filter((v) => v.costSnapshot && (v.costSnapshot as SnapTree).model !== COST_MODEL);
+  if (!todo.length) return 0;
+  const byId = new Map(versions.map((v) => [v.id, v]));
+  const current = new Map<string, (typeof versions)[number]>();
+  for (const v of versions.sort((a, b) => a.version - b.version)) if (v.status === "APPROVED" || !current.has(v.recipeId)) current.set(v.recipeId, v);
+  const products = new Map((await db.product.findMany({ where: { hotelId }, include: { conversions: true } })).map((p) => [p.id, p]));
+  let n = 0;
+  for (const v of todo) {
+    const snap = v.costSnapshot as SnapTree;
+    const costs = new Map<string, string | null>();
+    const subVersion = new Map<string, string>();
+    const walk = (tree: SnapTree) => {
+      for (const l of tree.lines ?? []) {
+        if (l.kind === "PRODUCT") costs.set(l.refId, l.unitCost);
+        if (l.children) {
+          if (l.children.versionId) subVersion.set(l.children.recipeId, l.children.versionId);
+          walk(l.children);
+        }
+      }
+    };
+    walk(snap);
+    const resolver: CostResolver = {
+      product: (id) => {
+        const p = products.get(id);
+        return p ? { id: p.id, name: p.name, stockUnit: p.stockUnit, unitCost: costs.get(id) ?? null, yieldPct: "100", active: p.active, conversions: toConversions(p.conversions) } : undefined;
+      },
+      recipe: (id) => {
+        const sv = byId.get(subVersion.get(id) ?? "") ?? current.get(id);
+        return sv ? versionToDef(sv.recipe, sv) : undefined;
+      },
+    };
+    try {
+      const cost = costRecipe(versionToDef(v.recipe, v), resolver);
+      await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      n++;
+    } catch (e) {
+      console.error(`[recipes:refreeze] ${v.recipe.code} v${v.version}:`, e instanceof Error ? e.message : e);
+    }
+  }
+  return n;
 }

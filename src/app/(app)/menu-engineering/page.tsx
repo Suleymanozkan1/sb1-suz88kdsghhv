@@ -25,7 +25,7 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
   const departments = await prisma.department.findMany({ where: { hotelId, isOutlet: true }, orderBy: { name: "asc" } });
   return (
     <>
-      <PageHeader title={t("Menu engineering")} subtitle={t("Popularity (menu mix ≥ 70 % of an equal share = {popularity}) × contribution per unit (≥ weighted average {contribution}). Cost = recipe version frozen at sale; \"cost change\" shows today's recipe cost vs then.", { popularity: pct(f100(r.thresholds.popularity)), contribution: money(r.thresholds.contributionPerUnit, cur) })} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
+      <PageHeader title={t("Menu engineering")} subtitle={t("Popularity (menu mix ≥ 70 % of an equal share = {popularity}) × contribution per unit (≥ weighted average {contribution}). Cost = recipe version frozen at sale; \"cost change\" shows today's recipe cost vs then.", { popularity: pct(f100(r.thresholds.popularity)), contribution: money(r.thresholds.contributionPerUnit, cur) })} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} exportKey="menu-engineering" />
       {r.items.length === 0 ? <Empty title={t("No mapped sales in this period")} /> : (
         <>
           <div className="grid gap-3 md:grid-cols-2">

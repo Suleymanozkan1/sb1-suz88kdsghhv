@@ -126,7 +126,7 @@ export async function verifyDemo(db: PrismaClient, opts: { log?: (s: string) => 
       scores.push({ hotel: tag, qa, score: Number(dq.score.accuracyScore) });
       if (qa) {
         const by = Object.fromEntries(dq.checks.map((c) => [c.key, c.count]));
-        for (const k of ["unmapped_sales", "missing_cost", "negative_stock", "no_supplier", "implausible_yield", "missing_conversion", "future_dated", "recipes"]) check(`${tag}: intentional error detected - ${k}`, (by[k] ?? 0) > 0, String(by[k]));
+        for (const k of ["unmapped_sales", "missing_cost", "negative_stock", "no_supplier", "missing_conversion", "future_dated", "recipes"]) check(`${tag}: intentional error detected - ${k}`, (by[k] ?? 0) > 0, String(by[k]));
       }
     }
   }

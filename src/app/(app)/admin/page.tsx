@@ -18,7 +18,7 @@ export default async function AdminPage() {
   const orgHotels = await prisma.hotel.findMany({ where: { organizationId: actor.organizationId, id: { in: [...actor.hotelIds] } }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, active: true } });
   return (
     <>
-      <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} />
+      <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} exportKey="admin" />
       <AdminConsole
         me={actor.userId}
         canHotels={can(actor, "admin:hotels")}

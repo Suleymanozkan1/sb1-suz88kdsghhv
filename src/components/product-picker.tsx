@@ -18,7 +18,7 @@ export interface PickedProduct {
   conversions?: { fromUnit: string; toUnit: string; factor: string }[];
 }
 
-/** Server-side search by name, SKU, barcode, brand or category. */
+/** Server-side search by name, stock code, brand or category. */
 export function ProductPicker({ value, onChange, placeholder, id }: { value: PickedProduct | null; onChange: (p: PickedProduct | null) => void; placeholder?: string; id?: string }) {
   const t = useT();
   const [q, setQ] = useState("");
@@ -67,7 +67,7 @@ export function ProductPicker({ value, onChange, placeholder, id }: { value: Pic
           if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
           if (e.key === "Enter" && items[active]) { e.preventDefault(); onChange(items[active]!); setQ(""); setOpen(false); }
         }}
-        placeholder={placeholder ?? t("Search name, SKU, barcode…")}
+        placeholder={placeholder ?? t("Search name or stock code…")}
         className="block w-full rounded-lg border border-ink-200 bg-white py-2 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
       />
       {open && items.length > 0 && (

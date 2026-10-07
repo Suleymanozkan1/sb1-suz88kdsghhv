@@ -9,7 +9,7 @@ import { z } from "zod";
 export const POST = api(async ({ actor, hotelId, body }) => {
   authorize(actor, "recipe:view", { hotelId });
   const b = z.object({ name: z.string().default("Draft"), version: versionInput }).parse(await body());
-  const def = { recipeId: "__draft__", name: b.name, ...b.version, lines: b.version.lines.map((l) => ({ ...l, productId: l.productId || null, subRecipeId: l.subRecipeId || null })) };
+  const def = { recipeId: "__draft__", name: b.name, ...b.version, batchYieldQty: b.version.batchYieldQty ?? b.version.portions, yieldUnit: b.version.yieldUnit ?? "portion", lines: b.version.lines.map((l) => ({ ...l, productId: l.productId || null, subRecipeId: l.subRecipeId || null })) };
   const resolver = await buildResolver(prisma, hotelId, { draftOverride: def });
   const issues = validateRecipeDef(def, resolver);
   let cost = null;

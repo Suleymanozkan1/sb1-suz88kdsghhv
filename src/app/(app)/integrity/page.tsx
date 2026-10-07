@@ -18,7 +18,7 @@ export default async function IntegrityPage() {
   if (!runs.ok) return <Alert>{runs.error}</Alert>;
   return (
     <>
-      <PageHeader title={t("Calculation integrity")} subtitle={t("Cost engine safety: checks every ledger relationship (balances, FIFO layers, cost ledger, expenses, allocations, recipe snapshots, minibar). Ledgers are append-only and never recalculated; only derived balances can be rebuilt, and every run is logged with its corrections.")} />
+      <PageHeader title={t("Calculation integrity")} subtitle={t("Cost engine safety: checks every ledger relationship (balances, FIFO layers, cost ledger, expenses, allocations, recipe snapshots, minibar). Ledgers are append-only and never recalculated; only derived balances can be rebuilt, and every run is logged with its corrections.")} exportKey="integrity" />
       <Card title={t("Checks and safe recalculation")}><IntegrityActions canRebuild={can(actor, "period:close_override")} canReprocess={can(actor, "sales:import")} /></Card>
       <Card title={t("Calculation runs")} className="mt-4" padded={false}>
         {runs.data.length === 0 ? <div className="p-4"><Empty title={t("No runs yet")} /></div> : (

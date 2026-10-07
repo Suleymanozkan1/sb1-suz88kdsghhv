@@ -27,7 +27,7 @@ export default async function SavingsPage({ searchParams }: { searchParams: Prom
   const A = opps.data.assumptions;
   return (
     <>
-      <PageHeader title={t("Cost savings")} subtitle={t("Opportunities sized from posted data with their formula and assumption; actions with owner, due date, target and realized saving.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
+      <PageHeader title={t("Cost savings")} subtitle={t("Opportunities sized from posted data with their formula and assumption; actions with owner, due date, target and realized saving.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} exportKey="savings" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Potential saving (period)")} value={money(opps.data.total, cur, 0)} hint={t("{n} opportunities", { n: opps.data.opportunities.length })} />
         <Stat label={t("Expected (actions)")} value={money(a.totals.expected, cur, 0)} />

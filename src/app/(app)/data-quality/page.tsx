@@ -15,7 +15,7 @@ export default async function DataQualityPage() {
   const { score, checks } = res.data;
   return (
     <>
-      <PageHeader title={t("Data quality center")} subtitle={t("We never present estimates as exact. These checks decide how much confidence the cost figures deserve.")} />
+      <PageHeader title={t("Data quality center")} subtitle={t("We never present estimates as exact. These checks decide how much confidence the cost figures deserve.")} exportKey="data-quality" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Stat label={t("Accuracy score")} value={score.accuracyScore ?? "—"} tone={score.status === "GREEN" ? "good" : score.status === "YELLOW" ? "warn" : "bad"} badge={<Badge tone={score.status === "GREEN" ? "green" : score.status === "YELLOW" ? "amber" : "red"}>{t(score.status)}</Badge>} />
         <Stat label={t("Confidence")} value={t(score.confidence.replace("_", " "))} />

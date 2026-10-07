@@ -94,7 +94,7 @@ function excelValue(v: XValue, type: XType | undefined): ExcelJS.CellValue {
 }
 
 const sheetName = (s: string, used: Set<string>) => {
-  let base = s.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || "Rapor";
+  const base = s.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || "Rapor";
   let n = 1;
   let name = base;
   while (used.has(name.toLowerCase())) name = `${base.slice(0, 26)} ${++n}`;

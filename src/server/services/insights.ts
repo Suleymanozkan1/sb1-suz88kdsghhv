@@ -86,7 +86,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   authorize(actor, "dashboard:view", { hotelId });
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [products, recipes, salesTotal, salesUnmapped, negative, lastCount, pendingApprovals, noSupplier, openPeriods, missingYield] = await Promise.all([
+  const [products, recipes, salesTotal, salesUnmapped, negative, lastCount, pendingApprovals, noSupplier, openPeriods] = await Promise.all([
     db.product.findMany({ where: { hotelId, active: true }, select: { id: true, name: true, isStockItem: true, defaultSupplierId: true } }),
     db.recipe.findMany({ where: { hotelId, active: true, ...departmentScope(actor) }, include: { versions: { include: { lines: true } } } }),
     db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart } } }),
@@ -96,12 +96,11 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
     db.approval.count({ where: { hotelId, status: "PENDING" } }),
     db.product.count({ where: { hotelId, active: true, defaultSupplierId: null, isStockItem: true } }),
     db.costPeriod.count({ where: { hotelId, status: { in: ["OPEN", "REOPENED"] }, endDate: { lt: monthStart } } }),
-    db.product.count({ where: { hotelId, active: true, yieldPct: 100, category: { group: "FOOD" } } }),
   ]);
   const unmappedCount = await db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null } });
-  // master-data plausibility (spec 66, 113): implausible yields, purchase units without a conversion, future-dated records
-  const [badYield, convProducts, futureSales, futureWaste] = await Promise.all([
-    db.product.findMany({ where: { hotelId, active: true, OR: [{ yieldPct: { lt: 30 } }, { yieldPct: { gt: 100 } }] }, select: { id: true, name: true, yieldPct: true } }),
+  // master-data plausibility (spec 66, 113): purchase units without a conversion, future-dated records
+  // (no yield checks: a recipe quantity is the raw quantity used, products carry no yield)
+  const [convProducts, futureSales, futureWaste] = await Promise.all([
     db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, select: { id: true, name: true, purchaseUnit: true, stockUnit: true, conversions: { select: { fromUnit: true, toUnit: true } } } }),
     db.saleLine.count({ where: { hotelId, saleDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
     db.wasteRecord.count({ where: { hotelId, wasteDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
@@ -158,9 +157,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
       { key: "stock_count", label: "Days since last posted stock count", count: daysSinceCount ?? -1, items: [] },
       { key: "approvals", label: "Pending approvals", count: pendingApprovals, items: [] },
       { key: "no_supplier", label: "Stock products without default supplier", count: noSupplier, items: [] },
-      { key: "missing_yield", label: "Food products using default 100% yield", count: missingYield, items: [] },
       { key: "unclosed_periods", label: "Past periods not closed", count: openPeriods, items: [] },
-      { key: "implausible_yield", label: "Products with an implausible yield (< 30 % or > 100 %)", count: badYield.length, items: badYield.slice(0, 50).map((p) => ({ id: p.id, name: `${p.name}: ${p.yieldPct.toString()} %` })) },
       { key: "missing_conversion", label: "Purchase unit without a conversion to the stock unit", count: missingConversion.length, items: missingConversion.slice(0, 50).map((p) => ({ id: p.id, name: `${p.name}: 1 ${p.purchaseUnit} = ? ${p.stockUnit}` })) },
       { key: "future_dated", label: "Sales or waste dated in the future", count: futureSales + futureWaste, items: [] },
     ],

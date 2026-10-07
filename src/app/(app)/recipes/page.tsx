@@ -18,7 +18,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   if (!res.ok) return <Alert>{res.error}</Alert>;
   return (
     <>
-      <PageHeader title={t("Recipes")} subtitle={t("Live cost from the shared recipe engine (sub-recipes cascade). Approved versions are frozen.")} actions={can(actor, "recipe:manage") ? <Link href="/recipes/new"><Button><Plus className="h-4 w-4" /> {t("New Recipe")}</Button></Link> : null} />
+      <PageHeader exportKey="recipes" title={t("Recipes")} subtitle={t("Live cost from the shared recipe engine (sub-recipes cascade). Approved versions are frozen.")} actions={can(actor, "recipe:manage") ? <Link href="/recipes/new"><Button><Plus className="h-4 w-4" /> {t("New Recipe")}</Button></Link> : null} />
       <Card padded={false} actions={
         <form method="get" className="flex gap-2">
           <Input name="q" defaultValue={sp.q} placeholder={t("Search")} aria-label={t("Search recipes")} className="w-48" />

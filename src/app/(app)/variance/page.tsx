@@ -33,6 +33,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
             <a href={exportUrl} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium hover:bg-ink-50"><Download className="h-4 w-4" aria-hidden /> {tr("Export CSV")}</a>
           ) : null
         }
+        exportKey="variance"
       />
       <Card className="mb-4">
         <PeriodFilter

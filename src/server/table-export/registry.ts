@@ -4,7 +4,46 @@
  */
 import type { ReportDef } from "./types";
 import { inventory } from "./reports/inventory";
+import { recipe, recipes } from "./reports/recipes";
+import { products } from "./reports/products";
+import { budget } from "./reports/budget";
+import { forecast } from "./reports/forecast";
+import { allocation } from "./reports/allocation";
+import { periods } from "./reports/periods";
+import { approvals } from "./reports/approvals";
+import { calendar } from "./reports/calendar";
+import { reports } from "./reports/reports";
+import { audit } from "./reports/audit";
+import { integrity } from "./reports/integrity";
+import { sales } from "./reports/sales";
+import { admin } from "./reports/admin";
+import { dashboard } from "./reports/dashboard";
+import { variance } from "./reports/variance";
+import { menuEngineering } from "./reports/menu-engineering";
+import { savings } from "./reports/savings";
+import { review } from "./reports/review";
+import { dataQuality } from "./reports/data-quality";
 
 export const REPORTS: Record<string, ReportDef> = {
   inventory,
+  recipes,
+  recipe,
+  products,
+  budget,
+  forecast,
+  allocation,
+  periods,
+  approvals,
+  calendar,
+  reports,
+  audit,
+  integrity,
+  sales,
+  admin,
+  dashboard,
+  variance,
+  "menu-engineering": menuEngineering,
+  savings,
+  review,
+  "data-quality": dataQuality,
 };
