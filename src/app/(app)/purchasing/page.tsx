@@ -21,7 +21,7 @@ export default async function PurchasingPage() {
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader title={t("Purchasing & receiving")} subtitle={t("Goods receipts post landed cost to the stock ledger and record supplier price history.")} />
+      <PageHeader exportKey="purchasing" title={t("Purchasing & receiving")} subtitle={t("Goods receipts post landed cost to the stock ledger and record supplier price history.")} />
       {can(actor, "inventory:receive") && (
         <Card title={t("Receive goods")} className="mb-4">
           <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} />

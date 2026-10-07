@@ -184,14 +184,25 @@ export async function renderPdf(r: XReport, m: RenderMeta): Promise<Buffer> {
     const cells = (d: Record<string, XValue>) => tb.columns.map((c) => displayValue(d[c.key], c.type, m.currency, m.timeZone));
     const body = tb.rows.map(cells);
     const totals = tb.totals ? cells(tb.totals) : null;
-    // column widths from content (header counts once), shrunk to the page width
+    // column widths: never narrower than the longest header word (bold), else from the content; the table
+    // fills the page width (shrunk proportionally when too wide, header words kept whole where possible)
+    doc.font("bold").fontSize(FS);
+    const minW = tb.columns.map((c) => Math.max(...c.header.split(/\s+/).map((w) => doc.widthOfString(w))) + PAD * 2);
+    const headW = tb.columns.map((c) => doc.widthOfString(c.header) + PAD * 2);
     doc.font("body").fontSize(FS);
     const natural = tb.columns.map((c, i) => {
-      const sample = [c.header, ...body.slice(0, 200).map((b) => b[i]!), ...(totals ? [totals[i]!] : [])];
-      return Math.min(Math.max(...sample.map((s) => doc.widthOfString(s))) + PAD * 2, 220);
+      const sample = [...body.slice(0, 200).map((b) => b[i]!), ...(totals ? [totals[i]!] : [])];
+      const content = sample.length ? Math.max(...sample.map((s) => doc.widthOfString(s))) + PAD * 2 : 0;
+      return Math.min(Math.max(content, minW[i]!, Math.min(headW[i]!, 90)), 220);
     });
     const sum = natural.reduce((a, b) => a + b, 0);
-    const widths = natural.map((w) => (sum > width ? (w / sum) * width : w));
+    const minSum = minW.reduce((a, b) => a + b, 0);
+    const widths =
+      sum <= width
+        ? natural.map((w) => (w / sum) * width)
+        : minSum < width
+          ? natural.map((w, i) => minW[i]! + ((w - minW[i]!) / (sum - minSum)) * (width - minSum))
+          : natural.map((w) => (w / sum) * width);
     const right = tb.columns.map((c) => !!c.type && NUMERIC.includes(c.type));
     const rowHeight = (vals: string[], font: string) => {
       doc.font(font).fontSize(FS);
@@ -210,7 +221,7 @@ export async function renderPdf(r: XReport, m: RenderMeta): Promise<Buffer> {
       else if (opts.zebra) doc.rect(left, y, widths.reduce((a, b) => a + b, 0), h).fill("#f6f7f9");
       let x = left;
       vals.forEach((v, i) => {
-        doc.font(font).fontSize(FS).fillColor(opts.header ? "#ffffff" : "#1f2937").text(v, x + PAD, y + PAD, { width: widths[i]! - PAD * 2, height: h - PAD, align: right[i] && !opts.header ? "right" : "left", ellipsis: true });
+        doc.font(font).fontSize(FS).fillColor(opts.header ? "#ffffff" : "#1f2937").text(v, x + PAD, y + PAD, { width: widths[i]! - PAD * 2, height: h - PAD, align: right[i] ? "right" : "left", ellipsis: true });
         x += widths[i]!;
       });
       doc.y = y + h;

@@ -6,6 +6,8 @@ import type { ReportDef } from "./types";
 import { inventory } from "./reports/inventory";
 import { recipe, recipes } from "./reports/recipes";
 import { products } from "./reports/products";
+import { ledger } from "./reports/ledger";
+import { orders, purchasing } from "./reports/purchasing";
 import { budget } from "./reports/budget";
 import { forecast } from "./reports/forecast";
 import { allocation } from "./reports/allocation";
@@ -29,6 +31,9 @@ export const REPORTS: Record<string, ReportDef> = {
   recipes,
   recipe,
   products,
+  ledger,
+  purchasing,
+  orders,
   budget,
   forecast,
   allocation,

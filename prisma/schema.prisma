@@ -281,6 +281,10 @@ model Hotel {
   wasteApprovalValue      Decimal      @default(1000) @db.Decimal(20, 6)
   adjustmentApprovalValue Decimal      @default(1000) @db.Decimal(20, 6)
   marginTargetPct         Decimal      @default(65) @db.Decimal(20, 6)
+  /// sales deduct their recipe ingredients from stock (one CONSUMPTION per day, outlet and ingredient)
+  autoDeductSales         Boolean      @default(true)
+  /// the hotel day ends at night audit, not at midnight: "HH:MM" (local time); data before it belongs to the previous day
+  businessDayCutoff       String       @default("03:30")
   active                  Boolean      @default(true)
   createdAt               DateTime     @default(now())
 

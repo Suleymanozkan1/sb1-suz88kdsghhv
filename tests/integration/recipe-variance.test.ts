@@ -3,7 +3,7 @@ import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postGoodsReceipt } from "@/server/services/purchasing";
 import { postMovement } from "@/server/services/ledger";
 import { createRecipe, approveVersion, createVersion, recipeCost, priceImpact, listRecipes } from "@/server/services/recipes";
-import { commitSales, previewSales, rollbackSalesImport } from "@/server/services/sales";
+import { commitSales, postSalesConsumption, previewSales, rollbackSalesImport } from "@/server/services/sales";
 import { recordWaste } from "@/server/services/waste";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { dashboard } from "@/server/services/insights";
@@ -197,5 +197,35 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     const rb = await rollbackSalesImport(prisma, fb, h.hotel.id, res.import.id, "Wrong business date");
     expect(rb.removed).toBe(1);
     expect(await prisma.saleLine.count({ where: { hotelId: h.hotel.id, externalId: "RB-1" } })).toBe(0);
+  });
+});
+
+describe("sales deduct their recipe ingredients from stock", () => {
+  it("one consumption per business day, outlet and ingredient; rollback gives the stock back", async () => {
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: true } });
+    const before = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.restStore.id, productId: P.bun! } } });
+    // 3 burgers at 21:00 and 2 at 01:30 the next night (Istanbul): the same business day (night audit 03:30)
+    const res = await commitSales(prisma, fb, h.hotel.id, { rows: [
+      { externalId: "CHK-901-1", saleDate: "2026-09-20T18:00:00Z", department: "REST", posCode: "BURGER", quantity: 3, netRevenue: 1350 },
+      { externalId: "CHK-902-1", saleDate: "2026-09-20T22:30:00Z", department: "REST", posCode: "BURGER", quantity: 2, netRevenue: 900 },
+    ], source: "API" });
+    const moves = await prisma.stockTransaction.findMany({ where: { hotelId: h.hotel.id, sourceType: "SALE", sourceId: res.import.id } });
+    const bun = moves.filter((m) => m.productId === P.bun);
+    expect(bun).toHaveLength(1);
+    expect(bun[0]!.quantity.toString()).toBe("-5"); // 1 bun per burger × 5
+    expect(bun[0]!.txDate.toISOString().slice(0, 10)).toBe("2026-09-20");
+    expect(bun[0]!.reason).toContain("5 × Classic Burger");
+    // beef: 1.2 kg raw per 10 portions (current version) × 5 = 0.6 kg — nothing added for yield
+    expect(moves.find((m) => m.productId === P.beef)!.quantity.toString()).toBe("-0.6");
+    // mayonnaise is a sub-recipe: its oil and eggs are deducted
+    expect(moves.some((m) => m.productId === P.oil)).toBe(true);
+    const after = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.restStore.id, productId: P.bun! } } });
+    expect(D(before.quantity.toString()).minus(D(after.quantity.toString())).toString()).toBe("5");
+    // re-running the deduction never posts twice
+    expect(await postSalesConsumption(prisma, fb, h.hotel.id, res.import.id)).toBe(0);
+    await rollbackSalesImport(prisma, fb, h.hotel.id, res.import.id, "test");
+    const back = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.restStore.id, productId: P.bun! } } });
+    expect(back.quantity.toString()).toBe(before.quantity.toString());
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: false } });
   });
 });
