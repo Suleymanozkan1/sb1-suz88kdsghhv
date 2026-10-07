@@ -1,18 +1,33 @@
 import { clsx } from "clsx";
+import { Suspense } from "react";
+import { ExportButtons } from "./export-buttons";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
 
 export function cn(...a: Parameters<typeof clsx>) {
   return clsx(...a);
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+/**
+ * Page title row. `exportKey`: the page's report (src/server/table-export/reports) — PDF and Excel buttons at the
+ * top right, after the page's own actions; every list/report page has one.
+ */
+export function PageHeader({ title, subtitle, actions, exportKey, exportParams }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined> }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink-950">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {(actions || exportKey) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {actions}
+          {exportKey && (
+            <Suspense fallback={null}>
+              <ExportButtons report={exportKey} params={exportParams} />
+            </Suspense>
+          )}
+        </div>
+      )}
     </div>
   );
 }

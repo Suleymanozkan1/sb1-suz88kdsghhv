@@ -21,7 +21,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader title={t("Inventory")} subtitle={t("Current quantity, weighted-average unit cost and stock value from the ledger.")} />
+      <PageHeader title={t("Inventory")} subtitle={t("Current quantity, weighted-average unit cost and stock value from the ledger.")} exportKey="inventory" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Stat label={t("Stock value")} value={money(inv.totalValue, cur, 0)} />
         {(["NORMAL", "LOW", "CRITICAL", "OUT_OF_STOCK", "OVERSTOCK"] as const).map((l) => (
