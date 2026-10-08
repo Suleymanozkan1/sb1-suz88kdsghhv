@@ -1,7 +1,6 @@
-import { Download } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { theoreticalVsActual } from "@/server/services/variance";
-import { can, departmentScope } from "@/server/auth/actor";
+import { departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
@@ -21,18 +20,12 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
   const r = res.data;
   const t = r.totals;
   const cur = hotel.baseCurrency;
-  const exportUrl = `/api/variance/export?from=${range.fromStr}&to=${range.toStr}${sp.departmentId ? `&departmentId=${sp.departmentId}` : ""}`;
 
   return (
     <>
       <PageHeader
         title={tr("Theoretical vs actual")}
         subtitle={tr("What should have happened, what actually happened, and why they differ.")}
-        actions={
-          can(actor, "report:export") ? (
-            <a href={exportUrl} className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium hover:bg-ink-50"><Download className="h-4 w-4" aria-hidden /> {tr("Export CSV")}</a>
-          ) : null
-        }
         exportKey="variance"
       />
       <Card className="mb-4">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { filterRules } from "./filter-rules";
 import { Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Label, Select, Table, Td, Th, cn } from "@/components/ui";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
@@ -108,12 +109,29 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
   const router = useRouter();
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState("");
-  const [onlyDue, setOnlyDue] = useState(false);
+  const sp = useSearchParams();
+  const [filter, setFilterState] = useState(sp?.get("q") ?? "");
+  const [onlyDue, setOnlyDueState] = useState(sp?.get("due") === "1");
+  // the filters live in the URL as well, so PDF / Excel / CSV export exactly the rows on screen
+  const syncUrl = (q: string, d: boolean) => {
+    const u = new URLSearchParams(window.location.search);
+    if (q.trim()) u.set("q", q.trim());
+    else u.delete("q");
+    if (d) u.set("due", "1");
+    else u.delete("due");
+    window.history.replaceState(null, "", `?${u}`);
+  };
+  const setFilter = (v: string) => {
+    setFilterState(v);
+    syncUrl(v, onlyDue);
+  };
+  const setOnlyDue = (v: boolean) => {
+    setOnlyDueState(v);
+    syncUrl(filter, v);
+  };
   const [add, setAdd] = useState<{ product: PickedProduct | null; supplierId: string; reorderPoint: string; safetyStock: string; orderQty: string; email: string }>({ product: null, supplierId: suppliers[0]?.id ?? "", reorderPoint: "", safetyStock: "", orderQty: "", email: "" });
 
-  const f = filter.trim().toLocaleLowerCase();
-  const shown = rules.filter((r) => (!onlyDue || r.due) && (!f || `${r.product} ${r.category} ${r.supplier}`.toLocaleLowerCase().includes(f)));
+  const shown = filterRules(rules, filter, onlyDue);
   const due = rules.filter((r) => r.due).length;
 
   async function act(fn: () => Promise<Msg>) {

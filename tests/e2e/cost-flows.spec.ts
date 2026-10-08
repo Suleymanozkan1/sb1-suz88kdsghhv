@@ -102,7 +102,7 @@ test("variance page reconciles and export is permission-gated (spec §243)", asy
   await page.goto("/variance");
   await expect(page.getByText("= Actual usage (COGS)")).toBeVisible();
   await expect(page.getByText("= Unexplained")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Export CSV" })).toBeVisible();
+  await expect(page.locator("[data-export=variance]").getByRole("link", { name: "CSV" })).toBeVisible();
 
   const ctx = await page.context().storageState();
   expect(ctx.cookies.some((c) => c.name === "hc_session")).toBeTruthy();

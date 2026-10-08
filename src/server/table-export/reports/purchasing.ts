@@ -5,6 +5,7 @@ import { autoOrderOverview } from "../../services/auto-order";
 import { monthRange } from "../../page";
 
 const RECEIPT_SOURCE: Record<string, string> = { MICROS: "Micros", IMPORT: "From file import", MANUAL: "Entered by hand" };
+import { filterRules } from "@/app/(app)/purchasing/orders/filter-rules";
 import type { ReportDef } from "../types";
 
 /** /purchasing — goods receipts (one line per invoice line) and supplier price changes. */
@@ -50,16 +51,19 @@ export const orders: ReportDef = {
     requirePermission(actor, "purchase:view");
     if (q.get("tab") === "auto") {
       const o = await autoOrderOverview(prisma, actor, hotelId);
+      const onlyDue = q.get("due") === "1";
+      const rules = filterRules(o.rules, q.get("q"), onlyDue);
       return {
         title: t("Automatic ordering"),
         fileName: "otomatik-siparis",
+        filters: [[t("Search"), q.get("q") || t("All")], [t("Only at reorder point"), onlyDue ? t("Yes") : t("No")]],
         tables: [{
           columns: [
             { key: "supplier", header: t("Supplier") }, { key: "product", header: t("Product") }, { key: "category", header: t("Category") }, { key: "stock", header: t("Stock"), type: "qty" },
             { key: "rp", header: t("Reorder point"), type: "qty" }, { key: "ss", header: t("Safety stock"), type: "qty" }, { key: "oq", header: t("Order qty"), type: "qty" }, { key: "unit", header: t("Unit") },
             { key: "email", header: t("E-mail") }, { key: "state", header: t("Active / Passive") }, { key: "due", header: t("At reorder point") },
           ],
-          rows: o.rules.map((r) => ({ supplier: r.supplier, product: r.product, category: r.category, stock: r.stock, rp: r.reorderPoint, ss: r.safetyStock, oq: r.orderQty, unit: r.unit, email: r.email, state: r.active ? t("Active") : t("Passive"), due: r.due ? t("Yes") : "" })),
+          rows: rules.map((r) => ({ supplier: r.supplier, product: r.product, category: r.category, stock: r.stock, rp: r.reorderPoint, ss: r.safetyStock, oq: r.orderQty, unit: r.unit, email: r.email, state: r.active ? t("Active") : t("Passive"), due: r.due ? t("Yes") : "" })),
         }],
       };
     }
