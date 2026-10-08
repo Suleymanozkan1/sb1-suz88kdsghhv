@@ -12,7 +12,7 @@ export { prisma };
 export async function makeHotel(label = "T") {
   const tag = `${label}-${randomUUID().slice(0, 8)}`;
   const org = await prisma.organization.create({ data: { name: `Org ${tag}` } });
-  const hotel = await prisma.hotel.create({ data: { organizationId: org.id, code: tag, name: `Hotel ${tag}`, priceAlertPct: 10, wasteApprovalValue: 1000, adjustmentApprovalValue: 1000, marginTargetPct: 65 } });
+  const hotel = await prisma.hotel.create({ data: { organizationId: org.id, code: tag, name: `Hotel ${tag}`, priceAlertPct: 10, wasteApprovalValue: 1000, adjustmentApprovalValue: 1000, marginTargetPct: 65, autoDeductSales: false } }); // scenarios post their own usage; sales deduction has its own test
   const mk = (code: string, name: string) => prisma.department.create({ data: { hotelId: hotel.id, code, name, isOutlet: true } });
   const [restaurant, pastry, kitchen] = await Promise.all([mk("REST", "Restaurant"), mk("PAST", "Pastry"), mk("KITCHEN", "Kitchen")]);
   const [main, restStore, pastryStore] = await Promise.all([

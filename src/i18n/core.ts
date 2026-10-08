@@ -56,7 +56,12 @@ export function translateMessage(locale: Locale, msg: string): string {
   if (exact !== undefined) return exact;
   for (const c of compile()) {
     const m = c.re.exec(msg);
-    if (m) return c.tr.replace(/\{(\d+)\}/g, (_, i: string) => code(m[Number(i) + 1] ?? ""));
+    // a part may itself be a server message ("Line 2: Cannot waste more …"): translated too (always shorter → ends)
+    if (m) return c.tr.replace(/\{(\d+)\}/g, (_, i: string) => {
+      const part = m[Number(i) + 1] ?? "";
+      const c1 = code(part);
+      return c1 !== part || part.length < 12 ? c1 : translateMessage(locale, part);
+    });
   }
   return msg;
 }

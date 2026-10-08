@@ -3,7 +3,8 @@
  * manual adjustments, transfers) with authorization, plus ledger queries.
  */
 import { z } from "zod";
-import { D, ZERO } from "@/domain/money";
+import { D, ZERO, type Decimal } from "@/domain/money";
+import { businessDay } from "@/domain/business-day";
 import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { recommendOrder, expectedConsumption } from "@/domain/purchasing";
@@ -77,18 +78,18 @@ export async function postTransfer(db: Db, actor: Actor, hotelId: string, raw: u
   return transferStock(db, actor, { hotelId, fromWarehouseId: input.fromWarehouseId, toWarehouseId: input.toWarehouseId, productId: product.id, quantity: q, txDate: input.txDate, reason: input.reason });
 }
 
-export async function ledgerEntries(db: Db, actor: Actor, hotelId: string, f: { productId?: string; warehouseId?: string; type?: string; from?: Date; to?: Date; take?: number; skip?: number }) {
+export async function ledgerEntries(db: Db, actor: Actor, hotelId: string, f: { productId?: string; warehouseId?: string; type?: string; types?: string[]; from?: Date; to?: Date; take?: number; skip?: number }) {
   authorize(actor, "inventory:view", { hotelId });
   const where = {
     hotelId,
     ...(f.productId ? { productId: f.productId } : {}),
     ...(f.warehouseId ? { warehouseId: f.warehouseId } : {}),
-    ...(f.type ? { type: f.type as never } : {}),
+    ...(f.type ? { type: f.type as never } : f.types?.length ? { type: { in: f.types as never[] } } : {}),
     ...(f.from || f.to ? { txDate: { ...(f.from ? { gte: f.from } : {}), ...(f.to ? { lt: f.to } : {}) } } : {}),
     ...(actor.departmentIds === "ALL" ? {} : { OR: [departmentScope(actor), { warehouse: departmentScope(actor) }] }),
   };
   const [rows, total] = await Promise.all([
-    db.stockTransaction.findMany({ where, include: { product: true, warehouse: true, department: true, reversedBy: { select: { id: true } } }, orderBy: [{ txDate: "desc" }, { createdAt: "desc" }], take: Math.min(f.take ?? 100, 500), skip: f.skip ?? 0 }),
+    db.stockTransaction.findMany({ where, include: { product: true, warehouse: true, department: true, reversedBy: { select: { id: true } } }, orderBy: [{ txDate: "desc" }, { createdAt: "desc" }], take: Math.min(f.take ?? 100, 5000), skip: f.skip ?? 0 }),
     db.stockTransaction.count({ where }),
   ]);
   return { rows, total };
@@ -140,4 +141,69 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
       return { productId: p.id, sku: p.sku, name: p.name, unit: p.stockUnit, purchaseUnit: p.purchaseUnit, supplier: p.defaultSupplier?.name ?? null, method: exp.method, expected: exp.value, history: exp.steps, ...rec };
     })
     .filter((r) => r.recommended.gt(0) || r.expected.gt(0));
+}
+
+export type LedgerRow = Awaited<ReturnType<typeof ledgerEntries>>["rows"][number];
+export interface DetailLine {
+  /** the ledger row this line explains */
+  row: LedgerRow;
+  /** for sales: one line per check line; otherwise the row itself */
+  quantity: Decimal;
+  total: Decimal;
+  check?: string;
+  dish?: string;
+  sold?: Decimal;
+  saleDate?: Date;
+}
+
+/**
+ * Detailed view of ledger rows: a sales consumption row ("30 × Hamburger → 4.5 kg patty") becomes one line per
+ * check line that used the ingredient (check no, dish, quantity sold), valued at the row's unit cost; every other
+ * row stays as it is. The lines of a row add up to the row exactly (the last line takes the rounding).
+ */
+export async function explodeSalesRows(db: Db, rows: LedgerRow[]): Promise<DetailLine[]> {
+  const salesRows = rows.filter((r) => r.sourceType === "SALE" && r.sourceId && r.type === "CONSUMPTION");
+  const imports = [...new Set(salesRows.map((r) => r.sourceId!))];
+  const lines = imports.length
+    ? await db.saleLine.findMany({ where: { importId: { in: imports }, recipeVersionId: { not: null } }, include: { recipe: { select: { name: true } }, recipeVersion: { select: { costSnapshot: true } } }, orderBy: [{ saleDate: "asc" }, { externalId: "asc" }] })
+    : [];
+  const hotels = new Map((await db.hotel.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.hotelId))] } }, select: { id: true, timezone: true, businessDayCutoff: true } })).map((h) => [h.id, h]));
+  const out: DetailLine[] = [];
+  for (const r of rows) {
+    if (!(r.sourceType === "SALE" && r.sourceId && r.type === "CONSUMPTION")) {
+      out.push({ row: r, quantity: D(r.quantity.toString()), total: D(r.totalCost.toString()) });
+      continue;
+    }
+    const h = hotels.get(r.hotelId)!;
+    const day = r.txDate.toISOString().slice(0, 10);
+    const mine = lines.filter((l) => l.importId === r.sourceId && l.departmentId === r.departmentId && businessDay(l.saleDate, h.timezone, h.businessDayCutoff) === day);
+    const parts: DetailLine[] = [];
+    for (const l of mine) {
+      const snap = l.recipeVersion?.costSnapshot as { portions?: string; requirements?: Record<string, string> } | null;
+      const req = snap?.requirements?.[r.productId];
+      if (!req || !snap?.portions) continue;
+      const q = D(req).div(D(snap.portions)).times(D(l.quantity.toString())).neg();
+      parts.push({ row: r, quantity: q, total: ZERO, check: l.externalId, dish: l.recipe?.name ?? l.posCode, sold: D(l.quantity.toString()), saleDate: l.saleDate });
+    }
+    if (!parts.length) {
+      out.push({ row: r, quantity: D(r.quantity.toString()), total: D(r.totalCost.toString()) });
+      continue;
+    }
+    const unit = D(r.unitCost.toString());
+    let qLeft = D(r.quantity.toString());
+    let tLeft = D(r.totalCost.toString());
+    parts.forEach((p, i) => {
+      if (i === parts.length - 1) {
+        p.quantity = qLeft;
+        p.total = tLeft;
+      } else {
+        p.quantity = p.quantity.toDecimalPlaces(6);
+        p.total = p.quantity.times(unit).toDecimalPlaces(2);
+        qLeft = qLeft.minus(p.quantity);
+        tLeft = tLeft.minus(p.total);
+      }
+      out.push(p);
+    });
+  }
+  return out;
 }

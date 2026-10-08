@@ -14,7 +14,7 @@ export default async function OrdersPage() {
   if (!res.ok) return <Alert>{res.error}</Alert>;
   return (
     <>
-      <PageHeader title={t("Order recommendations")} subtitle={t("Expected consumption + safety stock + lead-time demand − current stock − open PO, rounded up to purchase units. Every number is explained.")} />
+      <PageHeader exportKey="orders" title={t("Order recommendations")} subtitle={t("Expected consumption + safety stock + lead-time demand − current stock − open PO, rounded up to purchase units. Every number is explained.")} />
       <Card padded={false}>
         {res.data.length === 0 ? <div className="p-4"><Empty title={t("No consumption history yet")} /></div> : (
           <Table>

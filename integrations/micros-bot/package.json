@@ -1,0 +1,27 @@
+{
+  "name": "hotelcost-micros-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HotelCost browser bot: reads Oracle Micros (POS + purchasing) and Opera screens with Playwright and posts the data to HotelCost",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "tsx src/cli.ts daemon",
+    "run": "tsx src/cli.ts run",
+    "daemon": "tsx src/cli.ts daemon",
+    "check-config": "tsx src/cli.ts check-config",
+    "mock:micros": "tsx test/mock-micros/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "playwright": "1.56.1",
+    "tsx": "^4.20.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -6,6 +6,10 @@ import type { ReportDef } from "./types";
 import { inventory } from "./reports/inventory";
 import { recipe, recipes } from "./reports/recipes";
 import { products } from "./reports/products";
+import { ledger } from "./reports/ledger";
+import { orders, purchasing } from "./reports/purchasing";
+import { counts, countSummaryReport } from "./reports/counts";
+import { waste } from "./reports/waste";
 import { budget } from "./reports/budget";
 import { forecast } from "./reports/forecast";
 import { allocation } from "./reports/allocation";
@@ -29,6 +33,12 @@ export const REPORTS: Record<string, ReportDef> = {
   recipes,
   recipe,
   products,
+  ledger,
+  purchasing,
+  orders,
+  counts,
+  "count-summary": countSummaryReport,
+  waste,
   budget,
   forecast,
   allocation,

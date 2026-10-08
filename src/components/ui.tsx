@@ -19,7 +19,7 @@ export function PageHeader({ title, subtitle, actions, exportKey, exportParams }
         {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
       </div>
       {(actions || exportKey) && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2 sm:shrink-0 sm:justify-end">
           {actions}
           {exportKey && (
             <Suspense fallback={null}>
