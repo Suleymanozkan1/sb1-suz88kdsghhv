@@ -1,7 +1,8 @@
-/** Renders any XReport as .xlsx (real numbers and dates, one sheet per table) or as a landscape PDF. */
+/** Renders any XReport as .xlsx (real numbers and dates, one sheet per table), as CSV, or as a landscape PDF. */
 import path from "node:path";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+import { csvSafe } from "../util/csv";
 import type { XCol, XReport, XTable, XType, XValue } from "./types";
 
 const FONT = path.join(process.cwd(), "assets", "fonts", "DejaVuSans.ttf");
@@ -153,6 +154,43 @@ export async function renderXlsx(r: XReport, m: RenderMeta): Promise<Buffer> {
     });
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+// ───────────────────────── CSV ─────────────────────────
+
+const CSV_DECIMALS: Partial<Record<XType, number>> = { money: 2, unitcost: 4, qty: 3, int: 0, pct: 1 };
+
+/**
+ * CSV for Turkish Excel: `;` between fields, decimal comma, dd.mm.yyyy dates, UTF-8 with BOM. Numbers stay
+ * plain (no currency sign or grouping, rounded like the screens) so they sum; text is guarded against formula
+ * injection and digit codes keep their leading zeros. Several tables follow each other, each under its title line.
+ */
+export function renderCsv(r: XReport, m: RenderMeta): Buffer {
+  const cell = (v: XValue, type: XType | undefined): string => {
+    if (v === null || v === undefined || v === "") return "";
+    if (type === "date" || type === "datetime") return csvSafe(displayValue(v, type, m.currency, m.timeZone));
+    if (type && NUMERIC.includes(type)) {
+      const n = num(v);
+      if (n !== null) return new Intl.NumberFormat("tr-TR", { useGrouping: false, maximumFractionDigits: CSV_DECIMALS[type] ?? 3 }).format(n);
+    }
+    const text = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+    // a code like 00123 (or a digit string too long for a number) would lose its zeros / digits in Excel:
+    // ="00123" keeps it as text. Digits only, so the constant formula cannot carry anything else.
+    if (/^(0\d+|\d{16,})$/.test(text)) return `"=""${text}"""`;
+    return csvSafe(text);
+  };
+  const lines: string[] = [];
+  const many = r.tables.length > 1;
+  for (const tb of r.tables) {
+    if (many) {
+      if (lines.length) lines.push("");
+      lines.push(csvSafe(tb.title ?? r.title));
+    }
+    lines.push(tb.columns.map((c) => csvSafe(c.header)).join(";"));
+    for (const d of tb.rows) lines.push(tb.columns.map((c) => cell(d[c.key], c.type)).join(";"));
+    if (tb.totals) lines.push(tb.columns.map((c) => cell(tb.totals![c.key], c.type)).join(";"));
+  }
+  return Buffer.from(`\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
 }
 
 // ───────────────────────── PDF ─────────────────────────

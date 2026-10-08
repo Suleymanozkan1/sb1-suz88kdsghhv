@@ -1,11 +1,11 @@
 "use client";
 
-import { FileDown, FileSpreadsheet } from "lucide-react";
+import { FileDown, FileSpreadsheet, FileText } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useT } from "@/i18n/client";
 
 /**
- * PDF + Excel of the current page. The file uses the filters on screen: the page's query string is passed on
+ * PDF + Excel + CSV of the current page. The file uses the filters on screen: the page's query string is passed on
  * (plus `params` for filters a page keeps outside the URL).
  */
 export function ExportButtons({ report, params }: { report: string; params?: Record<string, string | undefined> }) {
@@ -30,6 +30,9 @@ export function ExportButtons({ report, params }: { report: string; params?: Rec
       </a>
       <a href={href("xlsx")} className={cls} title={t("Download as Excel (with the filters on screen)")} download>
         <FileSpreadsheet className="h-4 w-4" /> Excel
+      </a>
+      <a href={href("csv")} className={cls} title={t("Download as CSV (with the filters on screen)")} download>
+        <FileText className="h-4 w-4" /> CSV
       </a>
     </span>
   );
