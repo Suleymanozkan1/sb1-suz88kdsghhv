@@ -4,5 +4,11 @@
   "buildCommand": "npm run vercel-build",
   "regions": [
     "fra1"
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/nightly",
+      "schedule": "15 1 * * *"
+    }
   ]
 }

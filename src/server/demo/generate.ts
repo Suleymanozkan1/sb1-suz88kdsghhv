@@ -248,7 +248,8 @@ export async function runDemoStep(db: PrismaClient, profile: DemoProfile, step: 
     if (opts.platformAdmin !== false) await ensurePlatformAdmin(db, hash);
     let users = 0;
     for (const o of profile.orgs) {
-      const org = await db.organization.create({ data: { name: n.org(o.name), isDemo: true } });
+      // the first demo company shows every feature (automatic e-mail orders: premium plan)
+      const org = await db.organization.create({ data: { name: n.org(o.name), isDemo: true, plan: o.key === "A" ? "PREMIUM" : "BASIC" } });
       for (const c of ["TRY", "EUR", "USD"]) await db.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
       const roleId: Record<string, string> = {};
       for (const t of ROLE_TEMPLATES) roleId[t.key] = (await db.role.create({ data: { organizationId: org.id, key: t.key, name: t.name, allDepartments: t.allDepartments, permissions: t.permissions } })).id;
@@ -408,7 +409,7 @@ async function masterData(ctx: Ctx, index: number) {
   // suppliers (spec 47-48)
   for (const [k, sp] of SUPPLIER_PLAN.entries()) {
     const word = N.t(SUPPLIER_WORDS[(index * 3 + k) % SUPPLIER_WORDS.length]!);
-    ctx.suppliers.push({ id: (await db.supplier.create({ data: { hotelId: H, code: `SUP-${String(k + 1).padStart(2, "0")}`, name: `${word} ${sp.kind}`, leadTimeDays: sp.schedule === "daily" ? 1 : sp.schedule === "twice" ? 2 : 5, taxNumber: String(1000000000 + Math.trunc(rnd() * 8999999999)) } })).id, name: `${word} ${sp.kind}`, kind: sp.kind });
+    ctx.suppliers.push({ id: (await db.supplier.create({ data: { hotelId: H, code: `SUP-${String(k + 1).padStart(2, "0")}`, name: `${word} ${sp.kind}`, email: `siparis${index + 1}-${k + 1}@tedarikci.test.local`, address: `Organize Sanayi Bölgesi ${k + 1}. Cadde No: ${10 + k}, İstanbul`, leadTimeDays: sp.schedule === "daily" ? 1 : sp.schedule === "twice" ? 2 : 5, taxNumber: String(1000000000 + Math.trunc(rnd() * 8999999999)) } })).id, name: `${word} ${sp.kind}`, kind: sp.kind });
   }
   // products: the catalogue (one item left out per hotel), hotel-specific price level
   const all = CATALOG.flatMap((c) => c.items.map((it) => ({ c, it })));

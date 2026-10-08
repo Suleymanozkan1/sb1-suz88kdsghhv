@@ -1,20 +1,20 @@
 import Link from "next/link";
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded } from "@/server/page";
+import { buffetRange } from "@/server/table-export/reports/buffet";
 import { periodReport } from "@/server/services/buffet";
 import { can, departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
-import { PeriodFilter } from "@/components/period-filter";
+import { Alert, Badge, Button, Card, Empty, Input, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { money, pct, date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { NewSession } from "./new-session";
 
 export const metadata = { title: "Buffet" };
 
-export default async function BuffetPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string }> }) {
+export default async function BuffetPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const t = await getT();
   const sp = await searchParams;
-  const range = monthRange(sp);
+  const range = buffetRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
   const res = await guarded(() => periodReport(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || null }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
@@ -26,7 +26,15 @@ export default async function BuffetPage({ searchParams }: { searchParams: Promi
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader title={t("Buffet cost control")} subtitle={t("Production → refills → leftovers → waste → cost per cover. Leftovers are classified once, so food is never counted as both consumption and waste.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
+      <PageHeader title={t("Buffet cost control")} subtitle={t("Production → refills → leftovers → waste → cost per cover. Leftovers are classified once, so food is never counted as both consumption and waste.")} exportKey="buffet" actions={
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          <div><Label htmlFor="bp-period">{t("Period")}</Label><Select id="bp-period" name="period" defaultValue={range.period === "day" ? "day" : "month"} className="w-28"><option value="day">{t("Daily")}</option><option value="month">{t("Monthly")}</option></Select></div>
+          <div><Label htmlFor="bp-day">{t("Day")}</Label><Input id="bp-day" type="date" name="day" defaultValue={range.day} className="w-40" /></div>
+          <div><Label htmlFor="bp-month">{t("Month")}</Label><Input id="bp-month" type="month" name="month" defaultValue={range.month} className="w-36" /></div>
+          <div><Label htmlFor="bp-dept">{t("Outlet")}</Label><Select id="bp-dept" name="departmentId" defaultValue={sp.departmentId ?? ""} className="w-40"><option value="">{t("All accessible")}</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></div>
+          <Button type="submit" variant="secondary">{t("Apply")}</Button>
+        </form>
+      } />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Closed sessions")} value={r.totals.sessions} hint={r.openSessions ? t("{n} still open", { n: r.openSessions }) : undefined} />
         <Stat label={t("Covers")} value={r.totals.covers.toLocaleString("tr-TR")} />
@@ -61,6 +69,7 @@ export default async function BuffetPage({ searchParams }: { searchParams: Promi
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td colSpan={3}>{t("Total (closed sessions)")}</Td><Td align="right">{r.totals.covers.toLocaleString("tr-TR")}</Td><Td align="right">{money(r.totals.cost, cur, 0)}</Td><Td align="right">{money(r.totals.costPerCover, cur)}</Td><Td align="right">{money(r.totals.waste, cur, 0)}</Td><Td /></tr></tfoot>
             </Table>
           )}
         </Card>

@@ -1,20 +1,71 @@
+import Link from "next/link";
 import { pageContext, guarded } from "@/server/page";
 import { orderRecommendations } from "@/server/services/inventory";
+import { autoOrderOverview } from "@/server/services/auto-order";
+import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
-import { Alert, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
+import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { AutoOrder } from "./auto-order";
+import { Suppliers } from "./suppliers";
 
 export const metadata = { title: "Order Suggestions" };
 
-export default async function OrdersPage() {
+const TABS = ["recommendations", "auto", "suppliers"] as const;
+type Tab = (typeof TABS)[number];
+const PLAN_LABEL = { BASIC: "Basic plan", STANDARD: "Standard plan", PREMIUM: "Premium plan" } as const;
+
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "recommendations";
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  const link = (v: Tab, label: string, badge?: React.ReactNode) => (
+    <Link href={v === "recommendations" ? "?" : `?tab=${v}`} className={cn("flex items-center gap-1.5 rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium", tab === v ? "border-brand-600 text-brand-800" : "border-transparent text-ink-500 hover:text-ink-800")}>{label}{badge}</Link>
+  );
+  const head = (subtitle: string, plan?: keyof typeof PLAN_LABEL) => (
+    <>
+      <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={plan === "PREMIUM" ? "green" : "gray"}>{t(PLAN_LABEL[plan])}</Badge>} />
+      <div className="mb-4 flex gap-1 border-b border-ink-200">
+        {link("recommendations", t("Order recommendations"))}
+        {link("auto", t("Automatic ordering"), <Badge tone="blue">{t("Premium")}</Badge>)}
+        {link("suppliers", t("Suppliers"))}
+      </div>
+    </>
+  );
+
+  if (tab === "auto") {
+    const res = await guarded(() => autoOrderOverview(prisma, actor, hotelId));
+    if (!res.ok) return <Alert>{res.error}</Alert>;
+    const suppliers = await prisma.supplier.findMany({ where: { hotelId, active: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } });
+    return (
+      <>
+        {head(t("A rule per product: when the stock falls to the reorder point the order quantity is ordered from the supplier."), res.data.plan)}
+        <AutoOrder rules={JSON.parse(JSON.stringify(res.data.rules))} suppliers={suppliers} canManage={can(actor, "purchase:manage")} emailEnabled={res.data.emailEnabled} mailConfigured={res.data.mailConfigured} />
+      </>
+    );
+  }
+
+  if (tab === "suppliers") {
+    const rows = await guarded(async () => {
+      if (!can(actor, "supplier:view")) throw new Error("Forbidden");
+      return prisma.supplier.findMany({ where: { hotelId }, include: { _count: { select: { autoOrders: true } } }, orderBy: [{ active: "desc" }, { name: "asc" }] });
+    });
+    if (!rows.ok) return <Alert>{rows.error}</Alert>;
+    return (
+      <>
+        {head(t("Company name, address and e-mail: automatic orders are e-mailed to this address."))}
+        <Suppliers canManage={can(actor, "supplier:manage")} suppliers={rows.data.map((s) => ({ id: s.id, code: s.code, name: s.name, address: s.address, email: s.email, phone: s.phone, leadTimeDays: s.leadTimeDays, active: s.active, rules: s._count.autoOrders }))} />
+      </>
+    );
+  }
+
   const res = await guarded(() => orderRecommendations(prisma, actor, hotelId));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   return (
     <>
-      <PageHeader exportKey="orders" title={t("Order recommendations")} subtitle={t("Expected consumption + safety stock + lead-time demand − current stock − open PO, rounded up to purchase units. Every number is explained.")} />
+      {head(t("Expected consumption + safety stock + lead-time demand − current stock − open PO, rounded up to purchase units. Every number is explained."))}
       <Card padded={false}>
         {res.data.length === 0 ? <div className="p-4"><Empty title={t("No consumption history yet")} /></div> : (
           <Table>

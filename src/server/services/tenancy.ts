@@ -16,6 +16,7 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
 import { applyHotelDefaults, createTenantRoles } from "./admin";
+import type { Plan } from "@prisma/client";
 
 const INVITE_DAYS = 7;
 const code = z.string().trim().min(2).max(20).regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Use capitals, digits, - or _");
@@ -28,7 +29,7 @@ export async function listTenants(db: Db, actor: Actor) {
   const orgs = await db.organization.findMany({
     where: { isPlatform: false },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, active: true, isDemo: true, createdAt: true, _count: { select: { hotels: true, users: true } }, hotels: { select: { id: true, code: true, name: true, active: true } } },
+    select: { id: true, name: true, active: true, isDemo: true, plan: true, createdAt: true, _count: { select: { hotels: true, users: true } }, hotels: { select: { id: true, code: true, name: true, active: true } } },
   });
   return orgs;
 }
@@ -79,6 +80,16 @@ export async function setTenantActive(db: Db, actor: Actor, organizationId: stri
     await tx.auditLog.create({ data: { organizationId, userId: actor.userId, action: active ? "PLATFORM_TENANT_ACTIVATE" : "PLATFORM_TENANT_SUSPEND", entityType: "Organization", entityId: organizationId, reason, source: "PLATFORM" } });
     return { id: organizationId, active };
   });
+}
+
+/** Package of a tenant (Temel / Orta / Üst): switches features on (src/server/plans.ts). */
+export async function setTenantPlan(db: Db, actor: Actor, organizationId: string, plan: Plan) {
+  requirePermission(actor, "platform:admin");
+  const org = await db.organization.findFirst({ where: { id: organizationId, isPlatform: false } });
+  if (!org) throw new DomainError("NOT_FOUND", "Tenant not found");
+  await db.organization.update({ where: { id: organizationId }, data: { plan } });
+  await db.auditLog.create({ data: { organizationId, userId: actor.userId, action: "PLATFORM_TENANT_PLAN", entityType: "Organization", entityId: organizationId, before: { plan: org.plan }, after: { plan }, source: "PLATFORM" } });
+  return { id: organizationId, plan };
 }
 
 // ── company administrator: hotels ──

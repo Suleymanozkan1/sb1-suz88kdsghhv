@@ -152,7 +152,7 @@ export class Screen {
    * column selector (CSS, relative to the row; null column → null). A required column that matches in no row
    * at all means the column selector is wrong → ScreenChangedError.
    */
-  async readRows<K extends string>(rowKey: string, columnKeys: Record<K, string>, required: K[], scope?: Locator): Promise<Array<Record<K, string | null>>> {
+  async readRows<K extends string>(rowKey: string, columnKeys: Record<K, string>, required: NoInfer<K>[], scope?: Locator): Promise<Array<Record<K, string | null>>> {
     const rowSelector = this.sel(rowKey);
     const cols: Record<string, string | null> = {};
     for (const [field, key] of Object.entries(columnKeys) as Array<[K, string]>) {

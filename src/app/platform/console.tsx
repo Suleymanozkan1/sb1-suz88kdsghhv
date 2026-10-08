@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Badge, Button, Card, Input, Label, Table, Td, Th } from "@/components/ui";
+import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
 
-interface Tenant { id: string; name: string; active: boolean; isDemo: boolean; createdAt: string; users: number; hotels: Array<{ id: string; code: string; name: string; active: boolean }> }
+interface Tenant { id: string; name: string; active: boolean; isDemo: boolean; plan: string; createdAt: string; users: number; hotels: Array<{ id: string; code: string; name: string; active: boolean }> }
 
 export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
   const router = useRouter();
@@ -37,6 +37,11 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
     catch (err) { setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") }); }
   }
 
+  async function setPlan(x: Tenant, plan: string) {
+    try { await call("PATCH", `/api/platform/tenants/${x.id}`, { plan }); router.refresh(); }
+    catch (err) { setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") }); }
+  }
+
   return (
     <div className="space-y-4">
       <Card title={t("New tenant (company)")}>
@@ -55,13 +60,18 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
       </Card>
       <Card title={t("Tenants ({count})", { count: tenants.length })} padded={false}>
         <Table label={t("Tenants")}>
-          <thead><tr><Th>{t("Company")}</Th><Th>{t("Hotels")}</Th><Th align="right">{t("Users")}</Th><Th>{t("Created")}</Th><Th>{t("Status")}</Th><Th /></tr></thead>
+          <thead><tr><Th>{t("Company")}</Th><Th>{t("Hotels")}</Th><Th align="right">{t("Users")}</Th><Th>{t("Plan")}</Th><Th>{t("Created")}</Th><Th>{t("Status")}</Th><Th /></tr></thead>
           <tbody className="divide-y divide-ink-100">
             {tenants.map((x) => (
               <tr key={x.id}>
                 <Td className="font-medium">{x.name} {x.isDemo && <Badge tone="blue">{t("demo")}</Badge>}</Td>
                 <Td>{x.hotels.map((h) => `${h.code}${h.active ? "" : ` (${t("suspended")})`}`).join(", ")}</Td>
                 <Td align="right">{x.users}</Td>
+                <Td>
+                  <Select aria-label={t("Plan")} className="w-32 py-1" value={x.plan} onChange={(e) => void setPlan(x, e.target.value)}>
+                    <option value="BASIC">{t("Basic plan")}</option><option value="STANDARD">{t("Standard plan")}</option><option value="PREMIUM">{t("Premium plan")}</option>
+                  </Select>
+                </Td>
                 <Td>{x.createdAt.slice(0, 10)}</Td>
                 <Td><Badge tone={x.active ? "green" : "red"}>{x.active ? t("ACTIVE") : t("SUSPENDED")}</Badge></Td>
                 <Td><Button size="sm" variant={x.active ? "danger" : "secondary"} onClick={() => void toggle(x)}>{x.active ? t("Suspend") : t("Reactivate")}</Button></Td>

@@ -44,11 +44,22 @@ export const occupancySchema = z.object({
   occupiedRoomNumbers: z.array(z.string().trim().max(20)).optional(),
 });
 
-export type Kind = "checks" | "invoices" | "covers" | "occupancy";
-export const ALL_KINDS: Kind[] = ["checks", "invoices", "covers", "occupancy"];
-export const ITEM_SCHEMAS = { checks: checkSchema, invoices: invoiceSchema, covers: coversSchema, occupancy: occupancySchema } as const;
+/** Minibar items charged to a room (Opera folio postings or the Micros minibar outlet). */
+export const minibarSchema = z.object({
+  room: z.string().trim().min(1).max(20),
+  itemCode: z.string().trim().max(64).optional().nullable(),
+  itemName: z.string().trim().min(1).max(200),
+  qty: num.refine((n) => n > 0, "Quantity must be positive"),
+  /** folio / posting reference: identifies the charge (idempotency) */
+  reference: z.string().trim().min(1).max(64),
+  postedAt: z.string().datetime({ offset: true }).optional(),
+});
+
+export type Kind = "checks" | "invoices" | "covers" | "minibar" | "occupancy";
+export const ALL_KINDS: Kind[] = ["checks", "invoices", "covers", "minibar", "occupancy"];
+export const ITEM_SCHEMAS = { checks: checkSchema, invoices: invoiceSchema, covers: coversSchema, minibar: minibarSchema, occupancy: occupancySchema } as const;
 /** server-side maximum items per request */
-export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, occupancy: 1 };
+export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, minibar: 5000, occupancy: 1 };
 
 export interface CheckLine { itemCode?: string | null; itemName: string; qty: number; amount: number }
 export interface Check { checkNo: string; outlet: string; closedAt?: string; lines: CheckLine[] }
@@ -59,7 +70,8 @@ export interface Occupancy {
   availableRooms: number; occupiedRooms: number; guests: number;
   roomRevenue?: number | null; outOfOrder?: number | null; occupiedRoomNumbers?: string[];
 }
-export interface ItemsByKind { checks: Check; invoices: Invoice; covers: Covers; occupancy: Occupancy }
+export interface MinibarCharge { room: string; itemCode?: string | null; itemName: string; qty: number; reference: string; postedAt?: string }
+export interface ItemsByKind { checks: Check; invoices: Invoice; covers: Covers; minibar: MinibarCharge; occupancy: Occupancy }
 
 export type IngestSource = "MICROS" | "OPERA" | "OTHER";
 export interface IngestBody<K extends Kind = Kind> { kind: K; source: IngestSource; businessDay: string; runId?: string; items: ItemsByKind[K][] }

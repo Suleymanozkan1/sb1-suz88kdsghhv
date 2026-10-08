@@ -7,6 +7,7 @@ import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th } from "@/component
 import { money, pct, qty, date, dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { AddLine, CloseSession } from "./session-actions";
+import { BOARD_BASIS } from "@/lib/board-basis";
 
 export default async function BuffetSessionPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await getT();
@@ -22,7 +23,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
   const items = m.items.map((i) => ({ key: i.key, name: i.name, unit: i.unit, input: i.input.toString(), isDish: i.isDish }));
   return (
     <>
-      <PageHeader title={t("{type} buffet · {department} · {date}", { type: t(s.type), department: s.department.name, date: date(s.serviceDate) })} subtitle={<span className="flex flex-wrap items-center gap-2"><Badge tone={open ? "amber" : "green"}>{t(s.status)}</Badge>{t("Issued from {warehouse}", { warehouse: s.warehouse.name })}{s.boardBasis ? ` · ${s.boardBasis}` : ""}{s.occupiedRooms ? ` · ${t("{n} occupied rooms", { n: s.occupiedRooms })}` : ""}{s.closedAt ? ` · ${t("closed {when}", { when: dateTime(s.closedAt, hotel.timezone) })}` : ""}</span>} />
+      <PageHeader exportKey="buffet-session" exportParams={{ id }} title={t("{type} buffet · {department} · {date}", { type: t(s.type), department: s.department.name, date: date(s.serviceDate) })} subtitle={<span className="flex flex-wrap items-center gap-2"><Badge tone={open ? "amber" : "green"}>{t(s.status)}</Badge>{t("Issued from {warehouse}", { warehouse: s.warehouse.name })}{s.boardBasis ? ` · ${t(BOARD_BASIS.find(([c]) => c === s.boardBasis)?.[1] ?? s.boardBasis)}` : ""}{s.occupiedRooms ? ` · ${t("{n} occupied rooms", { n: s.occupiedRooms })}` : ""}{s.closedAt ? ` · ${t("closed {when}", { when: dateTime(s.closedAt, hotel.timezone) })}` : ""}</span>} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Stat label={t("Covers")} value={s.actualCovers ?? "—"} hint={`${t("Expected {n}", { n: s.expectedCovers ?? "—" })}${m.coverVariance !== null && !open ? ` (${m.coverVariance > 0 ? "+" : ""}${m.coverVariance})` : ""}`} />
         <Stat label={t("Input cost")} value={money(m.inputCost, cur, 0)} hint={t("Production + refills")} />

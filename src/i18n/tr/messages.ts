@@ -104,6 +104,11 @@ export const TR_MESSAGES: Record<string, string> = {
   // ── allocation ──
   "Unknown department in rule": "Kuralda bilinmeyen departman",
   "Rule not found": "Kural bulunamadı",
+  "No mail server configured (SMTP_URL)": "E-posta sunucusu tanımlı değil (SMTP_URL)",
+  "Supplier has no e-mail address": "Tedarikçinin e-posta adresi yok",
+  "Order quantity must be positive": "Sipariş miktarı sıfırdan büyük olmalı",
+  "Supplier {0} exists": "{0} tedarikçisi zaten var",
+  "This feature is part of the {0} plan": "Bu özellik {0} paketinde",
   "Period not found": "Dönem bulunamadı",
   "Nothing to allocate: no active rule found a source cost with a usable driver": "Dağıtılacak tutar yok: hiçbir aktif kural, kullanılabilir dağıtım anahtarı olan bir kaynak maliyet bulamadı",
   "Period {0} already has a posted allocation; reverse it first": "{0} döneminde kayıtlı bir dağıtım zaten var; önce onu ters kaydedin",
