@@ -152,6 +152,8 @@ const hotelSettings = z.object({
   wasteApprovalValue: z.coerce.number().min(0),
   adjustmentApprovalValue: z.coerce.number().min(0),
   marginTargetPct: z.coerce.number().min(0).max(100),
+  /** night audit: the business day ends here (HH:MM local), default 03:30 */
+  businessDayCutoff: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM").optional(),
 });
 
 export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: unknown) {
@@ -163,7 +165,7 @@ export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: 
     await tx.currency.upsert({ where: { code: p.baseCurrency }, create: { code: p.baseCurrency, organizationId: actor.organizationId, name: p.baseCurrency }, update: {} });
     const h = await tx.hotel.update({
       where: { id: hotelId },
-      data: { name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone, priceAlertPct: toStorage(p.priceAlertPct), wasteApprovalValue: toStorage(p.wasteApprovalValue), adjustmentApprovalValue: toStorage(p.adjustmentApprovalValue), marginTargetPct: toStorage(p.marginTargetPct) },
+      data: { name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone, priceAlertPct: toStorage(p.priceAlertPct), wasteApprovalValue: toStorage(p.wasteApprovalValue), adjustmentApprovalValue: toStorage(p.adjustmentApprovalValue), marginTargetPct: toStorage(p.marginTargetPct), ...(p.businessDayCutoff ? { businessDayCutoff: p.businessDayCutoff } : {}) },
     });
     await audit(tx, actor, { hotelId, action: "HOTEL_SETTINGS", entityType: "Hotel", entityId: hotelId, before, after: h });
     return h;

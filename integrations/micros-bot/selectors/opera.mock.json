@@ -1,0 +1,42 @@
+{
+  "_README": "Testlerde kullanılan sahte Opera (test/mock-micros /opera/*) için seçiciler.",
+  "numberFormat": "tr",
+  "dateFormat": "DD.MM.YYYY",
+  "dateTimeFormat": "DD.MM.YYYY HH:mm",
+  "login": {
+    "path": "/login",
+    "steps": [],
+    "username": "#user",
+    "password": "#pass",
+    "submit": "#signin",
+    "loggedIn": "#operaHome",
+    "error": ".alert-error"
+  },
+  "statistics": {
+    "steps": [{ "goto": "/stats?date={date}" }],
+    "ready": "#stats",
+    "fields": {
+      "availableRooms": "#availRooms",
+      "occupiedRooms": "#occRooms",
+      "guests": "#inHouseGuests",
+      "roomRevenue": "#roomRevenue",
+      "outOfOrder": "#ooo"
+    },
+    "rooms": {
+      "steps": [{ "goto": "/rooms?date={date}" }],
+      "row": "#roomList tbody tr",
+      "roomNumber": "td.room",
+      "noData": "#noRooms"
+    }
+  },
+  "minibar": {
+    "steps": [{ "goto": "/minibar?date={date}" }],
+    "table": "#minibarPostings",
+    "row": "tbody tr",
+    "noData": "#noPostings",
+    "nextPage": null,
+    "columns": { "room": "td.room", "itemCode": "td.code", "itemName": "td.item", "qty": "td.qty", "reference": "td.ref", "postedAt": "td.time" },
+    "postedAtFormat": "DD.MM.YYYY HH:mm",
+    "skipItemNamePattern": "^(Toplam|Total)\\b"
+  }
+}

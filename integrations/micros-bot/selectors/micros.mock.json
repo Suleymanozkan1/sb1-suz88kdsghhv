@@ -1,0 +1,80 @@
+{
+  "_README": "Testlerde kullanılan sahte Micros (test/mock-micros) için seçiciler — gerçek bir dosyanın nasıl doldurulduğuna örnek.",
+  "numberFormat": "tr",
+  "dateFormat": "DD.MM.YYYY",
+  "dateTimeFormat": "DD.MM.YYYY HH:mm",
+  "login": {
+    "path": "/login",
+    "steps": [],
+    "username": "#username",
+    "password": "#password",
+    "submit": "#loginBtn",
+    "loggedIn": "#mainMenu",
+    "error": ".login-error"
+  },
+  "checks": {
+    "steps": [
+      { "click": "#mainMenu a[data-menu=checks]" },
+      { "fill": "#businessDate", "value": "{date}" },
+      { "click": "#showChecks" }
+    ],
+    "list": "#checkList",
+    "row": "tbody tr",
+    "rowLink": "a.check-link",
+    "noData": "#noChecks",
+    "nextPage": "a#nextPage",
+    "open": "link",
+    "detail": {
+      "ready": "#checkHeader",
+      "checkNo": "#checkNo",
+      "outlet": "#revenueCenter",
+      "closedAt": "#closedAt",
+      "closedAtFormat": "DD.MM.YYYY HH:mm",
+      "lineRow": "#checkLines tbody tr",
+      "line": { "itemCode": "td.code", "itemName": "td.name", "qty": "td.qty", "amount": "td.amount" },
+      "skipItemNamePattern": "^(Toplam|Total)\\b",
+      "back": null
+    }
+  },
+  "invoices": {
+    "steps": [
+      { "goto": "/purchasing/invoices" },
+      { "fill": "input[name=date]", "value": "{date}" },
+      { "press": "input[name=date]", "key": "Enter" }
+    ],
+    "list": "#invoiceList",
+    "row": "tbody tr",
+    "rowLink": "a.inv-link",
+    "noData": "#noInvoices",
+    "nextPage": null,
+    "open": "link",
+    "detail": {
+      "ready": null,
+      "supplierName": "#supplier",
+      "invoiceNo": "#invoiceNo",
+      "invoiceDate": "#invoiceDate",
+      "invoiceDateFormat": "DD.MM.YYYY",
+      "warehouse": "#store",
+      "lineRow": "#invoiceLines tbody tr",
+      "line": {
+        "itemCode": "td:nth-child(1)",
+        "itemName": "td:nth-child(2)",
+        "qty": "td:nth-child(3)",
+        "unit": "td:nth-child(4)",
+        "unitPrice": "td:nth-child(5)",
+        "taxRatePct": "td:nth-child(6)"
+      },
+      "skipItemNamePattern": null,
+      "back": null
+    }
+  },
+  "covers": {
+    "steps": [{ "goto": "/reports/covers?date={day}" }],
+    "table": "#coversReport",
+    "row": "tbody tr",
+    "noData": "#noCovers",
+    "columns": { "outlet": "td.outlet", "meal": "td.meal", "covers": "td.covers" },
+    "defaultMeal": null,
+    "skipOutletPattern": "^(Toplam|Total)\\b"
+  }
+}

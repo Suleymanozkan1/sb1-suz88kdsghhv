@@ -7,6 +7,8 @@ import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone, severityTone } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty, dateTime } from "@/lib/format";
+import { IntegrationBanner } from "./imports/integration-status";
+import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Dashboard" };
@@ -20,7 +22,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const range = monthRange(await searchParams);
   const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
-  if (res.data.kind === "basic") return <BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} timezone={hotel.timezone} range={range} d={res.data.data} />;
+  const banner = <IntegrationBanner link health={await integrationHealth(prisma, hotelId)} />;
+  if (res.data.kind === "basic") return <>{banner}<BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} timezone={hotel.timezone} range={range} d={res.data.data} /></>;
   const d = res.data.data;
   const k = d.kpis;
   const cur = hotel.baseCurrency;
@@ -39,6 +42,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         actions={<PeriodFilter from={range.fromStr} to={range.toStr} />}
         exportKey="dashboard"
       />
+      {banner}
 
       {d.quality.confidence !== "ACTUAL" && (
         <div className="mb-4">

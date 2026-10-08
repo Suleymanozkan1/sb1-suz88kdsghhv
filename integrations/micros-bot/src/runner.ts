@@ -98,6 +98,20 @@ export function summarize(kinds: KindResult[]): string {
   return msg.length > 2000 ? msg.slice(0, 1997) + "..." : msg;
 }
 
+/** Delete runs/<runId>/ folders older than `keepDays` (screenshots can add up). */
+export function pruneRunDirs(runsDir: string, keepDays: number): void {
+  try {
+    const limit = Date.now() - keepDays * 86_400_000;
+    for (const e of fs.readdirSync(runsDir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const dir = path.join(runsDir, e.name);
+      if (fs.statSync(dir).mtimeMs < limit) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  } catch {
+    /* runs dir does not exist yet */
+  }
+}
+
 interface Deps {
   client?: HotelCostClient;
   invoiceReader?: InvoiceReader;
@@ -112,6 +126,7 @@ export async function runBot(config: Config, opts: RunOptions = {}, deps: Deps =
   const explicit = new Set(opts.only ?? []);
   const wanted = (k: Kind) => (opts.only ? explicit.has(k) : true);
 
+  pruneRunDirs(config.runsDir, 30);
   const previous = state.get(day);
   if (previous) log.info(`business day ${day} was sent before (${Object.entries(previous).map(([k, v]) => `${k} at ${v.at}`).join(", ")}); sending again — HotelCost skips duplicates`);
 
