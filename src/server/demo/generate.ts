@@ -1062,13 +1062,20 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   await chunk(saleRows, (c) => db.saleLine.createMany({ data: c }));
   await chunk(counts, (c) => db.stockCount.createMany({ data: c }));
   await chunk(countLines, (c) => db.stockCountLine.createMany({ data: c }));
-  // reorder levels from the observed usage (spec: critical stock needs a reorder point)
+  // reorder levels from the observed usage (spec: critical stock needs a reorder point). Reorder point and safety
+  // stock live on the automatic-ordering rules ("Otomatik sipariş"): paused rules, so nothing is ever e-mailed
+  // from demo data, while stock status and order recommendations read their thresholds
   const usage = await db.$queryRaw<Array<{ productId: string; q: Prisma.Decimal }>>`SELECT "productId", -SUM(quantity) q FROM "StockTransaction" WHERE "hotelId" = ${H} AND type IN ('CONSUMPTION','WASTE','STAFF_MEAL') GROUP BY 1`;
+  const supplierOf = new Map((await db.product.findMany({ where: { hotelId: H }, select: { id: true, defaultSupplierId: true } })).map((p) => [p.id, p.defaultSupplierId]));
+  const rules: Prisma.AutoOrderRuleCreateManyInput[] = [];
   for (const u of usage) {
     const perDay = Number(u.q.toString()) / ctx.days.length;
     if (perDay <= 0) continue;
-    await db.product.update({ where: { id: u.productId }, data: { reorderPoint: (perDay * 3).toFixed(3), safetyStock: (perDay * 1.5).toFixed(3), minStock: (perDay * 2).toFixed(3), maxStock: (perDay * 14).toFixed(3), leadTimeDays: 2 } });
+    await db.product.update({ where: { id: u.productId }, data: { minStock: (perDay * 2).toFixed(3), maxStock: (perDay * 14).toFixed(3), leadTimeDays: 2 } });
+    const supplierId = supplierOf.get(u.productId);
+    if (supplierId) rules.push({ hotelId: H, productId: u.productId, supplierId, reorderPoint: (perDay * 3).toFixed(3), safetyStock: (perDay * 1.5).toFixed(3), orderQty: Math.max(perDay * 11, 0.001).toFixed(3), active: false });
   }
+  await chunk(rules, (c) => db.autoOrderRule.createMany({ data: c, skipDuplicates: true }));
   return { stock: flushed.stock, sales: saleRows.length, waste: wasteCount, buffetPlan, minibarProducts };
 }
 

@@ -121,7 +121,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
     db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, include: { conversions: true, defaultSupplier: true } }),
     db.autoOrderRule.findMany({ where: { hotelId }, select: { productId: true, safetyStock: true } }),
   ]);
-  // safety stock lives on the auto-order rule now; the old product field is the fallback
+  // safety stock comes only from the auto-order rules (moved off the product card)
   const ruleSafety = new Map(rules.filter((r) => r.safetyStock !== null).map((r) => [r.productId, r.safetyStock!.toString()]));
   const stockMap = new Map(stock.map((s) => [s.productId, D(s._sum.quantity?.toString() ?? 0)]));
   return products
@@ -138,7 +138,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
       const leadDays = p.leadTimeDays ?? p.defaultSupplier?.leadTimeDays ?? 0;
       const rec = recommendOrder({
         expectedConsumption: exp.value,
-        safetyStock: ruleSafety.get(p.id) ?? p.safetyStock?.toString() ?? 0,
+        safetyStock: ruleSafety.get(p.id) ?? 0,
         currentStock: stockMap.get(p.id) ?? ZERO,
         openPoQty: openPo.get(p.id) ?? ZERO,
         purchaseUnitSize: packSize,

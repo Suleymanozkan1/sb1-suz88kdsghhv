@@ -113,7 +113,6 @@ export const XL_HEADERS: Record<string, string> = {
   "AP Qty": "Brüt miktar",
   "Base Unit": "Temel birim",
   "Ingredient Cost": "Malzeme maliyeti",
-  "Yield Adjustment": "Verim düzeltmesi",
   "Line Cost": "Satır maliyeti",
   "Packaging Cost": "Ambalaj maliyeti",
   "Other Cost": "Diğer maliyet",

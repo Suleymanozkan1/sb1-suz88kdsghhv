@@ -206,12 +206,15 @@ async function main() {
       data: {
         hotelId: H, sku: p.sku, name: p.name, categoryId: cat[p.cat]!, defaultSupplierId: suppliers[p.supplier], purchaseUnit: p.purchaseUnit ?? p.unit, stockUnit: p.unit,
         recipeUnit: p.unit === "kg" ? "g" : p.unit === "l" ? "ml" : p.unit, yieldPct: String(p.yieldPct ?? 100), costingMethod: p.fifo ? "FIFO" : "WEIGHTED_AVERAGE",
-        reorderPoint: p.reorder != null ? String(p.reorder) : null, safetyStock: p.safety != null ? String(p.safety) : null, maxStock: p.max != null ? String(p.max) : null, minStock: p.safety != null ? String(p.safety) : null,
+        maxStock: p.max != null ? String(p.max) : null, minStock: p.safety != null ? String(p.safety) : null,
         taxRatePct: p.cat === "Spirits" ? "20" : "1", shelfLifeDays: ["Vegetables", "Fruits", "Fish", "Chicken", "Meat", "Milk"].includes(p.cat) ? 7 : 180,
         conversions: p.caseSize ? { create: [{ fromUnit: p.purchaseUnit!, toUnit: p.unit, factor: p.caseSize }] } : undefined,
       },
     });
     pid[p.sku] = created.id;
+    // reorder point / safety stock live on the automatic-ordering rules (paused: the seed never e-mails an order)
+    const rp = p.reorder ?? p.safety;
+    if (rp != null) await prisma.autoOrderRule.create({ data: { hotelId: H, productId: created.id, supplierId: suppliers[p.supplier]!, reorderPoint: String(rp), safetyStock: p.safety != null ? String(p.safety) : null, orderQty: String(p.max != null && p.max > rp ? p.max - rp : Math.max(rp, 1)), active: false } });
   }
 
   // ── Opening stock (first day) ──

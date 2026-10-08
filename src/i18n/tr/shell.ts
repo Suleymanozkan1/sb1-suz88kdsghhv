@@ -8,7 +8,6 @@ export const shell: Record<string, string> = {
   "All accessible": "Erişilebilen tümü",
   "Apply": "Uygula",
   "Change": "Değiştir",
-  "Search name, SKU, barcode…": "Ad, SKU, barkod ara…",
   "Failed": "İşlem başarısız",
 
   // role names (permission templates)
