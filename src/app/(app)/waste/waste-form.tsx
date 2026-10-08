@@ -6,7 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { money } from "@/lib/format";
+import { localDay, money, parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 interface Line { key: string; product: PickedProduct | null; quantity: string; unit: string; wasteType: string; reason: string }
@@ -17,22 +17,24 @@ const blank = (key: string = crypto.randomUUID()): Line => ({ key, product: null
  * Waste entry as a list: during the day staff write waste down ("5 of 50 eggs"); at the end of the day the chef
  * enters every line here and saves them together. One line works the same way.
  */
-export function WasteForm({ types, departments, warehouses }: { types: string[]; departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[] }) {
+export function WasteForm({ types, departments, warehouses, currency, timeZone }: { currency: string; timeZone: string; types: string[]; departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[] }) {
   const router = useRouter();
   const t = useT();
   const [dept, setDept] = useState(departments[0]?.id ?? "");
   const whs = warehouses.filter((w) => !w.departmentId || w.departmentId === dept);
   const [wh, setWh] = useState(whs[0]?.id ?? "");
-  const [day, setDay] = useState(new Date().toISOString().slice(0, 10));
+  const [day, setDay] = useState(() => localDay(timeZone));
   const [lines, setLines] = useState<Line[]>([blank("w-0")]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "red" | "green" | "amber"; text: string } | null>(null);
   const set = (k: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
-  const ready = lines.filter((l) => l.product && Number(l.quantity) > 0);
+  const ready = lines.filter((l) => l.product && parseNum(l.quantity) > 0);
+  // a product with a missing or invalid quantity must not be dropped silently when the other lines are saved
+  const incomplete = lines.filter((l) => l.product && !(parseNum(l.quantity) > 0));
 
   async function save() {
     setMsg(null);
-    if (!ready.length) return setMsg({ tone: "red", text: t("Add at least one product with a quantity") });
+    if (!ready.length || incomplete.length) return setMsg({ tone: "red", text: t("Add at least one product with a quantity") });
     setBusy(true);
     try {
       const r = await call<{ posted: number; pending: number; cost: string }>("POST", "/api/waste/batch", {
@@ -42,8 +44,8 @@ export function WasteForm({ types, departments, warehouses }: { types: string[];
         lines: ready.map((l) => ({ productId: l.product!.id, quantity: l.quantity, unit: l.unit || l.product!.stockUnit, wasteType: l.wasteType, reason: l.reason || null })),
       });
       setMsg(r.pending
-        ? { tone: "amber", text: t("{posted} line(s) posted ({cost}); {pending} above the approval threshold wait for a manager.", { posted: r.posted, pending: r.pending, cost: money(r.cost) }) }
-        : { tone: "green", text: t("{posted} line(s) posted, total {cost}.", { posted: r.posted, cost: money(r.cost) }) });
+        ? { tone: "amber", text: t("{posted} line(s) posted ({cost}); {pending} above the approval threshold wait for a manager.", { posted: r.posted, pending: r.pending, cost: money(r.cost, currency) }) }
+        : { tone: "green", text: t("{posted} line(s) posted, total {cost}.", { posted: r.posted, cost: money(r.cost, currency) }) });
       setLines([blank()]);
       router.refresh();
     } catch (err) {
@@ -75,7 +77,7 @@ export function WasteForm({ types, departments, warehouses }: { types: string[];
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="secondary" onClick={() => setLines((ls) => [...ls, blank()])}><Plus className="h-4 w-4" /> {t("Add line")}</Button>
-        <Button type="button" disabled={busy || !ready.length} onClick={save}>{ready.length > 1 ? t("Save all ({n} lines)", { n: ready.length }) : t("Record waste")}</Button>
+        <Button type="button" disabled={busy || !ready.length || incomplete.length > 0} onClick={save}>{ready.length > 1 ? t("Save all ({n} lines)", { n: ready.length }) : t("Record waste")}</Button>
         <span className="text-xs text-ink-500">{t("Waste is deducted from stock at cost when saved; each line records who entered it.")}</span>
       </div>
     </div>

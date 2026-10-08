@@ -20,7 +20,7 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement, transferStock } from "./ledger";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const pos = dec.refine((v) => Number(v) > 0, "Must be positive");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 

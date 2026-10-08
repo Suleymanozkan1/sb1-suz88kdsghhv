@@ -193,6 +193,7 @@ export const ops: Record<string, string> = {
   "Physical count": "Fiziki sayım",
   "Folio": "Folyo",
   "Restocked to par": "Par seviyesine dolduruldu",
+  "Already at par — nothing to restock": "Oda zaten par seviyesinde — doldurulacak ürün yok",
   "Restock to par": "Par seviyesine doldur",
   // minibar movement types
   "RESTOCK": "Dolum",

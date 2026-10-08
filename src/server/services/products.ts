@@ -12,7 +12,7 @@ import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
 import { currentUnitCosts } from "./ledger";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
 /** Barcode, yield and costing method are not on the product card any more: such keys are dropped (weighted average costing). */
@@ -108,11 +108,11 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
   });
 }
 
-/** Ingredient search by name, SKU, category or brand (spec §27). */
-export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: { limit?: number; categoryGroup?: string; activeOnly?: boolean } = {}) {
-  authorize(actor, "product:view", { hotelId });
+type ProductSearchOpts = { limit?: number; categoryGroup?: string; activeOnly?: boolean; skip?: number; max?: number };
+
+function productSearchWhere(hotelId: string, q: string, opts: ProductSearchOpts): Prisma.ProductWhereInput {
   const term = q.trim();
-  const where: Prisma.ProductWhereInput = {
+  return {
     hotelId,
     ...(opts.activeOnly ? { active: true } : {}),
     ...(opts.categoryGroup ? { category: { group: opts.categoryGroup } } : {}),
@@ -127,7 +127,18 @@ export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: s
         }
       : {}),
   };
-  return db.product.findMany({ where, include: { category: true, conversions: true, defaultSupplier: { select: { name: true } } }, orderBy: { name: "asc" }, take: Math.min(opts.limit ?? 25, 200) });
+}
+
+/** Ingredient search by name, SKU, category or brand (spec §27). `max` raises the 200-row cap for trusted server callers (page paging, export); the API route keeps the default. */
+export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.findMany({ where: productSearchWhere(hotelId, q, opts), include: { category: true, conversions: true, defaultSupplier: { select: { name: true } } }, orderBy: [{ name: "asc" }, { id: "asc" }], skip: opts.skip, take: Math.min(opts.limit ?? 25, opts.max ?? 200) });
+}
+
+/** Number of products matching the same search (for "showing x of N" and paging). */
+export async function countProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.count({ where: productSearchWhere(hotelId, q, opts) });
 }
 
 export type CostSource = "WAC" | "FIFO" | "LAST_PURCHASE" | "STANDARD" | "NONE";

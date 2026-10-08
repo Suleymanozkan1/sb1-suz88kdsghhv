@@ -18,7 +18,7 @@ export const WASTE_TYPES = [
   "BUFFET_LEFTOVER", "PLATE_WASTE", "RETURNED_FOOD", "DROPPED", "SPILLED", "STORAGE_DAMAGE", "TEMPERATURE_LOSS", "QUALITY_REJECTION", "UNKNOWN", "OTHER", "LOST", "DISCARDED",
 ] as const;
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 
 export const wasteInput = z.object({
   departmentId: z.string().min(1),

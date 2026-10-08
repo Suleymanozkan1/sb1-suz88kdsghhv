@@ -12,7 +12,7 @@ import { audit } from "./audit";
 import { productCostTable, toConversions } from "./products";
 import { raiseAlert } from "./alerts";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 
 export const RECIPE_TYPES = ["RESTAURANT", "CAFE", "BAR", "BREAKFAST", "PASTRY", "BANQUET", "ROOM_SERVICE", "MINIBAR", "STAFF_MEAL", "COMPLIMENTARY", "PRODUCTION", "SEMI_FINISHED"] as const;
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
+import { parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 export function AddLine({ sessionId, recipes }: { sessionId: string; recipes: { id: string; name: string; unit: string }[] }) {
@@ -63,7 +64,10 @@ export function CloseSession({ sessionId, items, expectedCovers }: { sessionId: 
   async function close() {
     setErr(null);
     if (!/^\d+$/.test(covers)) return setErr(t("Enter the actual number of covers"));
-    const leftovers = items.flatMap((i) => CLASSES.map(([k, , cls]) => ({ key: i.key, quantity: vals[i.key]?.[k] ?? "", class: cls })).filter((l) => l.quantity && Number(l.quantity) > 0));
+    const typed = items.flatMap((i) => CLASSES.map(([k, , cls]) => ({ key: i.key, quantity: (vals[i.key]?.[k] ?? "").trim(), class: cls })).filter((l) => l.quantity !== ""));
+    // "1,5" is a valid Turkish entry; anything unreadable is reported instead of being left out of the close
+    if (typed.some((l) => !(parseNum(l.quantity) >= 0))) return setErr(t("Must be a number"));
+    const leftovers = typed.filter((l) => parseNum(l.quantity) > 0);
     if (!window.confirm(t("Close the session with {covers} covers and {n} leftover entries? Closed sessions cannot be edited.", { covers, n: leftovers.length }))) return;
     setBusy(true);
     try {
