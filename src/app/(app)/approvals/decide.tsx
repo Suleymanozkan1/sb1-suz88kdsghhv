@@ -14,7 +14,9 @@ export function Decide({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   async function go(decision: "APPROVE" | "REJECT") {
-    const note = window.prompt(decision === "APPROVE" ? t("Approval note (optional)") : t("Reason for rejection (required)")) ?? undefined;
+    const r = window.prompt(decision === "APPROVE" ? t("Approval note (optional)") : t("Reason for rejection (required)"));
+    if (r === null) return; // Cancel: decide nothing
+    const note = r.trim() || undefined;
     if (decision === "REJECT" && !note) return;
     setBusy(true);
     setErr(null);

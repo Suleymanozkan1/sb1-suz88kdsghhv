@@ -247,4 +247,10 @@ export const shell: Record<string, string> = {
   "Adjustment approval above": "Düzeltme onayı eşiği",
   "Margin target %": "Marj hedefi %",
   "Save settings": "Ayarları kaydet",
+  "Could not switch hotel": "Otel değiştirilemedi",
+  "Sign-out failed": "Çıkış yapılamadı",
+  "Back to the start page": "Başlangıç sayfasına dön",
+  "Showing the history of one record": "Tek bir kaydın geçmişi gösteriliyor",
+  "Clear filter": "Filtreyi temizle",
+  "Account created - sign in with your e-mail and new password.": "Hesabınız oluşturuldu - e-posta adresiniz ve yeni şifrenizle giriş yapın.",
 };

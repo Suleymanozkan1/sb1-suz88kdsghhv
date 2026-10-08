@@ -30,6 +30,7 @@ export default async function CalendarPage() {
   const res = await guarded(() => calendarView(prisma, actor, hotelId, from, to));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const r = res.data;
+  const roles = can(actor, "period:manage") ? await prisma.role.findMany({ where: { organizationId: actor.organizationId }, orderBy: { name: "asc" }, select: { key: true, name: true } }) : [];
   return (
     <>
       <PageHeader title={t("Cost control calendar")} subtitle={t("Recurring controls: weekly counts, month-end inventory, recipe, supplier price, waste and buffet reviews, cost closing and the management report. System evidence is shown next to each due date; completing a control is a recorded, audited action.")} exportKey="calendar" />
@@ -54,7 +55,7 @@ export default async function CalendarPage() {
           </tbody>
         </Table>
       </Card>
-      {can(actor, "period:manage") && <Card title={t("Add a control task")} className="mt-4"><NewTask /></Card>}
+      {can(actor, "period:manage") && <Card title={t("Add a control task")} className="mt-4"><NewTask roles={roles} /></Card>}
     </>
   );
 }

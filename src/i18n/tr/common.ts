@@ -68,6 +68,15 @@ export const common: Record<string, string> = {
   "SUPPLIER_CREATE": "Tedarikçi oluşturuldu", "TARGET_SET": "Hedef belirlendi", "USER_CREATE": "Kullanıcı oluşturuldu", "USER_INVITE": "Kullanıcı davet edildi",
   "USER_INVITE_ACCEPT": "Davet kabul edildi", "USER_INVITE_REVOKE": "Davet iptal edildi", "USER_UPDATE": "Kullanıcı güncellendi", "WAREHOUSE_CREATE": "Depo oluşturuldu",
   "WASTE_POST": "Fire işlendi", "WASTE_REQUEST": "Fire onay talebi", "APPROVAL_APPROVED": "Onaylandı", "APPROVAL_REJECTED": "Reddedildi",
+  "APPROVAL_CANCELLED": "Talep iptal edildi", "SUPPLIER_UPDATE": "Tedarikçi güncellendi",
+  "AUTO_ORDER_RULE_CREATE": "Otomatik sipariş kuralı oluşturuldu", "AUTO_ORDER_RULE_UPDATE": "Otomatik sipariş kuralı güncellendi", "AUTO_ORDER_RULE_DELETE": "Otomatik sipariş kuralı silindi",
+  "AUTO_ORDER_RULE_ON": "Otomatik sipariş kuralı açıldı", "AUTO_ORDER_RULE_OFF": "Otomatik sipariş kuralı kapatıldı", "AUTO_ORDER_RULES_FILLED": "Otomatik sipariş kuralları dolduruldu",
+  "ALLOCATION_RULE_ENABLE": "Dağıtım kuralı açıldı", "ALLOCATION_RULE_DISABLE": "Dağıtım kuralı kapatıldı",
+  "INTEGRATION_KEY_CREATE": "Entegrasyon anahtarı oluşturuldu", "INTEGRATION_KEY_REVOKE": "Entegrasyon anahtarı iptal edildi", "INTEGRATION_RUN_REQUEST": "Entegrasyon çalıştırma talebi",
+  "HOTEL_ACTIVATE": "Otel yeniden etkinleştirildi", "HOTEL_SUSPEND": "Otel askıya alındı", "WAREHOUSE_ACTIVATE": "Depo etkinleştirildi", "WAREHOUSE_DEACTIVATE": "Depo pasifleştirildi",
+  "METER_READING": "Sayaç okuması girildi", "METER_READING_CORRECT": "Sayaç okuması düzeltildi",
+  "PLATFORM_TENANT_ACTIVATE": "Şirket etkinleştirildi", "PLATFORM_TENANT_SUSPEND": "Şirket askıya alındı", "PLATFORM_TENANT_PLAN": "Şirket paketi değişti",
+  "STOCK_ADJUSTMENT_IN": "Stok düzeltmesi (giriş)", "STOCK_ADJUSTMENT_OUT": "Stok düzeltmesi (çıkış)", "STOCK_OPENING": "Açılış stoku",
   // expense sub-categories missing elsewhere
   "MARKET": "Pazar alımı", "ACCOUNTING": "Muhasebe", "PRINT": "Baskı", "TRAINING": "Eğitim", "SUPPLIES": "Sarf malzemesi",
   // units and room types

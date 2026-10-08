@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { call } from "@/lib/client";
+import { localDay } from "@/lib/format";
 import { useT } from "@/i18n/client";
 import { BOARD_BASIS } from "@/lib/board-basis";
 
@@ -11,18 +12,26 @@ const TYPES = ["BREAKFAST", "LUNCH", "DINNER", "ALL_INCLUSIVE", "SPECIAL_EVENT",
 
 type Defaults = { covers: number | null; coversSource: string | null; occupiedRooms: number | null; guests: number | null; occupancySource: string | null };
 
-export function NewSession({ departments, warehouses }: { departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[] }) {
+/** Whole number typed by a user; a dot between groups of three is a Turkish thousands separator ("1.200" = 1200, "1.5" is rejected). Empty → null, anything else → NaN. */
+const wholeIn = (v: string) => {
+  const s = v.replace(/\s/g, "");
+  if (s === "") return null;
+  return /^\d+$/.test(s) || /^\d{1,3}(\.\d{3})+$/.test(s) ? Number(s.replace(/\./g, "")) : Number.NaN;
+};
+
+export function NewSession({ departments, warehouses, timeZone }: { departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[]; timeZone: string }) {
   const t = useT();
   const router = useRouter();
   const [dept, setDept] = useState(departments.find((d) => /breakfast|kahvaltı/i.test(d.name))?.id ?? departments[0]?.id ?? "");
   const [type, setType] = useState("BREAKFAST");
-  const [day, setDay] = useState(new Date().toISOString().slice(0, 10));
+  const [day, setDay] = useState(() => localDay(timeZone)); // the hotel's today, not the UTC day
   const [covers, setCovers] = useState("");
   const [rooms, setRooms] = useState("");
   const [guests, setGuests] = useState("");
   const [src, setSrc] = useState<Defaults | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   // fields the user typed into for the current selection: a late default never overwrites them
   const edited = useRef({ covers: false, rooms: false, guests: false });
   const whs = [...warehouses].sort((a, b) => Number(b.departmentId === dept) - Number(a.departmentId === dept));
@@ -56,13 +65,19 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     const f = Object.fromEntries(new FormData(e.currentTarget).entries()) as Record<string, string>;
-    const n = (v: string) => (v ? Number(v) : null);
+    const nums = { expectedCovers: wholeIn(covers), occupiedRooms: wholeIn(rooms), inHouseGuests: wholeIn(guests) };
+    const bad = ([["Covers sold", nums.expectedCovers], ["Occupied rooms", nums.occupiedRooms], ["In-house guests", nums.inHouseGuests]] as const).filter(([, v]) => v !== null && Number.isNaN(v)).map(([l]) => t(l));
+    if (bad.length) return setErr(t("{fields}: enter a whole number of 0 or more (e.g. 1200 or 1.200)", { fields: bad.join(", ") }));
+    setErr(null);
+    setBusy(true);
     try {
-      const s = await call<{ id: string }>("POST", "/api/buffet/sessions", { departmentId: dept, warehouseId: f.warehouseId, type, serviceDate: day, expectedCovers: n(covers), occupiedRooms: n(rooms), inHouseGuests: n(guests), boardBasis: f.boardBasis || null });
-      router.push(`/buffet/${s.id}`);
+      const s = await call<{ id: string }>("POST", "/api/buffet/sessions", { departmentId: dept, warehouseId: f.warehouseId, type, serviceDate: day, ...nums, boardBasis: f.boardBasis || null });
+      router.push(`/buffet/${s.id}`); // busy stays on while the session page loads
     } catch (x) {
       setErr(x instanceof Error ? x.message : t("Failed"));
+      setBusy(false);
     }
   }
   const name = (s: string | null | undefined) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "—");
@@ -78,7 +93,7 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
       <div><Label htmlFor="bs-occ">{t("Occupied rooms")}</Label><Input id="bs-occ" inputMode="numeric" value={rooms} onChange={(e) => { edited.current.rooms = true; setRooms(e.target.value); }} />{hint(src?.occupiedRooms, src?.occupancySource)}</div>
       <div><Label htmlFor="bs-gst">{t("In-house guests")}</Label><Input id="bs-gst" inputMode="numeric" value={guests} onChange={(e) => { edited.current.guests = true; setGuests(e.target.value); }} />{hint(src?.guests, src?.occupancySource)}</div>
       <div className="md:col-span-2"><Label htmlFor="bs-bb">{t("Board basis")}</Label><Select id="bs-bb" name="boardBasis"><option value="">—</option>{BOARD_BASIS.map(([code, label]) => <option key={code} value={code}>{t(label)}</option>)}</Select></div>
-      <div className="flex items-end"><Button type="submit">{t("Open session")}</Button></div>
+      <div className="flex items-end"><Button type="submit" disabled={busy}>{t("Open session")}</Button></div>
     </form>
   );
 }

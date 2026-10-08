@@ -81,8 +81,8 @@ function RoomPanel({ room, canManage }: { room: Room; canManage: boolean }) {
       {canManage && (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <div><Label htmlFor="mb-type">{t("Action")}</Label><Select id="mb-type" value={type} onChange={(e) => setType(e.target.value as typeof type)}><option value="CONSUMED">{t("Consumption (charged)")}</option><option value="RESTOCK">{t("Restock")}</option><option value="RETURNED">{t("Return to store")}</option><option value="WASTE">{t("Waste / damaged")}</option><option value="COUNT">{t("Physical count")}</option></Select></div>
-            {type === "CONSUMED" && <div><Label htmlFor="mb-folio">{t("Folio")}</Label><Input id="mb-folio" value={folio} onChange={(e) => setFolio(e.target.value)} /></div>}
+            <div><Label htmlFor="mb-type">{t("Action")}</Label><Select id="mb-type" value={type} onChange={(e) => { setType(e.target.value as typeof type); idem.current = crypto.randomUUID(); }}><option value="CONSUMED">{t("Consumption (charged)")}</option><option value="RESTOCK">{t("Restock")}</option><option value="RETURNED">{t("Return to store")}</option><option value="WASTE">{t("Waste / damaged")}</option><option value="COUNT">{t("Physical count")}</option></Select></div>
+            {type === "CONSUMED" && <div><Label htmlFor="mb-folio">{t("Folio")}</Label><Input id="mb-folio" value={folio} onChange={(e) => { setFolio(e.target.value); idem.current = crypto.randomUUID(); }} /></div>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={busy || !items.length} onClick={() => run(() => (type === "COUNT" ? call("POST", "/api/minibar/count", { roomId: room.id, countedAt: today, lines: items.map((i) => ({ productId: i.productId, countedQty: i.quantity })) }) : call("POST", "/api/minibar/movements", { roomId: room.id, type, movedAt: today, folioRef: folio || null, items, idempotencyKey: idem.current })), () => t("Posted"))}>{t("Post")}</Button>

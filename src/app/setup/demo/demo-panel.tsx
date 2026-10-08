@@ -20,6 +20,9 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
   const [s, setS] = useState(initial);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // a failed step request stops the loop; the user retries it (attempt re-runs the effect)
+  const [stalled, setStalled] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -31,7 +34,7 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
   // the dataset is built one step per request (each fits the hosting time limit); one request at a time
   const stepping = useRef(false);
   useEffect(() => {
-    if (s.state !== "running" || stepping.current) return;
+    if (s.state !== "running" || stalled || stepping.current) return;
     stepping.current = true;
     let alive = true;
     void (async () => {
@@ -47,7 +50,10 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
           prev = next.done;
         }
       } catch (x) {
-        if (alive) setErr(x instanceof Error ? x.message : String(x));
+        if (alive) {
+          setErr(x instanceof Error ? x.message : String(x));
+          setStalled(true);
+        }
       } finally {
         stepping.current = false;
       }
@@ -55,7 +61,14 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
     return () => {
       alive = false;
     };
-  }, [s.state]);
+  }, [s.state, stalled, attempt]);
+
+  async function retry() {
+    setErr(null);
+    await refresh();
+    setStalled(false);
+    setAttempt((a) => a + 1);
+  }
 
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -77,6 +90,7 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
         <Alert tone="amber">
           {t("Demo data is being loaded. Keep this page open; it takes a few minutes.")}{" "}
           ({t("Step {d}/{n}", { d: s.done, n: s.total })}{s.next ? ` · ${s.next}` : ""})
+          {stalled && <div className="mt-2"><Button size="sm" variant="secondary" onClick={() => void retry()}>{t("Retry")}</Button></div>}
         </Alert>
       )}
       {s.state === "done" && (

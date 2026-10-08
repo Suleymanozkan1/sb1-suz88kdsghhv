@@ -112,6 +112,11 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
 export async function listApprovals(db: Db, actor: Actor, hotelId: string, status: "PENDING" | "APPROVED" | "REJECTED" | "ALL" = "PENDING") {
   authorize(actor, "dashboard:view", { hotelId });
   const rows = await db.approval.findMany({ where: { hotelId, ...(status === "ALL" ? {} : { status }) }, orderBy: { requestedAt: "desc" }, take: 200 });
+  return scopeApprovals(db, actor, hotelId, rows);
+}
+
+/** Drops the approvals of departments outside the user's scope (hotel-level ones stay with all-department roles). */
+export async function scopeApprovals<A extends { action: string; entityId: string }>(db: Db, actor: Actor, hotelId: string, rows: A[]): Promise<A[]> {
   if (actor.departmentIds === "ALL") return rows;
   const scope = actor.departmentIds;
   const depts = await approvalDepartments(db, hotelId, rows);
@@ -119,4 +124,14 @@ export async function listApprovals(db: Db, actor: Actor, hotelId: string, statu
     const d = depts.get(r.entityId);
     return d ? scope.includes(d) : false;
   });
+}
+
+/** Pending requests and the last decisions the user may see — the /approvals page and its export. */
+export async function approvalsOverview(db: Db, actor: Actor, hotelId: string, historyTake = 30) {
+  authorize(actor, "dashboard:view", { hotelId });
+  const [pending, history] = await Promise.all([
+    db.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "desc" } }),
+    db.approval.findMany({ where: { hotelId, status: { not: "PENDING" } }, orderBy: { decidedAt: "desc" }, take: actor.departmentIds === "ALL" ? historyTake : 500 }),
+  ]);
+  return { pending: await scopeApprovals(db, actor, hotelId, pending), history: (await scopeApprovals(db, actor, hotelId, history)).slice(0, historyTake) };
 }

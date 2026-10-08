@@ -81,7 +81,7 @@ async function main() {
       try {
         await page.locator("main button:visible, main [role=tab]:visible, main summary:visible").nth(target.i).click({ timeout: 5000 });
       } catch (e) {
-        findings.push({ ...cur, kind: "click", detail: (e as Error).message.split("\n")[0].slice(0, 200) });
+        findings.push({ ...cur, kind: "click", detail: ((e as Error).message.split("\n")[0] ?? "").slice(0, 200) });
       }
       await settle(page);
       await page.waitForTimeout(300);

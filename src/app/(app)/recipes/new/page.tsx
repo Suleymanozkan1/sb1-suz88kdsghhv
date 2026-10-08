@@ -10,7 +10,7 @@ export const metadata = { title: "New Recipe" };
 
 export default async function NewRecipePage() {
   const t = await getT();
-  const { actor, hotelId } = await pageContext();
+  const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "recipe:manage", hotelId);
   const [departments, subs] = await Promise.all([
     prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }),
@@ -19,7 +19,7 @@ export default async function NewRecipePage() {
   return (
     <>
       <PageHeader title={t("New recipe")} subtitle={t("Type → name → ingredients (searched) → quantities used → live cost → save.")} />
-      <RecipeWizard types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} />
+      <RecipeWizard currency={hotel.baseCurrency} types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} />
     </>
   );
 }

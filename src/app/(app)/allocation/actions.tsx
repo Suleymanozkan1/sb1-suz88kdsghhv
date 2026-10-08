@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { call } from "@/lib/client";
-import { useT } from "@/i18n/client";
+import { parseNum } from "@/lib/format";
+import { useLocale, useT } from "@/i18n/client";
+import { translateMessage } from "@/i18n/core";
 
 type Opt = { id: string; name: string };
 
@@ -15,17 +17,25 @@ export function RuleForm({ categories, drivers, departments }: { categories: Rec
   const [driver, setDriver] = useState("REVENUE");
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.currentTarget).entries()) as Record<string, string>;
     setMsg(null);
+    const priority = (f.priority ?? "").trim() === "" ? 100 : parseNum(f.priority);
+    if (!Number.isInteger(priority)) return setMsg({ tone: "red", text: t("Priority must be a whole number") });
+    const filled = Object.entries(targets).filter(([, w]) => w.trim() !== "");
+    if (driver === "FIXED" && filled.some(([, w]) => !(parseNum(w) > 0))) return setMsg({ tone: "red", text: t("Weights must be positive numbers (e.g. 2,5)") });
+    setBusy(true);
     try {
-      await call("POST", "/api/allocation/rules", { name: f.name, sourceCategoryGroup: cat, sourceSubCategory: f.sourceSubCategory || null, sourceDepartmentId: f.sourceDepartmentId || null, driver, priority: Number(f.priority || 100), targets: Object.entries(targets).filter(([, w]) => w !== "").map(([departmentId, w]) => ({ departmentId, weight: driver === "FIXED" ? w : null })) });
+      await call("POST", "/api/allocation/rules", { name: f.name, sourceCategoryGroup: cat, sourceSubCategory: f.sourceSubCategory || null, sourceDepartmentId: f.sourceDepartmentId || null, driver, priority, targets: filled.map(([departmentId, w]) => ({ departmentId, weight: driver === "FIXED" ? String(parseNum(w)) : null })) });
       setMsg({ tone: "green", text: t("Rule created — preview the period below before posting.") });
       setTargets({});
       router.refresh();
     } catch (x) {
       setMsg({ tone: "red", text: x instanceof Error ? x.message : t("Failed") });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -53,15 +63,34 @@ export function RuleForm({ categories, drivers, departments }: { categories: Rec
           ))}
         </div>
       </fieldset>
-      <div className="flex items-end gap-3"><div className="w-28"><Label htmlFor="ar-prio">{t("Priority")}</Label><Input id="ar-prio" name="priority" inputMode="numeric" defaultValue="100" /></div><Button type="submit">{t("Create rule")}</Button></div>
+      <div className="flex items-end gap-3"><div className="w-28"><Label htmlFor="ar-prio">{t("Priority")}</Label><Input id="ar-prio" name="priority" inputMode="numeric" defaultValue="100" /></div><Button type="submit" disabled={busy}>{t("Create rule")}</Button></div>
     </form>
   );
 }
 
 export function RuleToggle({ id, active }: { id: string; active: boolean }) {
   const t = useT();
+  const locale = useLocale();
   const router = useRouter();
-  return <Button size="sm" variant="ghost" onClick={async () => { await call("PATCH", `/api/allocation/rules/${id}`, { active: !active }); router.refresh(); }}>{active ? t("Disable") : t("Enable")}</Button>;
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <Button size="sm" variant="ghost" disabled={busy} onClick={async () => {
+        setErr(null);
+        setBusy(true);
+        try {
+          await call("PATCH", `/api/allocation/rules/${id}`, { active: !active });
+          router.refresh();
+        } catch (x) {
+          setErr(x instanceof Error ? translateMessage(locale, x.message) : t("Failed"));
+        } finally {
+          setBusy(false);
+        }
+      }}>{active ? t("Disable") : t("Enable")}</Button>
+      {err && <Alert>{err}</Alert>}
+    </span>
+  );
 }
 
 export function PostAllocation({ periodId, disabled }: { periodId: string; disabled: boolean }) {

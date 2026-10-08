@@ -583,3 +583,13 @@ export const XL_TEMPLATES: Array<[string, string]> = [
   ["{0} (CLOSED)", "{0} (kapalı)"],
   ["{0} (OPEN)", "{0} (açık)"],
 ];
+
+/**
+ * UI strings of the Excel / import / product / recipe screens (not workbook texts): merged into the UI dictionary
+ * (TR in ./index.ts), so useT() / getT() find them.
+ */
+export const XL_UI: Record<string, string> = {
+  "Price change % must be a number (e.g. 7,5 or -10)": "Fiyat değişimi % bir sayı olmalı (ör. 7,5 veya -10)",
+  "{from}–{to} of {n} products": "{n} üründen {from}–{to}",
+  "{name} is too large ({size} MB). Files up to 3.5 MB can be imported: split it into smaller files.": "{name} çok büyük ({size} MB). En fazla 3,5 MB'lık dosyalar içe aktarılabilir: dosyayı daha küçük parçalara bölün.",
+};

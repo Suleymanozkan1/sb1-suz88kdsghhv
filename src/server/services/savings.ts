@@ -18,6 +18,7 @@ import { energyReport, laborReport } from "./operations";
 import { menuEngineeringReport } from "./planning";
 import { OCCUPYING } from "./pms";
 import { stayInPeriod } from "@/domain/rooms";
+import { decimalText } from "@/lib/format";
 
 export const SAVING_DRIVERS = ["SUPPLIER_PRICE", "WASTE", "YIELD", "PORTION", "RECIPE", "OVERSTOCK", "ENERGY", "LABOR", "CHANNEL", "OTHER"] as const;
 export const ACTION_STATUSES = ["OPEN", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
@@ -145,7 +146,7 @@ export async function opportunities(db: Db, actor: Actor, hotelId: string, r: { 
 }
 
 // ── Saving actions ──
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v !== "" && Number.isFinite(Number(v)), "Must be a number");
 export const actionInput = z.object({
   driver: z.enum(SAVING_DRIVERS),
   problem: z.string().trim().min(3).max(300),
@@ -166,6 +167,9 @@ export async function createAction(db: Db, actor: Actor, hotelId: string, raw: u
   authorize(actor, "savings:manage", { hotelId, ...(v.departmentId ? { departmentId: v.departmentId } : {}) });
   return inTx(db, async (tx) => {
     await assertHotelRefs(tx, hotelId, { departmentIds: [v.departmentId] });
+    // one open action per opportunity (a double click or two managers at once must not create two): serialize per key, then check
+    if (v.opportunityKey) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${hotelId}|saving|${v.opportunityKey}`}, 0))`;
+    if (v.opportunityKey && (await tx.savingAction.findFirst({ where: { hotelId, opportunityKey: v.opportunityKey, status: { in: ["OPEN", "IN_PROGRESS"] } }, select: { id: true } }))) throw new DomainError("CONFLICT", "An open saving action already exists for this opportunity");
     const a = await tx.savingAction.create({ data: { hotelId, driver: v.driver, problem: v.problem, rootCause: v.rootCause ?? null, action: v.action, departmentId: v.departmentId ?? null, ownerName: v.ownerName, baselineCost: v.baselineCost ? toStorage(D(v.baselineCost)).toString() : null, targetSaving: toStorage(D(v.targetSaving)).toString(), dueDate: v.dueDate, opportunityKey: v.opportunityKey ?? null, createdById: actor.userId } });
     await audit(tx, actor, { hotelId, action: "SAVING_ACTION_CREATE", entityType: "SavingAction", entityId: a.id, after: a });
     return a;

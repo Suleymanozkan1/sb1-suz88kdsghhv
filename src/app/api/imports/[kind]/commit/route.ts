@@ -11,7 +11,7 @@ import { previewOccupancy, commitOccupancy, previewReservations, commitReservati
 import { previewProducts, commitProducts, previewSupplierPrices, commitSupplierPrices, previewOpeningStock, commitOpeningStock } from "@/server/services/master-imports";
 
 /** CSV text, base64 .xlsx (first sheet) or JSON rows (API) — all mapped to the same row objects. */
-const body = z.object({ csv: z.string().max(5_000_000).optional(), xlsx: z.string().max(8_000_000).optional(), rows: z.array(z.record(z.string(), z.string())).max(50_000).optional(), fileName: z.string().trim().max(200).optional() });
+const body = z.object({ csv: z.string().max(5_000_000).optional(), xlsx: z.string().max(5_000_000).optional(), rows: z.array(z.record(z.string(), z.string())).max(50_000).optional(), fileName: z.string().trim().max(200).optional() });
 const kinds = {
   expenses: [previewExpenseImport, commitExpenseImport],
   occupancy: [previewOccupancy, commitOccupancy],

@@ -49,8 +49,17 @@ export function isoDay(d: Date): string {
 /** Number typed by a user: accepts the Turkish decimal comma ("12,5"); empty or invalid input gives NaN. */
 export function parseNum(v: string | number | null | undefined): number {
   if (typeof v === "number") return v;
-  const s = (v ?? "").trim().replace(",", ".");
+  const s = decimalText(v ?? "");
   return s === "" ? Number.NaN : Number(s);
+}
+
+/** "1.500" is 1500 to a Turkish reader but 1.5 to Number(): refuse it rather than guess (a 1000× error). */
+const THOUSANDS_GROUPED = /^[1-9]\d{0,2}(\.\d{3})+$/;
+
+/** Normalise a typed decimal for the server: comma → dot; a dot-grouped thousands value becomes "NaN" so validation rejects it. */
+export function decimalText(v: string | number): string {
+  const s = String(v).trim();
+  return typeof v === "string" && THOUSANDS_GROUPED.test(s) ? "NaN" : s.replace(",", ".");
 }
 
 /** Today as yyyy-mm-dd in the hotel's timezone — the same on the server render and in the browser (toISOString gives the UTC day, i.e. yesterday after midnight in Turkey). */

@@ -42,7 +42,7 @@ export default async function BuffetPage({ searchParams }: { searchParams: Promi
         <Stat label={t("Cost / cover")} value={money(r.totals.costPerCover, cur)} />
         <Stat label={t("Waste / cover")} value={money(r.totals.wastePerCover, cur)} tone="warn" hint={t("Waste {pct} of buffet cost", { pct: pct(r.totals.wastePct) })} />
       </div>
-      {can(actor, "buffet:manage") && <Card title={t("New buffet session")} className="mt-4"><NewSession departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} /></Card>}
+      {can(actor, "buffet:manage") && <Card title={t("New buffet session")} className="mt-4"><NewSession departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} timeZone={hotel.timezone} /></Card>}
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card title={t("By meal")} padded={false}>
           {r.byType.length === 0 ? <div className="p-4"><Empty title={t("No closed sessions")} /></div> : (

@@ -10,14 +10,15 @@ import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { recommendOrder, expectedConsumption } from "@/domain/purchasing";
 import type { Db } from "../db";
-import { type Actor, authorize, departmentScope, requirePermission } from "../auth/actor";
+import { type Actor, authorize, departmentScope, requireDepartment, requirePermission } from "../auth/actor";
 import { postMovement, transferStock } from "./ledger";
 import { audit } from "./audit";
 import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 import { toConversions } from "./products";
 import { openPoQuantities } from "./purchasing";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0, "Must be a positive number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0, "Must be a positive number");
 
 export const movementInput = z.object({
   type: z.enum(["CONSUMPTION", "STAFF_MEAL", "COMPLIMENTARY", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "OPENING"]),
@@ -35,7 +36,6 @@ export const movementInput = z.object({
 export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "inventory:post", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = movementInput.parse(raw);
-  authorize(actor, "inventory:post", { hotelId, departmentId: input.departmentId ?? null });
   if (input.type.startsWith("ADJUSTMENT") || input.type === "OPENING") requirePermission(actor, "inventory:adjust");
   if (input.type.startsWith("ADJUSTMENT") && !input.reason) throw new DomainError("VALIDATION", "Adjustments require a reason");
   if (input.type === "OPENING" && !input.unitCost) throw new DomainError("VALIDATION", "Opening balances require a unit cost");
@@ -45,6 +45,8 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
   const wh = await db.warehouse.findFirst({ where: { id: input.warehouseId, hotelId } });
   if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
   requireWarehouseScope(actor, wh);
+  // no department chosen = the warehouse's own department (the ledger books it there), so scope-check that one
+  requireDepartment(actor, input.departmentId ?? wh.departmentId);
   const conv = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions));
   const inbound = input.type === "ADJUSTMENT_IN" || input.type === "OPENING";
   const unitCostPerStock = input.unitCost ? D(input.unitCost).div(conv.factor) : null;

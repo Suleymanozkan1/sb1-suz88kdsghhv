@@ -2,13 +2,16 @@ import { pageContext, guarded } from "@/server/page";
 import { forecastReport, whatIfReport } from "@/server/services/planning";
 import { prisma } from "@/server/db";
 import { Alert, Button, Card, Empty, Input, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
-import { money, qty } from "@/lib/format";
+import { money, parseNum, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Forecast & What-if" };
 
 type SP = { month?: string; occupancyPct?: string; coversPct?: string; priceChangePct?: string; wfrom?: string; productId?: string; productPricePct?: string; wOccupancyPct?: string; buffetCoversPct?: string; wastePts?: string; laborPct?: string; energyPct?: string };
-const pctIn = (v?: string) => (v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v) / 100);
+const numIn = (v?: string) => { const n = parseNum(v); return Number.isFinite(n) ? n : null; };
+const pctIn = (v?: string) => { const n = numIn(v); return n === null ? null : n / 100; };
+/** Labels of the filled-in fields that are not numbers ("abc"): ignored, and said so on screen. */
+const ignored = (sp: SP, fields: [keyof SP, string][]) => fields.filter(([k]) => (sp[k] ?? "").trim() !== "" && numIn(sp[k]) === null).map(([, label]) => label);
 
 export default async function ForecastPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -23,10 +26,13 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   // what-if baseline: the last complete month unless chosen
   const wf = sp.wfrom ? new Date(`${sp.wfrom}-01T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   const wt = new Date(Date.UTC(wf.getUTCFullYear(), wf.getUTCMonth() + 1, 1));
-  const levers = { productPricePct: pctIn(sp.productPricePct) ?? undefined, occupancyPct: pctIn(sp.wOccupancyPct) ?? undefined, buffetCoversPct: pctIn(sp.buffetCoversPct) ?? undefined, wastePts: sp.wastePts ? Number(sp.wastePts) : undefined, laborPct: pctIn(sp.laborPct) ?? undefined, energyPct: pctIn(sp.energyPct) ?? undefined };
+  const levers = { productPricePct: pctIn(sp.productPricePct) ?? undefined, occupancyPct: pctIn(sp.wOccupancyPct) ?? undefined, buffetCoversPct: pctIn(sp.buffetCoversPct) ?? undefined, wastePts: numIn(sp.wastePts) ?? undefined, laborPct: pctIn(sp.laborPct) ?? undefined, energyPct: pctIn(sp.energyPct) ?? undefined };
   const anyLever = Object.values(levers).some((v) => v !== undefined);
   const wi = anyLever ? await guarded(() => whatIfReport(prisma, actor, hotelId, { from: wf, to: wt, productId: sp.productId || null, ...levers })) : null;
   const products = await prisma.product.findMany({ where: { hotelId, active: true, category: { group: { in: ["FOOD", "BEVERAGE"] } } }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const badFc = ignored(sp, [["occupancyPct", "Expected occupancy %"], ["coversPct", "Covers / room change %"], ["priceChangePct", "Known price change %"]]);
+  const badWi = ignored(sp, [["productPricePct", "Price %"], ["wOccupancyPct", "Occupancy %"], ["buffetCoversPct", "Buffet covers %"], ["wastePts", "Waste (pts)"], ["laborPct", "Labor %"], ["energyPct", "Energy %"]]);
+  const badNote = (labels: string[]) => labels.length > 0 && <p className="mt-2 text-xs text-amber-700">{t("Ignored — not a number: {fields}", { fields: labels.map((l) => t(l)).join(", ") })}</p>;
   const keep = (omit: string[]) => Object.entries(sp).filter(([k, v]) => v && !omit.includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />);
   return (
     <>
@@ -40,6 +46,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
           <div><Label htmlFor="fc-price">{t("Known price change %")}</Label><Input id="fc-price" name="priceChangePct" inputMode="decimal" defaultValue={sp.priceChangePct} className="w-32" /></div>
           <Button type="submit" variant="secondary">{t("Forecast")}</Button>
         </form>
+        {badNote(badFc)}
         <p className="mt-3 text-xs text-ink-500">{t("Volume:")} {t(f.assumptions.occupancyBasis)} · {t("expected covers")} {qty(f.assumptions.expectedCovers, undefined, 0)} · {t("history")} {f.assumptions.historyMonths.join(", ") || t("none")} · {t(f.assumptions.seasonality)}.</p>
       </Card>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -84,6 +91,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
           <div><Label htmlFor="wi-en">{t("Energy %")}</Label><Input id="wi-en" name="energyPct" inputMode="decimal" defaultValue={sp.energyPct} /></div>
           <div className="flex items-end"><Button type="submit">{t("Calculate")}</Button></div>
         </form>
+        {badNote(badWi)}
         {wi && !wi.ok && <div className="mt-3"><Alert>{wi.error}</Alert></div>}
         {wi?.ok && (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">

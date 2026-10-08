@@ -20,6 +20,7 @@ import { periodReport as buffetPeriodReport } from "./buffet";
 import { minibarReport } from "./minibar";
 import { roomCostReport, laborReport, energyReport } from "./operations";
 import { buildResolver } from "./recipes";
+import { decimalText } from "@/lib/format";
 
 export const INVENTORY_GROUPS = ["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING", "LINEN"] as const;
 export const BUDGET_CATEGORIES = ["REVENUE", ...new Set([...INVENTORY_GROUPS, ...OPEX_CATEGORY_KEYS])] as string[];
@@ -38,7 +39,7 @@ export const TARGET_METRICS = {
 export type TargetMetric = keyof typeof TARGET_METRICS;
 const METRIC_KEYS = Object.keys(TARGET_METRICS) as [TargetMetric, ...TargetMetric[]];
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v !== "" && Number.isFinite(Number(v)), "Must be a number");
 const monthStartUtc = (y: number, m: number) => new Date(Date.UTC(y, m - 1, 1));
 
 // ── Budgets ──
@@ -114,8 +115,17 @@ export async function approveBudget(db: Db, actor: Actor, hotelId: string, budge
 }
 
 /** Copy a budget into a new draft revision (optionally scaled), e.g. after approval. */
-export async function reviseBudget(db: Db, actor: Actor, hotelId: string, budgetId: string, name: string, factor = "1") {
+/** Revision scale factor typed by a user: "1,05" or "1.05"; must be > 0 and ≤ 10 (a typo such as 105 must not inflate the budget a hundredfold). */
+export function revisionFactor(raw: string | number): string {
+  const f = String(raw).replace(",", ".").trim();
+  const n = Number(f);
+  if (f === "" || !Number.isFinite(n) || n <= 0 || n > 10) throw new DomainError("VALIDATION", "Revision factor must be a number above 0 and at most 10");
+  return f;
+}
+
+export async function reviseBudget(db: Db, actor: Actor, hotelId: string, budgetId: string, name: string, rawFactor: string | number = "1") {
   authorize(actor, "budget:manage", { hotelId });
+  const factor = revisionFactor(rawFactor);
   return inTx(db, async (tx) => {
     const b = await tx.budget.findFirst({ where: { id: budgetId, hotelId }, include: { lines: true } });
     if (!b) throw new DomainError("NOT_FOUND", "Budget not found");

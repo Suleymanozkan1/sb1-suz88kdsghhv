@@ -18,7 +18,8 @@ export default async function ReportsPage() {
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const now = new Date();
   const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
-  const canExport = can(actor, "report:export");
+  // pack and verification rebuild the whole hotel: department-scoped roles cannot run them
+  const canExport = can(actor, "report:export") && actor.departmentIds === "ALL";
   return (
     <>
       <PageHeader title={t("Reports")} subtitle={t("Every generated report is archived with period, parameters, author, data version and hashes. Closed months can be re-verified: the period hash must reproduce exactly unless the month was reopened.")} exportKey="reports" />

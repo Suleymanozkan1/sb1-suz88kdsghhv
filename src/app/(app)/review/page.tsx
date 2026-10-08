@@ -14,7 +14,9 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
   const cur = hotel.baseCurrency;
-  const end = sp.week ? new Date(`${sp.week}T00:00:00Z`) : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 1));
+  // a hand-edited ?week= that is not a real day falls back to yesterday instead of crashing the page
+  const picked = sp.week && /^\d{4}-\d{2}-\d{2}$/.test(sp.week) ? new Date(`${sp.week}T00:00:00Z`) : null;
+  const end = picked && !Number.isNaN(picked.getTime()) && picked.toISOString().slice(0, 10) === sp.week ? picked : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 1));
   const res = await guarded(() => weeklyReview(prisma, actor, hotelId, end));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const r = res.data;

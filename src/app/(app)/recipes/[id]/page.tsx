@@ -6,7 +6,8 @@ import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import type { CostedLine } from "@/domain/recipe-cost";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
-import { money, pct, qty, date } from "@/lib/format";
+import { money, pct, qty } from "@/lib/format";
+import { isDomainError } from "@/domain/errors";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { ApproveButton, PriceImpact } from "./actions";
@@ -33,12 +34,15 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
-  const res = await guarded(() => recipeCost(prisma, actor, hotelId, id));
-  if (!res.ok) return res.error.includes("not found") ? notFound() : <Alert>{res.error}</Alert>;
+  // not-found is decided on the error code: guarded() returns the translated message ("Reçete bulunamadı" in Turkish)
+  const res = await guarded(() => recipeCost(prisma, actor, hotelId, id).catch((e: unknown) => (isDomainError(e) && e.code === "NOT_FOUND" ? notFound() : Promise.reject(e))));
+  if (!res.ok) return <Alert>{res.error}</Alert>;
   const { result: c, version } = res.data;
   const { marginTargetPct } = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { marginTargetPct: true } });
   const recipe = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
   const cur = hotel.baseCurrency;
+  // approval / effective moments are timestamps: shown as the hotel's local day (format.date() would give the UTC day)
+  const day = (v: Date | null) => (v ? new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: hotel.timezone }).format(v) : "—");
   const products = c.lines.filter((l) => l.kind === "PRODUCT").map((l) => ({ id: l.refId, name: l.name, unitCost: l.unitCost?.toString() ?? null, unit: l.baseUnit }));
   return (
     <>
@@ -74,7 +78,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
                 <tr key={v.id}>
                   <Td>v{v.version}</Td>
                   <Td><Badge tone={v.status === "APPROVED" ? "green" : v.status === "DRAFT" ? "amber" : "gray"}>{t(v.status)}</Badge></Td>
-                  <Td>{date(v.effectiveFrom)}{v.effectiveTo ? ` → ${date(v.effectiveTo)}` : ""}</Td>
+                  <Td>{day(v.effectiveFrom)}{v.effectiveTo ? ` → ${day(v.effectiveTo)}` : ""}</Td>
                   <Td align="right">{money(v.portionCost?.toString(), cur)}</Td>
                   <Td><span className="text-xs text-ink-500">{v.reason ?? "—"}</span></Td>
                   <Td>{v.status === "DRAFT" && can(actor, "recipe:approve") && <ApproveButton versionId={v.id} />}</Td>

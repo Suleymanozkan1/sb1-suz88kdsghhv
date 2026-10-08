@@ -16,8 +16,9 @@ import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
 import { hotelPlan, planHas } from "../plans";
 import { mailConfigured, sendMail } from "../mail";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".")).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 
 export const ruleInput = z.object({

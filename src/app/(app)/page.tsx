@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { homeDashboard } from "@/server/services/insights";
@@ -9,7 +10,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty, dateTime } from "@/lib/format";
 import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { translateMessage } from "@/i18n/core";
+import { homeHref } from "@/components/nav";
 
 export const metadata = { title: "Dashboard" };
 
@@ -19,6 +22,13 @@ const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", I
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const { actor, hotelId, hotel } = await pageContext();
   const t = await getT();
+  // roles without the dashboard (e.g. warehouse user) start on the first page their menu offers
+  if (!actor.permissions.has("dashboard:view")) {
+    const home = homeHref(actor.permissions);
+    if (home && home !== "/") redirect(home);
+    return <Empty title={t("Nothing to show for your role on this page")}>{t("Ask your company administrator if you need access.")}</Empty>;
+  }
+  const locale = await getLocale();
   const range = monthRange(await searchParams);
   const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
@@ -165,8 +175,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <li key={a.id} className="flex gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
                   <div>
-                    <div className="flex items-center gap-2"><span className="font-medium">{a.title}</span><Badge tone={severityTone[a.severity]}>{t(a.severity)}</Badge></div>
-                    <p className="text-xs text-ink-500">{a.message}</p>
+                    <div className="flex items-center gap-2"><span className="font-medium">{translateMessage(locale, a.title)}</span><Badge tone={severityTone[a.severity]}>{t(a.severity)}</Badge></div>
+                    <p className="text-xs text-ink-500">{translateMessage(locale, a.message)}</p>
                     <p className="text-[11px] text-ink-400">{dateTime(a.createdAt, hotel.timezone)}</p>
                   </div>
                 </li>

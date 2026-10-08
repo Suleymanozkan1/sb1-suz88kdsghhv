@@ -48,6 +48,8 @@ export async function listReports(db: Db, actor: Actor, hotelId: string, take = 
  */
 export async function verifyReproducibility(db: Db, actor: Actor, hotelId: string, reportId: string) {
   authorize(actor, "report:export", { hotelId });
+  // a department-scoped rebuild only sees part of the hotel and would always report CHANGED
+  if (actor.departmentIds !== "ALL") throw new DomainError("FORBIDDEN", "Verifying a report rebuilds the whole hotel: needs an all-department role");
   const r = await db.report.findFirst({ where: { id: reportId, hotelId } });
   if (!r) throw new DomainError("NOT_FOUND", "Report not found");
   if (!r.periodFrom || !r.periodTo || !r.periodHash) throw new DomainError("VALIDATION", "This report has no reproducibility fingerprint (generated before archiving was introduced)");

@@ -419,4 +419,7 @@ export const stock: Record<string, string> = {
   "other": "diğer",
   "lost": "kayıp",
   "discarded": "imha",
+  // ── counts / approvals ──
+  "Starting…": "Başlatılıyor…",
+  "Estimated value": "Tahmini değer",
 };

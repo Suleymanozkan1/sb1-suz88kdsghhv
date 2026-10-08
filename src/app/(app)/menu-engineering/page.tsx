@@ -1,6 +1,7 @@
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { menuEngineeringReport } from "@/server/services/planning";
 import { MENU_ACTION, type MenuClass } from "@/domain/planning";
+import { departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
@@ -22,7 +23,7 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
   const rep = await guarded(() => menuEngineeringReport(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || null }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const r = rep.data;
-  const departments = await prisma.department.findMany({ where: { hotelId, isOutlet: true }, orderBy: { name: "asc" } });
+  const departments = await prisma.department.findMany({ where: { hotelId, isOutlet: true, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } });
   return (
     <>
       <PageHeader title={t("Menu engineering")} subtitle={t("Popularity (menu mix ≥ 70 % of an equal share = {popularity}) × contribution per unit (≥ weighted average {contribution}). Cost = recipe version frozen at sale; \"cost change\" shows today's recipe cost vs then.", { popularity: pct(f100(r.thresholds.popularity)), contribution: money(r.thresholds.contributionPerUnit, cur) })} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} exportKey="menu-engineering" />

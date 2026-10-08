@@ -11,8 +11,9 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
 import { currentUnitCosts } from "./ledger";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim()).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
 /** Barcode, yield and costing method are not on the product card any more: such keys are dropped (weighted average costing). */

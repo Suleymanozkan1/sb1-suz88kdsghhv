@@ -16,6 +16,30 @@ import { audit } from "./audit";
 export const CATEGORY_GROUPS = ["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING", "LINEN"] as const;
 const code = z.string().trim().min(1).max(20).regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Use capitals, digits, - or _");
 const password = z.string().min(10, "At least 10 characters").max(200);
+/** number typed in a form: accepts a decimal comma ("8,5") */
+const num = () => z.preprocess((v) => (typeof v === "string" ? v.trim().replace(",", ".") : v), z.coerce.number());
+
+/** IANA time zone the runtime can format with (an unknown one makes every date on the page throw) */
+export function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** ISO 4217-shaped code that Intl can format money with */
+export function isCurrencyCode(c: string): boolean {
+  if (!/^[A-Z]{3}$/.test(c)) return false;
+  try {
+    new Intl.NumberFormat("en", { style: "currency", currency: c });
+    return true;
+  } catch {
+    return false;
+  }
+}
+export const currencyCode = z.string().trim().toUpperCase().refine(isCurrencyCode, "Unknown currency code (use ISO 4217, e.g. TRY, EUR)");
+export const timeZone = z.string().trim().max(64).refine(isTimeZone, "Unknown time zone (use an IANA name, e.g. Europe/Istanbul)");
 
 function guard(actor: Actor, hotelId: string) {
   authorize(actor, "admin:users", { hotelId });
@@ -90,11 +114,15 @@ const userUpdate = z.object({
 export async function updateUser(db: Db, actor: Actor, hotelId: string, input: unknown) {
   guard(actor, hotelId);
   const p = userUpdate.parse(input);
-  const u = await db.user.findFirst({ where: { id: p.id, organizationId: actor.organizationId, hotelAccess: { some: { hotelId } } }, include: { role: true, deptAccess: true, hotelAccess: true } });
+  const u = await db.user.findFirst({ where: { id: p.id, organizationId: actor.organizationId, hotelAccess: { some: { hotelId } } }, include: { role: true, deptAccess: { include: { department: { select: { hotelId: true } } } }, hotelAccess: { include: { hotel: { select: { active: true } } } } } });
   if (!u) throw new DomainError("NOT_FOUND", "User not found");
   // an administrator may only manage users whose every hotel they administer: otherwise resetting a
-  // password or role would let them act inside a hotel they cannot see (privilege escalation)
-  if (u.hotelAccess.some((h) => !actor.hotelIds.includes(h.hotelId))) throw new DomainError("FORBIDDEN", "This user also works in hotels you do not administer");
+  // password or role would let them act inside a hotel they cannot see (privilege escalation).
+  // A suspended hotel the administrator also holds access to does not count (nobody can act inside it, and its
+  // access is kept untouched below); one they never administered still blocks the edit.
+  const suspended = u.hotelAccess.filter((h) => !h.hotel.active).map((h) => h.hotelId);
+  const ownSuspended = new Set((await db.userHotelAccess.findMany({ where: { userId: actor.userId, hotelId: { in: suspended } }, select: { hotelId: true } })).map((a) => a.hotelId));
+  if (u.hotelAccess.some((h) => !actor.hotelIds.includes(h.hotelId) && !ownSuspended.has(h.hotelId))) throw new DomainError("FORBIDDEN", "This user also works in hotels you do not administer");
   if (u.id === actor.userId && (p.active === false || (p.roleKey && p.roleKey !== u.role.key))) throw new DomainError("CONFLICT", "You cannot deactivate yourself or change your own role");
   const role = p.roleKey ? await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: p.roleKey } } }) : u.role;
   if (!role) throw new DomainError("VALIDATION", "Unknown role");
@@ -102,33 +130,40 @@ export async function updateUser(db: Db, actor: Actor, hotelId: string, input: u
     const admins = await db.user.count({ where: { organizationId: actor.organizationId, active: true, role: { key: "admin" } } });
     if (admins <= 1) throw new DomainError("CONFLICT", "The organization must keep at least one active administrator");
   }
-  const depts = p.departmentIds ?? u.deptAccess.map((d) => d.departmentId);
-  // hotel assignment: only hotels of this organization that the administrator administers (spec 32–33)
+  // hotel assignment: only hotels of this organization that the administrator administers (spec 32–33);
+  // access to a suspended hotel is neither shown nor changed here, so it survives the save
   const currentHotels = u.hotelAccess.map((h) => h.hotelId);
-  if (p.hotelIds) {
-    const touched = [...new Set([...p.hotelIds, ...currentHotels])].filter((h) => p.hotelIds!.includes(h) !== currentHotels.includes(h));
+  const newHotels = p.hotelIds ? [...new Set([...p.hotelIds, ...suspended])] : undefined;
+  if (newHotels) {
+    const touched = [...new Set([...newHotels, ...currentHotels])].filter((h) => newHotels.includes(h) !== currentHotels.includes(h));
     if (touched.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only grant or remove access to hotels you administer");
-    const own = await db.hotel.count({ where: { id: { in: p.hotelIds }, organizationId: actor.organizationId } });
-    if (own !== new Set(p.hotelIds).size) throw new DomainError("FORBIDDEN", "Hotel outside your organization");
+    const own = await db.hotel.count({ where: { id: { in: newHotels }, organizationId: actor.organizationId } });
+    if (own !== newHotels.length) throw new DomainError("FORBIDDEN", "Hotel outside your organization");
   }
-  const hotelsAfter = p.hotelIds ?? currentHotels;
+  const hotelsAfter = newHotels ?? currentHotels;
+  // the department picker shows this hotel only: departments the user has in their other (kept) hotels stay
+  const depts = p.departmentIds
+    ? [...new Set([...u.deptAccess.filter((d) => d.department.hotelId !== hotelId && hotelsAfter.includes(d.department.hotelId)).map((d) => d.departmentId), ...p.departmentIds])]
+    : u.deptAccess.filter((d) => hotelsAfter.includes(d.department.hotelId)).map((d) => d.departmentId);
   if (!role.allDepartments && depts.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
   const hash = p.password ? await bcrypt.hash(p.password, 10) : undefined;
   return inTx(db, async (tx) => {
-    if (p.hotelIds) {
-      await tx.userHotelAccess.deleteMany({ where: { userId: u.id, hotelId: { notIn: p.hotelIds } } });
-      await tx.userHotelAccess.createMany({ data: p.hotelIds.map((h) => ({ userId: u.id, hotelId: h })), skipDuplicates: true });
+    if (newHotels) {
+      await tx.userHotelAccess.deleteMany({ where: { userId: u.id, hotelId: { notIn: newHotels } } });
+      await tx.userHotelAccess.createMany({ data: newHotels.map((h) => ({ userId: u.id, hotelId: h })), skipDuplicates: true });
       // department rights never outlive the hotel they belong to
-      if (!p.departmentIds) await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id, department: { hotelId: { notIn: p.hotelIds } } } });
+      await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id, department: { hotelId: { notIn: newHotels } } } });
     }
     if (p.departmentIds) {
-      await checkDepartments(tx, hotelsAfter, p.departmentIds);
-      await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id } });
-      if (p.departmentIds.length) await tx.userDepartmentAccess.createMany({ data: p.departmentIds.map((d) => ({ userId: u.id, departmentId: d })) });
+      // new department rights only in hotels the administrator can act in (never in a suspended one)
+      await checkDepartments(tx, hotelsAfter.filter((h) => actor.hotelIds.includes(h)), p.departmentIds);
+      // replace only this hotel's departments (and any re-sent ones); other hotels' rights are kept
+      await tx.userDepartmentAccess.deleteMany({ where: { userId: u.id, OR: [{ department: { hotelId } }, { departmentId: { in: p.departmentIds } }] } });
+      if (p.departmentIds.length) await tx.userDepartmentAccess.createMany({ data: [...new Set(p.departmentIds)].map((d) => ({ userId: u.id, departmentId: d })) });
     }
     await tx.user.update({ where: { id: u.id }, data: { name: p.name, roleId: role.id, active: p.active, passwordHash: hash } });
     // deactivation, role change and password reset end every open session and API token immediately
-    if (p.active === false || hash || role.id !== u.roleId || p.hotelIds) await tx.session.deleteMany({ where: { userId: u.id } });
+    if (p.active === false || hash || role.id !== u.roleId || newHotels) await tx.session.deleteMany({ where: { userId: u.id } });
     await audit(tx, actor, {
       hotelId,
       action: "USER_UPDATE",
@@ -145,13 +180,13 @@ export async function updateUser(db: Db, actor: Actor, hotelId: string, input: u
 
 const hotelSettings = z.object({
   name: z.string().trim().min(2).max(120),
-  totalRooms: z.coerce.number().int().min(0).max(100_000),
-  baseCurrency: z.string().trim().length(3).toUpperCase(),
-  timezone: z.string().trim().min(3).max(64),
-  priceAlertPct: z.coerce.number().min(0).max(1000),
-  wasteApprovalValue: z.coerce.number().min(0),
-  adjustmentApprovalValue: z.coerce.number().min(0),
-  marginTargetPct: z.coerce.number().min(0).max(100),
+  totalRooms: num().pipe(z.number().int().min(0).max(100_000)),
+  baseCurrency: currencyCode,
+  timezone: timeZone,
+  priceAlertPct: num().pipe(z.number().min(0).max(1000)),
+  wasteApprovalValue: num().pipe(z.number().min(0)),
+  adjustmentApprovalValue: num().pipe(z.number().min(0)),
+  marginTargetPct: num().pipe(z.number().min(0).max(100)),
   /** night audit: the business day ends here (HH:MM local), default 03:30 */
   businessDayCutoff: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM").optional(),
   /** sold dishes' recipe ingredients leave the stock automatically (default on) */
@@ -176,7 +211,7 @@ export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: 
 
 // ── master structure ──
 
-const deptInput = z.object({ code, name: z.string().trim().min(2).max(80), isOutlet: z.boolean().default(false), parentId: z.string().nullish(), sqm: z.coerce.number().min(0).nullish(), headcount: z.coerce.number().int().min(0).nullish() });
+const deptInput = z.object({ code, name: z.string().trim().min(2).max(80), isOutlet: z.boolean().default(false), parentId: z.string().nullish(), sqm: num().pipe(z.number().min(0)).nullish(), headcount: num().pipe(z.number().int().min(0)).nullish() });
 
 export async function createDepartment(db: Db, actor: Actor, hotelId: string, input: unknown) {
   guard(actor, hotelId);
@@ -192,7 +227,7 @@ export async function createDepartment(db: Db, actor: Actor, hotelId: string, in
   });
 }
 
-const deptUpdate = z.object({ id: z.string(), name: z.string().trim().min(2).max(80).optional(), isOutlet: z.boolean().optional(), active: z.boolean().optional(), sqm: z.coerce.number().min(0).nullish(), headcount: z.coerce.number().int().min(0).nullish() });
+const deptUpdate = z.object({ id: z.string(), name: z.string().trim().min(2).max(80).optional(), isOutlet: z.boolean().optional(), active: z.boolean().optional(), sqm: num().pipe(z.number().min(0)).nullish(), headcount: num().pipe(z.number().int().min(0)).nullish() });
 
 export async function updateDepartment(db: Db, actor: Actor, hotelId: string, input: unknown) {
   guard(actor, hotelId);
@@ -336,7 +371,7 @@ const bootstrapInput = z.object({
   hotelCode: code,
   hotelName: z.string().trim().min(2).max(120),
   totalRooms: z.coerce.number().int().min(0).max(100_000).default(0),
-  baseCurrency: z.string().trim().length(3).toUpperCase().default("TRY"),
+  baseCurrency: currencyCode.default("TRY"),
   adminEmail: z.string().trim().toLowerCase().email(),
   adminName: z.string().trim().min(2).max(120),
   adminPassword: password,

@@ -616,4 +616,16 @@ export const planning: Record<string, string> = {
   "Approval note (optional)": "Onay notu (isteğe bağlı)",
   "Reason for rejection (required)": "Ret gerekçesi (zorunlu)",
   "Reject": "Reddet",
+  // input validation & confirmations (forecast, budget, allocation, savings, calendar, periods, buffet)
+  "Ignored — not a number: {fields}": "Sayı olmadığı için yok sayıldı: {fields}",
+  "ignored — not a number": "sayı değil — yok sayıldı",
+  "Revision factor must be a number above 0 and at most 10": "Revizyon katsayısı 0'dan büyük ve en fazla 10 olan bir sayı olmalıdır",
+  "Target and warn level must be numbers (e.g. 28,5)": "Hedef ve uyarı seviyesi sayı olmalıdır (ör. 28,5)",
+  "Priority must be a whole number": "Öncelik tam sayı olmalıdır",
+  "Weights must be positive numbers (e.g. 2,5)": "Ağırlıklar pozitif sayı olmalıdır (ör. 2,5)",
+  "An open saving action already exists for this opportunity": "Bu fırsat için zaten açık bir tasarruf aksiyonu var",
+  "— (period managers only)": "— (yalnızca dönem yöneticileri)",
+  "Owner role must be one of the organization's roles": "Sorumlu rol, kuruluşun rollerinden biri olmalıdır",
+  "Close this period? Posting into it is blocked; only a period reopen (audited) undoes it.": "Bu dönem kapatılsın mı? Döneme kayıt yapılamaz; yalnızca (denetim kaydı tutulan) dönem yeniden açma işlemi bunu geri alır.",
+  "{fields}: enter a whole number of 0 or more (e.g. 1200 or 1.200)": "{fields}: 0 veya daha büyük bir tam sayı girin (ör. 1200 veya 1.200)",
 };

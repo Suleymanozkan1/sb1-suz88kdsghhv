@@ -3,7 +3,7 @@ import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
-import { money, qty, date } from "@/lib/format";
+import { money, qty, date, localDay } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { ReceiptForm } from "./receipt-form";
 
@@ -66,7 +66,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
         <details className="mt-4 rounded-xl border border-ink-200 bg-white" data-testid="manual-receipt">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800">{t("Receive goods by hand (backup — when an invoice did not come from Micros)")}</summary>
           <div className="border-t border-ink-100 p-4">
-            <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} />
+            <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={localDay(hotel.timezone)} />
           </div>
         </details>
       )}

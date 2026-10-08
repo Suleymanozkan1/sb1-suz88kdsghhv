@@ -40,7 +40,9 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
   const [v, setV] = useState(init);
   const [busy, setBusy] = useState(false);
   const dirty = JSON.stringify(v) !== JSON.stringify(init);
-  const supplierEmail = suppliers.find((s) => s.id === v.supplierId)?.email ?? "";
+  // the page lists active suppliers only: keep a deactivated supplier of this rule selectable instead of showing the first active one
+  const options = suppliers.some((s) => s.id === r.supplierId) ? suppliers : [{ id: r.supplierId, name: `${r.supplier} (${t("inactive")})`, email: r.ownEmail ? null : r.email }, ...suppliers];
+  const supplierEmail = options.find((s) => s.id === v.supplierId)?.email ?? "";
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -67,7 +69,7 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
       <Td>
         <div className="w-32">
           <Select aria-label={t("Supplier")} className="py-1 pl-2" disabled={!canManage} value={v.supplierId} onChange={(e) => setV({ ...v, supplierId: e.target.value })}>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </div>
       </Td>

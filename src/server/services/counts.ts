@@ -11,8 +11,9 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement } from "./ledger";
 import { assertHotelRefs, requireWarehouseScope, warehouseScope } from "../auth/scope";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
 
 export async function startCount(db: Db, actor: Actor, hotelId: string, input: { warehouseId: string; countDate: Date; productIds?: string[]; note?: string }) {
   authorize(actor, "inventory:count", { hotelId });

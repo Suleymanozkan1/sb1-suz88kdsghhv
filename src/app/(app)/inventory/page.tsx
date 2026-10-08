@@ -1,9 +1,10 @@
 import { pageContext, guarded } from "@/server/page";
 import { inventoryStatus } from "@/server/services/insights";
-import { can } from "@/server/auth/actor";
+import { can, departmentScope } from "@/server/auth/actor";
+import { warehouseScope } from "@/server/auth/scope";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Label, PageHeader, Select, Stat, Table, Td, Th, Button, levelTone } from "@/components/ui";
-import { money, qty } from "@/lib/format";
+import { localDay, money, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { MovementForm } from "./movement-form";
 
@@ -17,7 +18,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const inv = res.data;
   const rows = sp.level ? inv.rows.filter((r) => (sp.level === "DEAD" ? r.deadStock : r.level === sp.level)) : inv.rows;
-  const [warehouses, departments] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId }, orderBy: { name: "asc" } })]);
+  const [warehouses, departments] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } })]);
   const cur = hotel.baseCurrency;
   return (
     <>
@@ -30,7 +31,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       </div>
       {can(actor, "inventory:post") && (
         <Card title={t("Record stock movement")} className="mt-4">
-          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} />
+          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={localDay(hotel.timezone)} />
         </Card>
       )}
       <Card className="mt-4" padded={false} title={t("Stock by product")} actions={

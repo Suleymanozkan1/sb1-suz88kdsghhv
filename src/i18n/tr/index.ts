@@ -8,5 +8,6 @@ import { server } from "./server";
 import { reports } from "./reports";
 import { setup } from "./setup";
 import { exports } from "./exports";
+import { XL_UI } from "./excel";
 
-export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports };
+export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI };

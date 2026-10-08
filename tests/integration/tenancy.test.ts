@@ -213,6 +213,10 @@ describe("tenant lifecycle (spec 11–12, 29–35, 143–145)", () => {
     await prisma.userHotelAccess.create({ data: { userId: both.userId, hotelId: a2.id } });
     const a1Only = await A.actor("admin");
     await expect(updateUser(prisma, a1Only, A.hotel.id, { id: both.userId, password: "An0ther-Passw0rd!" })).rejects.toThrow(/do not administer/);
+    // ...and suspending that hotel does not open the door: the admin never administered it
+    await prisma.hotel.update({ where: { id: a2.id }, data: { active: false } });
+    await expect(updateUser(prisma, (await actorForUser(a1Only.userId))!, A.hotel.id, { id: both.userId, password: "An0ther-Passw0rd!" })).rejects.toThrow(/do not administer/);
+    await prisma.hotel.update({ where: { id: a2.id }, data: { active: true } });
     // cannot grant a hotel of another organization
     await expect(createUser(prisma, aAdmin, A.hotel.id, { email: `x-${randomBytes(3).toString("hex")}@test.local`, name: "Xavier", password: "Str0ng-Passw0rd!", roleKey: "viewer", hotelIds: [B.hotel.id] })).rejects.toThrow(/administer/);
     // the last administrator cannot be demoted, nor can admins demote themselves

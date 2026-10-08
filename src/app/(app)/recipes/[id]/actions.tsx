@@ -4,18 +4,20 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { money, pct } from "@/lib/format";
+import { money, parseNum, pct } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 export function ApproveButton({ versionId }: { versionId: string }) {
   const router = useRouter();
   const t = useT();
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <div>
-      <Button size="sm" onClick={async () => {
+      <Button size="sm" disabled={busy} onClick={async () => {
         setErr(null);
-        try { await call("POST", `/api/recipe-versions/${versionId}/approve`, {}); router.refresh(); } catch (e) { setErr(e instanceof Error ? e.message : t("Failed")); }
+        setBusy(true);
+        try { await call("POST", `/api/recipe-versions/${versionId}/approve`, {}); router.refresh(); } catch (e) { setErr(e instanceof Error ? e.message : t("Failed")); } finally { setBusy(false); }
       }}>{t("Approve")}</Button>
       {err && <p className="mt-1 max-w-xs whitespace-normal text-xs text-red-700">{err}</p>}
     </div>
@@ -33,8 +35,10 @@ export function PriceImpact({ products, currency }: { products: { id: string; na
   const p = products.find((x) => x.id === pid);
   async function run() {
     if (!p?.unitCost) return setErr(t("Selected ingredient has no current cost"));
+    const ch = parseNum(change);
+    if (!Number.isFinite(ch) || ch < -100) return setErr(t("Price change % must be a number (e.g. 7,5 or -10)"));
     setErr(null);
-    const newCost = (Number(p.unitCost) * (1 + Number(change) / 100)).toFixed(6);
+    const newCost = (Number(p.unitCost) * (1 + ch / 100)).toFixed(6);
     try { setRes(await call<Impact>("GET", `/api/price-impact?productId=${pid}&newCost=${newCost}`)); } catch (e) { setErr(e instanceof Error ? e.message : t("Failed")); }
   }
   return (

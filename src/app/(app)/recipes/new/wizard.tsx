@@ -7,7 +7,8 @@ import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from 
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
 import { money, pct, qty } from "@/lib/format";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
+import { translateMessage } from "@/i18n/core";
 
 interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string }
 // the first line is server-rendered: its key (used in element ids) must be the same on server and client
@@ -16,14 +17,16 @@ type Cost = { foodCost: string; portionCost: string | null; foodCostPct: string 
 /** recipes that are made in a batch and used inside other recipes (sauces, doughs): they need an output quantity */
 const BATCH_TYPES = ["SEMI_FINISHED", "PRODUCTION"];
 
-export function RecipeWizard({ types, departments, subRecipes }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[] }) {
+export function RecipeWizard({ types, departments, subRecipes, currency }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[]; currency: string }) {
   const router = useRouter();
   const t = useT();
+  const locale = useLocale();
   const [head, setHead] = useState({ type: "RESTAURANT", code: "", name: "", departmentId: departments[0]?.id ?? "", posCode: "", batchYieldQty: "1", yieldUnit: "kg", portions: "1", sellingPrice: "" });
   const batch = BATCH_TYPES.includes(head.type);
   const [lines, setLines] = useState<Line[]>([blank("line-0")]);
   const [preview, setPreview] = useState<{ issues: { field: string; message: string }[]; cost: Cost | null } | null>(null);
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const set = (k: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
 
   const version = useMemo(() => {
@@ -50,12 +53,15 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
   }, [version, head.name, t]);
 
   async function save() {
+    if (busy) return;
     setMsg(null);
+    setBusy(true);
     try {
       const r = await call<{ id: string }>("POST", "/api/recipes", { code: head.code.trim() || null, name: head.name, type: head.type, departmentId: head.departmentId || null, posCode: head.posCode || null, version: { ...version, reason: "Initial version" } });
       router.push(`/recipes/${r.id}`);
     } catch (e) {
       setMsg({ tone: "red", text: e instanceof Error ? e.message : t("Failed") });
+      setBusy(false);
     }
   }
 
@@ -111,23 +117,23 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
           {!c ? <p className="text-sm text-ink-500">{t("Add ingredients to see the live cost.")}</p> : (
             <div className="space-y-3 text-sm">
               <dl className="grid grid-cols-2 gap-y-1">
-                <dt className="font-medium">{t("Food cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost)}</dd>
-                <dt className="font-semibold">{batch ? t("Cost per unit made") : t("Cost per portion")}</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost)}</dd>
+                <dt className="font-medium">{t("Food cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost, currency)}</dd>
+                <dt className="font-semibold">{batch ? t("Cost per unit made") : t("Cost per portion")}</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost, currency)}</dd>
                 <dt className="text-ink-500">{t("Food cost %")}</dt><dd className="text-right tabular-nums">{pct(c.foodCostPct)}</dd>
                 <dt className="text-ink-500">{t("Margin %")}</dt><dd className="text-right tabular-nums">{pct(c.grossMarginPct)}</dd>
               </dl>
               <Table>
                 <thead><tr><Th>{t("Line")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Cost")}</Th></tr></thead>
-                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost)}</Td></tr>)}</tbody>
+                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost, currency)}</Td></tr>)}</tbody>
               </Table>
             </div>
           )}
-          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">{t("Validation")}</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul></Alert></div>}
+          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">{t("Validation")}</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{translateMessage(locale, i.message)}</li>)}</ul></Alert></div>}
         </Card>
         <Card title={`4 · ${t("Save")}`}>
           {msg && <div className="mb-2"><Alert tone={msg.tone}>{msg.text}</Alert></div>}
           <p className="mb-3 text-xs text-ink-500">{t("Saved as a")} <strong>{t("draft version")}</strong>. {t("A user with recipe approval rights must approve it before it is used for theoretical cost. Incomplete drafts are allowed; approval is blocked until validation passes.")}</p>
-          <Button onClick={save} disabled={!head.name}>{t("Save draft")}</Button>
+          <Button onClick={save} disabled={!head.name || busy}>{t("Save draft")}</Button>
         </Card>
       </div>
     </div>

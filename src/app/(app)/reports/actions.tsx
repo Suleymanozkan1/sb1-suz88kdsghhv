@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Alert, Badge, Button } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
@@ -42,6 +43,7 @@ export function VerifyButton({ id }: { id: string }) {
 export function PackForm({ defaultMonth }: { defaultMonth: string }) {
   const t = useT();
   const locale = useLocale();
+  const router = useRouter();
   const [month, setMonth] = useState(defaultMonth);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,8 +61,10 @@ export function PackForm({ defaultMonth }: { defaultMonth: string }) {
       a.href = URL.createObjectURL(blob);
       a.download = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "management-pack.pdf";
       a.click();
-      URL.revokeObjectURL(a.href);
-      window.location.reload();
+      // revoking at once can cancel the download in some browsers
+      const href = a.href;
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
+      router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? translateMessage(locale, e.message) : t("Failed"));
     } finally {
