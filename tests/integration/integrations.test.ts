@@ -161,6 +161,17 @@ describe("run log, run now, health", () => {
     await reportRun(prisma, h.hotel.id, { runId: "run-13m", source: "MICROS", status: "SUCCEEDED", businessDay: D2 });
     expect((await integrationHealth(prisma, h.hotel.id, now)).status).toBe("OK");
   });
+  it("health: a source that has not delivered for two weeks (a one-off run now, or switched off) is no longer expected", async () => {
+    const x = await makeHotel("INGEST2");
+    await createIntegrationKey(prisma, await x.actor("admin"), x.hotel.id, "bot");
+    const now = new Date();
+    const day = new Date(now.getTime() - 86_400_000 * 30).toISOString().slice(0, 10);
+    await reportRun(prisma, x.hotel.id, { runId: "o-1", source: "OPERA", status: "FAILED", businessDay: day, message: "OPERA_URL not set" });
+    await prisma.integrationRun.updateMany({ where: { hotelId: x.hotel.id, runId: "o-1" }, data: { startedAt: new Date(now.getTime() - 86_400_000 * 20) } });
+    const health = await integrationHealth(prisma, x.hotel.id, now);
+    await reportRun(prisma, x.hotel.id, { runId: "m-1", source: "MICROS", status: "SUCCEEDED", businessDay: health.expectedDay! });
+    expect(await integrationHealth(prisma, x.hotel.id, now)).toMatchObject({ status: "OK", sources: [{ source: "MICROS", status: "OK" }] });
+  });
   it("health: the day just closed is not missing while the bot still has time to run after the cut-off", async () => {
     // cut-off 03:30 Istanbul, the bot runs ~04:15: at 04:30 the 22nd is not expected yet, at 05:10 it is
     expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T01:30:00Z"))).toMatchObject({ status: "OK", expectedDay: "2026-09-21" });

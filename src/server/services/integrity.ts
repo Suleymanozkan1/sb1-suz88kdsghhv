@@ -12,6 +12,7 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { minibarInvariant } from "./minibar";
 import { postSalesConsumption, theoreticalFor } from "./sales";
+import { businessDay } from "@/domain/business-day";
 
 const STALE_MS = 30 * 60 * 1000;
 type Num = { toString(): string } | null;
@@ -221,12 +222,14 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
   const run = await startRun(db, actor, hotelId, "SALES_REPROCESS");
   try {
     const res = await inTx(db, async (tx) => {
-      const [lines, recipes, versions, periods] = await Promise.all([
+      const [lines, recipes, versions, periods, hotel] = await Promise.all([
         tx.saleLine.findMany({ where: { hotelId, recipeVersionId: null } }),
         tx.recipe.findMany({ where: { hotelId, active: true } }),
         tx.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } } }),
         tx.costPeriod.findMany({ where: { hotelId } }),
+        tx.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } }),
       ]);
+      const closed = (at: Date) => periods.some((x) => x.startDate <= at && new Date(x.endDate.getTime() + 86_400_000) > at && (x.status === "CLOSED" || x.status === "SOFT_CLOSED"));
       const costCache = new Map<string, Map<string, Decimal>>();
       let mapped = 0;
       let skippedClosed = 0;
@@ -235,8 +238,9 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
       // same matching as the import (commitSales): POS code first, else the recipe name (lines keep no item name, so the code)
       const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
       for (const l of lines) {
-        const p = periods.find((x) => x.startDate <= l.saleDate && new Date(x.endDate.getTime() + 86_400_000) > l.saleDate);
-        if (p && (p.status === "CLOSED" || p.status === "SOFT_CLOSED")) {
+        // the stock posting is dated by the business day (a 03:10 sale on the 1st belongs to the last day of the
+        // previous month): both that day's period and the sale's own must be open, or the run would fail every time
+        if (closed(l.saleDate) || closed(new Date(`${businessDay(l.saleDate, hotel.timezone, hotel.businessDayCutoff)}T12:00:00Z`))) {
           skippedClosed++;
           continue;
         }

@@ -12,6 +12,7 @@ import { LedgerFilters } from "./ledger-filters";
 
 export const metadata = { title: "Stock Ledger" };
 const PAGE = 50;
+const SUMMARY_MAX = 5000;
 
 export default async function LedgerPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -19,10 +20,15 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const t = await getT();
   const page = Math.max(1, Number(sp.page ?? 1));
   const { actor, hotelId, hotel } = await pageContext();
-  const res = await guarded(() => ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), take: PAGE, skip: (page - 1) * PAGE }));
+  // the summary merges a day's sales rows, so it is merged over the whole selection (as the export does, up to
+  // SUMMARY_MAX movements) and paged afterwards; otherwise a day split across two pages would show as two partial rows
+  const summary = f.view !== "detail";
+  const res = await guarded(() => ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), ...(summary ? { take: SUMMARY_MAX } : { take: PAGE, skip: (page - 1) * PAGE }) }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
-  const { rows, total } = res.data;
-  const lines: DetailLine[] = f.view === "detail" ? await explodeSalesRows(prisma, rows) : await summarizeSalesRows(prisma, rows);
+  const { rows } = res.data;
+  const all: DetailLine[] = summary ? await summarizeSalesRows(prisma, rows) : await explodeSalesRows(prisma, rows);
+  const total = summary ? all.length : res.data.total;
+  const lines = summary ? all.slice((page - 1) * PAGE, page * PAGE) : all;
   const [warehouses, product] = await Promise.all([
     prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
     f.productId ? prisma.product.findFirst({ where: { id: f.productId, hotelId } }) : null,
@@ -44,6 +50,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
         {tab("summary", t("Stock movements"))}
         {tab("detail", t("Stock movements – detailed"))}
       </div>
+      {summary && res.data.total > SUMMARY_MAX && <div className="mb-3"><Alert tone="amber">{t("The summary covers the latest {n} movements; narrow the date range to see older ones.", { n: SUMMARY_MAX })}</Alert></div>}
       <Card padded={false} title={f.view === "detail" ? t("{total} movements, sales split per check", { total }) : t("{total} movements", { total })}>
         <Table>
           <thead><tr><Th>{t("Date")}</Th><Th>{t("Type")}</Th><Th>{t("Product")}</Th><Th>{t("Warehouse")}</Th><Th align="right">{t("Qty")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Total")}</Th><Th>{t("Source / reason")}</Th><Th /></tr></thead>

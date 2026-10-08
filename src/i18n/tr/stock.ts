@@ -420,4 +420,5 @@ export const stock: Record<string, string> = {
   "Starting…": "Başlatılıyor…",
   "Estimated value": "Tahmini değer",
   "Micros: {n}": "Micros: {n}",
+  "The summary covers the latest {n} movements; narrow the date range to see older ones.": "Özet son {n} hareketi kapsar; daha eskileri görmek için tarih aralığını daraltın.",
 };

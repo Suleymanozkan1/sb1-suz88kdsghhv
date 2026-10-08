@@ -313,6 +313,9 @@ export async function requestRun(db: Db, actor: Actor, hotelId: string, raw: unk
 
 /** The bot runs ~45 min after the cut-off: the day just closed is expected only after this margin, not at the cut-off. */
 const DELIVERY_GRACE_MINUTES = 90;
+/** A source that has not delivered for this long is no longer expected (switched off or never really used). */
+const SOURCE_ACTIVE_DAYS = 14;
+const DAY_MS = 86_400_000;
 const SEVERITY = { OK: 0, PARTIAL: 1, MISSING: 2, FAILED: 3 } as const;
 type HealthStatus = keyof typeof SEVERITY;
 
@@ -325,7 +328,12 @@ export async function integrationHealth(db: Db, hotelId: string, now = new Date(
   const [keys, hotel] = await Promise.all([db.integrationKey.count({ where: { hotelId, revokedAt: null } }), db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } })]);
   if (!keys) return { status: "OFF" as const, expectedDay: null, lastRun: null, rejected: 0, sources: [] };
   const expectedDay = lastClosedBusinessDay(new Date(now.getTime() - DELIVERY_GRACE_MINUTES * 60_000), hotel.timezone, hotel.businessDayCutoff);
-  const used = (await db.integrationRun.findMany({ where: { hotelId }, distinct: ["source"], select: { source: true }, orderBy: { source: "asc" } })).map((r) => r.source);
+  // a source is in use when it delivered recently: a one-off "run now" of a source the hotel does not use (or one that
+  // was switched off) must not keep a banner up for ever; with no recent success at all, every recent source counts
+  const since = new Date(now.getTime() - SOURCE_ACTIVE_DAYS * DAY_MS);
+  const recent = async (status?: "SUCCEEDED") => (await db.integrationRun.findMany({ where: { hotelId, startedAt: { gte: since }, ...(status ? { status } : {}) }, distinct: ["source"], select: { source: true }, orderBy: { source: "asc" } })).map((r) => r.source);
+  const delivering = await recent("SUCCEEDED");
+  const used = delivering.length ? delivering : await recent();
   const sources = await Promise.all(
     used.map(async (source) => {
       const [lastRun, okForDay] = await Promise.all([

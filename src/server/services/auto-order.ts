@@ -168,11 +168,12 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   const refilled = rules.filter((r) => r.lastOrderedAt && !low(r));
   if (refilled.length) await db.autoOrderRule.updateMany({ where: { id: { in: refilled.map((r) => r.id) } }, data: { lastOrderedAt: null } });
   const ordered = rules.filter((r) => r.lastOrderedAt && low(r));
-  // a receipt of the product posted after the order: the order arrived (stock may still be low — then order again)
+  // a receipt of the product from the rule's supplier posted after the order: the order arrived (stock may still be
+  // low — then order again); an unrelated purchase from someone else does not count as this order
   const received = new Set(
     ordered.length
-      ? (await db.goodsReceiptItem.findMany({ where: { productId: { in: ordered.map((r) => r.productId) }, receipt: { hotelId, postedAt: { gte: new Date(Math.min(...ordered.map((r) => r.lastOrderedAt!.getTime()))) } } }, select: { productId: true, receipt: { select: { postedAt: true } } } }))
-          .filter((i) => ordered.some((r) => r.productId === i.productId && i.receipt.postedAt! > r.lastOrderedAt!))
+      ? (await db.goodsReceiptItem.findMany({ where: { productId: { in: ordered.map((r) => r.productId) }, receipt: { hotelId, postedAt: { gte: new Date(Math.min(...ordered.map((r) => r.lastOrderedAt!.getTime()))) } } }, select: { productId: true, receipt: { select: { postedAt: true, supplierId: true } } } }))
+          .filter((i) => ordered.some((r) => r.productId === i.productId && r.supplierId === i.receipt.supplierId && i.receipt.postedAt! > r.lastOrderedAt!))
           .map((i) => i.productId)
       : [],
   );
@@ -184,23 +185,24 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   const due = rules.filter((r) => low(r) && !outstanding(r));
   if (!planHas(plan, "autoOrderEmail") || !due.length) return { due: due.length, sent: 0, failed: 0, plan, emailEnabled: planHas(plan, "autoOrderEmail") };
   const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true } });
-  // claim each rule before e-mailing: the nightly run and a "check now" (or two clicks) at the same moment must not
-  // both order; only the run whose conditional update (lastOrderedAt still as read) wins sends, a failed send gives
-  // the rule back
-  const claimed: typeof due = [];
-  for (const r of due) {
-    const c = await db.autoOrderRule.updateMany({ where: { id: r.id, lastOrderedAt: r.lastOrderedAt }, data: { lastOrderedAt: now } });
-    if (c.count === 1) claimed.push(r);
-  }
   const groups = new Map<string, typeof due>();
-  for (const r of claimed) {
+  for (const r of due) {
     const to = r.email ?? r.supplier.email ?? "";
     const k = `${r.supplierId}|${to}`;
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   let sent = 0;
   let failed = 0;
-  for (const [k, rs] of groups) {
+  for (const [k, group] of groups) {
+    // claim a supplier's rules right before its e-mail: the nightly run and a "check now" (or two clicks) at the same
+    // moment must not both order — only the run whose conditional update (lastOrderedAt still as read) wins sends.
+    // Claiming per e-mail (not all up front) means a run cut short leaves the unsent suppliers unclaimed for the next run.
+    const rs: typeof due = [];
+    for (const r of group) {
+      const c = await db.autoOrderRule.updateMany({ where: { id: r.id, lastOrderedAt: r.lastOrderedAt }, data: { lastOrderedAt: now } });
+      if (c.count === 1) rs.push(r);
+    }
+    if (!rs.length) continue;
     const to = k.split("|")[1]!;
     const s = rs[0]!.supplier;
     const lines = rs.map((r) => `- ${r.product.name}: ${r.orderQty.toString()} ${r.product.stockUnit}`);
