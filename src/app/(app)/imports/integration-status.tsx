@@ -24,14 +24,17 @@ export async function IntegrationBanner({ health, link = false }: { health: Heal
   const t = await getT();
   if (health.status === "OFF" || health.status === "OK") return null;
   const more = link ? <> <a href="/imports" className="font-medium underline">{t("Open the automation log")}</a></> : null;
+  // health is per source (Micros, Opera): name the one at fault, the other may be fine
+  const label = (s: string) => (s === "MICROS" ? "Micros" : s === "OPERA" ? "Opera" : s);
+  const missing = health.sources.filter((s) => s.status === "MISSING" || s.status === "FAILED").map((s) => label(s.source));
   return (
     <div className="mb-4">
       {health.status === "FAILED" ? (
-        <Alert>{t("The last automation run failed: {message}", { message: health.lastRun?.message ? botMessage(health.lastRun.message, t) : t("no message") })} {t("Check the log; you can start it again with “Run now”.")}{more}</Alert>
+        <Alert>{t("The last automation run failed: {message}", { message: `${health.lastRun ? `${label(health.lastRun.source)}: ` : ""}${health.lastRun?.message ? botMessage(health.lastRun.message, t) : t("no message")}` })} {t("Check the log; you can start it again with “Run now”.")}{more}</Alert>
       ) : health.status === "PARTIAL" ? (
         <Alert tone="amber">{t("The last automation run delivered the data, but {n} record(s) were not accepted (unknown outlet, product or unit). See the log.", { n: health.rejected })}{more}</Alert>
       ) : (
-        <Alert tone="amber">{t("No data received yet from the automation for business day {day}.", { day: health.expectedDay ?? "" })}{more}</Alert>
+        <Alert tone="amber">{missing.length ? t("No data received yet from {sources} for business day {day}.", { sources: missing.join(", "), day: health.expectedDay ?? "" }) : t("No data received yet from the automation for business day {day}.", { day: health.expectedDay ?? "" })}{more}</Alert>
       )}
     </div>
   );

@@ -195,6 +195,11 @@ export const ops: Record<string, string> = {
   "Restocked to par": "Par seviyesine dolduruldu",
   "Already at par — nothing to restock": "Oda zaten par seviyesinde — doldurulacak ürün yok",
   "Restock to par": "Par seviyesine doldur",
+  "occupied": "dolu",
+  "occupied last night": "dün gece dolu",
+  "Show occupied rooms only": "Yalnızca dolu odaları göster",
+  // ── automation health ──
+  "No data received yet from {sources} for business day {day}.": "{day} iş günü için {sources} verisi henüz gelmedi.",
   // minibar movement types
   "RESTOCK": "Dolum",
   "CONSUMED": "Tüketim",

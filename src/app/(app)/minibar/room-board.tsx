@@ -7,24 +7,30 @@ import { call } from "@/lib/client";
 import { parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
-interface Room { id: string; number: string; roomType: string; floor: string | null; complete: boolean; missing: string; items: { productId: string; product: string; par: string; qty: string }[] }
+interface Room { id: string; number: string; roomType: string; floor: string | null; complete: boolean; missing: string; occupied: boolean | null; items: { productId: string; product: string; par: string; qty: string }[] }
 
 export function RoomBoard({ rooms, canManage }: { rooms: Room[]; canManage: boolean }) {
   const t = useT();
   const [sel, setSel] = useState<string | null>(null);
   const room = rooms.find((r) => r.id === sel) ?? null;
-  const floors = [...new Set(rooms.map((r) => r.floor ?? "—"))];
+  // Opera's list of rooms sold last night: only those minibars need checking (no list → no marks, no filter)
+  const known = rooms.some((r) => r.occupied !== null);
+  const [onlyOccupied, setOnlyOccupied] = useState(false);
+  const shown = known && onlyOccupied ? rooms.filter((r) => r.occupied) : rooms;
+  const floors = [...new Set(shown.map((r) => r.floor ?? "—"))];
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="space-y-3 lg:col-span-2">
-        <p className="text-xs text-ink-500"><span className="mr-3 inline-block h-2 w-2 rounded-full bg-brand-500" /> {t("stocked to par")} <span className="ml-3 mr-1 inline-block h-2 w-2 rounded-full bg-amber-500" /> {t("needs restock")}</p>
+        <p className="text-xs text-ink-500"><span className="mr-3 inline-block h-2 w-2 rounded-full bg-brand-500" /> {t("stocked to par")} <span className="ml-3 mr-1 inline-block h-2 w-2 rounded-full bg-amber-500" /> {t("needs restock")}{known && <><span className="ml-3 mr-1 inline-block h-1.5 w-1.5 rounded-full bg-sky-600" /> {t("occupied last night")}</>}</p>
+        {known && <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={onlyOccupied} onChange={(e) => setOnlyOccupied(e.target.checked)} /> {t("Show occupied rooms only")}</label>}
         {floors.map((f) => (
           <div key={f}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-500">{t("Floor {f}", { f })}</p>
             <div className="flex flex-wrap gap-1.5">
-              {rooms.filter((r) => (r.floor ?? "—") === f).map((r) => (
-                <button key={r.id} onClick={() => setSel(r.id)} aria-pressed={sel === r.id} title={`${r.roomType}${r.complete ? "" : ` · ${t("{n} items missing", { n: r.missing })}`}`} className={cn("w-14 rounded-md border px-1 py-1.5 text-xs font-medium tabular-nums", r.complete ? "border-brand-200 bg-brand-50 text-brand-800" : "border-amber-300 bg-amber-50 text-amber-900", sel === r.id && "ring-2 ring-brand-600")}>
+              {shown.filter((r) => (r.floor ?? "—") === f).map((r) => (
+                <button key={r.id} onClick={() => setSel(r.id)} aria-pressed={sel === r.id} title={`${r.roomType}${r.occupied ? ` · ${t("occupied")}` : ""}${r.complete ? "" : ` · ${t("{n} items missing", { n: r.missing })}`}`} className={cn("relative w-14 rounded-md border px-1 py-1.5 text-xs font-medium tabular-nums", r.complete ? "border-brand-200 bg-brand-50 text-brand-800" : "border-amber-300 bg-amber-50 text-amber-900", sel === r.id && "ring-2 ring-brand-600")}>
                   {r.number}
+                  {r.occupied && <span aria-label={t("occupied")} className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-sky-600" />}
                 </button>
               ))}
             </div>

@@ -249,6 +249,10 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const c = cfg({ NIGHT_AUDIT_CUTOFF: "03:30" });
     await new Daemon(c).pollOnce();
     assert.equal(c.nightAuditCutoff, "04:00");
+    assert.equal(c.runAt, "04:45"); // no RUN_AT in the env: the nightly run follows the cut-off
+    const fixed = cfg({ NIGHT_AUDIT_CUTOFF: "03:30", RUN_AT: "06:00" });
+    await new Daemon(fixed).pollOnce();
+    assert.deepEqual([fixed.nightAuditCutoff, fixed.runAt], ["04:00", "06:00"]);
     hc.state.settings = undefined;
   });
 

@@ -55,7 +55,7 @@ dosyalarında asla yer almaz. Tüm ayarlar `.env.example` içinde açıklamalıd
 | `HOTELCOST_URL`, `HOTELCOST_API_KEY` | HotelCost adresi ve otelin entegrasyon anahtarı | — |
 | `TIMEZONE` | Otelin saat dilimi | `Europe/Istanbul` |
 | `NIGHT_AUDIT_CUTOFF` | Gece kapanışının bittiği saat; iş günü bu saatte biter. HotelCost'taki "İş günü bitişi" ayarı her yoklamada gelir ve bunun yerine geçer; buradaki değer yalnızca ilk bağlantıya kadar kullanılır | `03:30` |
-| `RUN_AT` | Gece çalışmasının saati (kapanıştan sonra olmalı) | `04:15` |
+| `RUN_AT` | Gece çalışmasının saati. Boşsa kapanış + 45 dk ve HotelCost'taki kapanış saati değişince onunla kayar; ayarlanırsa sabit kalır (kapanıştan sonra olmalı) | kapanış + 45 dk (`04:15`) |
 | `POLL_MINUTES` | "Şimdi çalıştır" isteklerini kontrol aralığı (dk) | `2` |
 | `CATCH_UP` | Bilgisayar RUN_AT'te kapalıysa açılınca o günün çalışmasını yap | `true` |
 | `HEADLESS` | `false` → tarayıcı penceresi görünür (seçici ayarlarken) | `true` |

@@ -104,11 +104,14 @@ describe("covers, occupancy, minibar", () => {
   it("covers and occupancy overwrite the day (no duplicates)", async () => {
     for (let i = 0; i < 2; i++) {
       await ingest(prisma, bot, h.hotel.id, { kind: "covers", businessDay: DAY, items: [{ outlet: "Restaurant", meal: "Kahvaltı", covers: 64 + i }] });
-      await ingest(prisma, bot, h.hotel.id, { kind: "occupancy", businessDay: DAY, items: [{ availableRooms: 120, occupiedRooms: 90 + i, guests: 170 }] });
+      await ingest(prisma, bot, h.hotel.id, { kind: "occupancy", businessDay: DAY, items: [{ availableRooms: 120, occupiedRooms: 90 + i, guests: 170, ...(i ? {} : { occupiedRoomNumbers: ["101", "214"] }) }] });
     }
     const c = await prisma.coverCount.findMany({ where: { hotelId: h.hotel.id } });
     expect(c.map((x) => [x.meal, x.covers])).toEqual([["BREAKFAST", 65]]);
-    expect((await prisma.occupancyImport.findFirstOrThrow({ where: { hotelId: h.hotel.id } })).occupiedRooms).toBe(91);
+    const occ = await prisma.occupancyImport.findFirstOrThrow({ where: { hotelId: h.hotel.id } });
+    expect(occ.occupiedRooms).toBe(91);
+    // the sold rooms are kept for the minibar board; a re-send without the list keeps it
+    expect(occ.occupiedRoomNumbers).toEqual(["101", "214"]);
   });
   it("a minibar charge for an unknown product is reported, not guessed", async () => {
     const r = await ingest(prisma, bot, h.hotel.id, { kind: "minibar", businessDay: DAY, items: [{ room: "101", itemName: "Fıstık", qty: 1, reference: "F-1" }, { room: "999", itemName: "Domates", qty: 1, reference: "F-2" }] });
@@ -141,9 +144,46 @@ describe("run log, run now, health", () => {
     await reportRun(prisma, h.hotel.id, { runId: "run-10", source: "MICROS", status: "FAILED", businessDay: DAY, message: "login failed (Micros)" });
     expect((await integrationHealth(prisma, h.hotel.id, now)).status).toBe("FAILED");
     await reportRun(prisma, h.hotel.id, { runId: "run-11", source: "MICROS", status: "SUCCEEDED", businessDay: DAY });
+    // Opera is in use too (the minibar delivery above failed): it must deliver the day as well
+    expect(await integrationHealth(prisma, h.hotel.id, now)).toMatchObject({ status: "FAILED", lastRun: { source: "OPERA" } });
+    await reportRun(prisma, h.hotel.id, { runId: "run-11o", source: "OPERA", status: "SUCCEEDED", businessDay: DAY });
     expect(await integrationHealth(prisma, h.hotel.id, now)).toMatchObject({ status: "OK", expectedDay: DAY });
     expect((await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T06:00:00Z"))).status).toBe("MISSING");
+  });
+  it("health per source: a failed Micros run is not hidden by the Opera run after it", async () => {
+    const D2 = "2026-09-21";
+    const now = new Date("2026-09-22T06:00:00Z");
+    await reportRun(prisma, h.hotel.id, { runId: "run-12m", source: "MICROS", status: "FAILED", businessDay: D2, message: "login failed (Micros)" });
+    await reportRun(prisma, h.hotel.id, { runId: "run-12o", source: "OPERA", status: "SUCCEEDED", businessDay: D2 });
+    const hl = await integrationHealth(prisma, h.hotel.id, now);
+    expect(hl).toMatchObject({ status: "FAILED", expectedDay: D2, lastRun: { source: "MICROS", message: "login failed (Micros)" } });
+    expect(hl.sources.map((x) => [x.source, x.status])).toEqual([["MICROS", "FAILED"], ["OPERA", "OK"]]);
+    await reportRun(prisma, h.hotel.id, { runId: "run-13m", source: "MICROS", status: "SUCCEEDED", businessDay: D2 });
+    expect((await integrationHealth(prisma, h.hotel.id, now)).status).toBe("OK");
+  });
+  it("health: the day just closed is not missing while the bot still has time to run after the cut-off", async () => {
+    // cut-off 03:30 Istanbul, the bot runs ~04:15: at 04:30 the 22nd is not expected yet, at 05:10 it is
+    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T01:30:00Z"))).toMatchObject({ status: "OK", expectedDay: "2026-09-21" });
+    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T02:10:00Z"))).toMatchObject({ status: "MISSING", expectedDay: "2026-09-22" });
+  });
+  it("a successful Micros run checks the automatic orders at once; Opera does not", async () => {
+    const prev = process.env.MAIL_TRANSPORT;
+    process.env.MAIL_TRANSPORT = "memory";
+    try {
+      await prisma.organization.update({ where: { id: h.org.id }, data: { plan: "PREMIUM" } });
+      await prisma.supplier.update({ where: { id: h.supplier.id }, data: { email: "orders@ingest.test" } });
+      const tom = await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, sku: "TOM" } });
+      const rule = await prisma.autoOrderRule.create({ data: { hotelId: h.hotel.id, productId: tom.id, supplierId: h.supplier.id, reorderPoint: "100000", orderQty: "10" } });
+      await reportRun(prisma, h.hotel.id, { runId: "run-14o", source: "OPERA", status: "SUCCEEDED", businessDay: "2026-09-22" });
+      expect(await prisma.autoOrderSend.count({ where: { ruleId: rule.id } })).toBe(0);
+      await reportRun(prisma, h.hotel.id, { runId: "run-14m", source: "MICROS", status: "SUCCEEDED", businessDay: "2026-09-22" });
+      expect(await prisma.autoOrderSend.findMany({ where: { ruleId: rule.id }, select: { status: true, email: true } })).toEqual([{ status: "SENT", email: "orders@ingest.test" }]);
+    } finally {
+      process.env.MAIL_TRANSPORT = prev;
+    }
+  });
+  it("health is OFF without a key", async () => {
     await revokeIntegrationKey(prisma, admin, h.hotel.id, keyId);
-    expect((await integrationHealth(prisma, h.hotel.id, now)).status).toBe("OFF");
+    expect((await integrationHealth(prisma, h.hotel.id, new Date("2026-09-21T06:00:00Z"))).status).toBe("OFF");
   });
 });

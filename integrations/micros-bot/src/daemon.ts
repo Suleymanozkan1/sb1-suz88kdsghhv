@@ -1,12 +1,13 @@
 /**
  * Long-running mode:
- *   - every 30 s: if the local time (TIMEZONE) is past RUN_AT and today's nightly run has not happened yet,
+ *   - every 30 s: if the local time (TIMEZONE) is past RUN_AT (default: cut-off + 45 min, following the cut-off set
+ *     in HotelCost) and today's nightly run has not happened yet,
  *     run for the default business day (D-1 relative to the night-audit cut-off). With CATCH_UP=false a missed
  *     RUN_AT (machine was off) is not made up later that day.
  *   - every POLL_MINUTES: ask HotelCost for a pending "Şimdi çalıştır" request and run it at once.
  * Runs never overlap: requests that come in during a run wait for it.
  */
-import type { Config } from "./config";
+import { runAtAfter, type Config } from "./config";
 import { log } from "./logger";
 import { HotelCostClient } from "./hotelcost/client";
 import { runBot, type RunReport } from "./runner";
@@ -81,6 +82,12 @@ export class Daemon {
     if (!cutoff || !/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff) || cutoff === this.config.nightAuditCutoff) return;
     log.info(`night audit cut-off from HotelCost: ${cutoff} (was ${this.config.nightAuditCutoff})`);
     this.config.nightAuditCutoff = cutoff;
+    // without an explicit RUN_AT the nightly run moves with the cut-off; a fixed one is only checked
+    if (!this.config.runAtFixed) {
+      this.config.runAt = runAtAfter(cutoff);
+      log.info(`nightly run moved to ${this.config.runAt}`);
+      return;
+    }
     const run = parseHHMM(this.config.runAt);
     const cut = parseHHMM(cutoff);
     if (run.hour * 60 + run.minute <= cut.hour * 60 + cut.minute) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);

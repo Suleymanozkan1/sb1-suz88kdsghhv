@@ -31,8 +31,9 @@ export const ruleInput = z.object({
   active: z.boolean().default(true),
 });
 
-/** Do not order the same product again within this window (the order is on its way). */
-const RE_ORDER_HOURS = 24;
+/** An order counts as on its way for the supplier's lead time + 1 day, or this long when no lead time is known. */
+const OUTSTANDING_FALLBACK_DAYS = 7;
+const DAY_MS = 86_400_000;
 
 async function stockByProduct(db: Db, hotelId: string, productIds?: string[]) {
   const rows = await db.stockBalance.groupBy({ by: ["productId"], where: { hotelId, ...(productIds ? { productId: { in: productIds } } : {}) }, _sum: { quantity: true } });
@@ -151,8 +152,10 @@ export async function fillFromRecommendations(db: Db, actor: Actor, hotelId: str
 
 /**
  * Checks every active rule and e-mails the orders that are due (premium plan, mail server configured), one
- * e-mail per supplier. Runs nightly after the night audit and on "check now". A product ordered in the last
- * 24 hours is not ordered again. Returns what was due and what was sent.
+ * e-mail per supplier. Runs after each Micros import, nightly and on "check now". An ordered product is not ordered
+ * again while that order is outstanding: until a goods receipt of it is posted, its stock is back above the reorder
+ * point, or the supplier's lead time + 1 day has passed (7 days without a lead time — the order was lost).
+ * Returns what was due and what was sent.
  */
 export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Actor; now?: Date } = {}) {
   if (opts.actor) authorize(opts.actor, "purchase:manage", { hotelId });
@@ -160,15 +163,33 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   const plan = await hotelPlan(db, hotelId);
   const rules = await db.autoOrderRule.findMany({ where: { hotelId, active: true }, include: { product: true, supplier: true } });
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
-  const due = rules.filter((r) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString())) && (!r.lastOrderedAt || now.getTime() - r.lastOrderedAt.getTime() > RE_ORDER_HOURS * 3_600_000));
+  const low = (r: (typeof rules)[number]) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString()));
+  // stock back above the reorder point: the last order arrived (or was not needed), the next drop orders again
+  const refilled = rules.filter((r) => r.lastOrderedAt && !low(r));
+  if (refilled.length) await db.autoOrderRule.updateMany({ where: { id: { in: refilled.map((r) => r.id) } }, data: { lastOrderedAt: null } });
+  const ordered = rules.filter((r) => r.lastOrderedAt && low(r));
+  // a receipt of the product posted after the order: the order arrived (stock may still be low — then order again)
+  const received = new Set(
+    ordered.length
+      ? (await db.goodsReceiptItem.findMany({ where: { productId: { in: ordered.map((r) => r.productId) }, receipt: { hotelId, postedAt: { gte: new Date(Math.min(...ordered.map((r) => r.lastOrderedAt!.getTime()))) } } }, select: { productId: true, receipt: { select: { postedAt: true } } } }))
+          .filter((i) => ordered.some((r) => r.productId === i.productId && i.receipt.postedAt! > r.lastOrderedAt!))
+          .map((i) => i.productId)
+      : [],
+  );
+  const outstanding = (r: (typeof rules)[number]) => {
+    if (!r.lastOrderedAt || received.has(r.productId)) return false;
+    const lead = r.product.leadTimeDays ?? r.supplier.leadTimeDays; // as the suggested reorder point uses it
+    return now.getTime() - r.lastOrderedAt.getTime() < (lead !== null ? lead + 1 : OUTSTANDING_FALLBACK_DAYS) * DAY_MS;
+  };
+  const due = rules.filter((r) => low(r) && !outstanding(r));
   if (!planHas(plan, "autoOrderEmail") || !due.length) return { due: due.length, sent: 0, failed: 0, plan, emailEnabled: planHas(plan, "autoOrderEmail") };
   const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true } });
   // claim each rule before e-mailing: the nightly run and a "check now" (or two clicks) at the same moment must not
-  // both order; only the run whose conditional update wins sends, a failed send gives the rule back
-  const cutoff = new Date(now.getTime() - RE_ORDER_HOURS * 3_600_000);
+  // both order; only the run whose conditional update (lastOrderedAt still as read) wins sends, a failed send gives
+  // the rule back
   const claimed: typeof due = [];
   for (const r of due) {
-    const c = await db.autoOrderRule.updateMany({ where: { id: r.id, OR: [{ lastOrderedAt: null }, { lastOrderedAt: { lt: cutoff } }] }, data: { lastOrderedAt: now } });
+    const c = await db.autoOrderRule.updateMany({ where: { id: r.id, lastOrderedAt: r.lastOrderedAt }, data: { lastOrderedAt: now } });
     if (c.count === 1) claimed.push(r);
   }
   const groups = new Map<string, typeof due>();

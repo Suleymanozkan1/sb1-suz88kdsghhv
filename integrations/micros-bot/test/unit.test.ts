@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { addDays, defaultBusinessDay, formatDay, parseDateTime, zonedIso, isValidDay } from "../src/util/time";
 import { parseNumber } from "../src/util/numbers";
-import { buildConfig, maskedConfig, parseDotEnv, validateConfig } from "../src/config";
+import { buildConfig, maskedConfig, parseDotEnv, runAtAfter, validateConfig } from "../src/config";
 import { configureLogger, redact } from "../src/logger";
 import { summarize, makeRunId } from "../src/runner";
 import { parseCsv, readInvoiceFile, rowsToInvoices, normalizeHeader, decodeText } from "../src/invoices/fileReader";
@@ -88,6 +88,12 @@ describe("config & secrets", () => {
     const printed = JSON.stringify(maskedConfig(c));
     assert.ok(!printed.includes("topsecret") && !printed.includes("hc_key_abcdef"));
     assert.ok(validateConfig(buildConfig({ RUN_AT: "4:15pm" })).some((p) => p.includes("RUN_AT")));
+  });
+  test("RUN_AT defaults to cut-off + 45 min unless set", () => {
+    assert.equal(runAtAfter("03:30"), "04:15");
+    assert.equal(runAtAfter("23:30"), "00:15");
+    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAt, buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAtFixed], ["05:45", false]);
+    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00", RUN_AT: "06:30" }).runAt, buildConfig({ RUN_AT: "06:30" }).runAtFixed], ["06:30", true]);
   });
   test("redaction of secrets and bearer tokens", () => {
     configureLogger({ secrets: ["topsecret"], silent: true });
