@@ -9,6 +9,8 @@ import { ReceiptForm } from "./receipt-form";
 
 export const metadata = { title: "Purchasing" };
 
+/** the screen lists the latest receipts of the period; PDF / Excel / CSV carry all of them */
+const SHOWN = 100;
 const SOURCE_TONE: Record<string, "blue" | "green" | "gray"> = { MICROS: "blue", IMPORT: "green", MANUAL: "gray" };
 const RECEIPT_SOURCE: Record<string, string> = { MICROS: "Micros", IMPORT: "From file import", MANUAL: "Entered by hand" };
 
@@ -18,7 +20,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "purchase:view", hotelId);
   const [receipts, suppliers, warehouses, prices] = await Promise.all([
-    prisma.goodsReceipt.findMany({ where: { hotelId, receiptDate: { gte: range.from, lt: range.to } }, include: { supplier: true, warehouse: true, items: { include: { product: true } } }, orderBy: { receiptDate: "desc" }, take: 500 }),
+    prisma.goodsReceipt.findMany({ where: { hotelId, receiptDate: { gte: range.from, lt: range.to } }, include: { supplier: true, warehouse: true, items: { include: { product: true } } }, orderBy: [{ receiptDate: "desc" }, { number: "desc" }], take: SHOWN + 1 }),
     prisma.supplier.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
     prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
     can(actor, "purchase:prices") ? prisma.supplierPrice.findMany({ where: { hotelId, changePct: { not: null } }, include: { product: true, supplier: true }, orderBy: { priceDate: "desc" }, take: 25 }) : Promise.resolve([]),
@@ -28,12 +30,12 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
     <>
       <PageHeader exportKey="purchasing" title={t("Purchasing & receiving")} subtitle={t("Supplier invoices come from Micros automatically (see Imports); goods receipts post landed cost to the stock ledger and record supplier price history.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card title={t("Receipts")} className="xl:col-span-2" padded={false}>
+        <Card title={t("Receipts")} className="xl:col-span-2" padded={false} actions={receipts.length > SHOWN ? <span className="text-xs text-ink-500">{t("Latest {n} shown — the export lists the whole period", { n: SHOWN })}</span> : undefined}>
           {receipts.length === 0 ? <div className="p-4"><Empty title={t("No receipts")} /></div> : (
             <Table>
               <thead><tr><Th>{t("Date")}</Th><Th>{t("Source")}</Th><Th>{t("GRN")}</Th><Th>{t("Supplier")}</Th><Th>{t("Invoice")}</Th><Th>{t("Lines")}</Th><Th align="right">{t("Net")}</Th><Th align="right">{t("Tax")}</Th><Th align="right">{t("Landed")}</Th></tr></thead>
               <tbody className="divide-y divide-ink-100">
-                {receipts.map((r) => (
+                {receipts.slice(0, SHOWN).map((r) => (
                   <tr key={r.id}>
                     <Td>{date(r.receiptDate)}</Td><Td><Badge tone={SOURCE_TONE[r.source] ?? "gray"}>{t(RECEIPT_SOURCE[r.source] ?? r.source)}</Badge></Td><Td className="font-mono text-xs">{r.number}</Td><Td>{r.supplier.name}</Td><Td>{r.invoiceNo ?? "—"}</Td>
                     <Td><span className="text-xs text-ink-500">{r.items.map((i) => `${i.product.name} ${qty(i.quantity.toString(), i.unit)}`).join(", ")}</span></Td>

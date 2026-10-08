@@ -100,6 +100,7 @@ export const exports: Record<string, string> = {
   Totals: "Toplamlar",
   "Rooms with activity": "Hareket olan oda",
   "Occupied room nights": "Dolu oda geceleme",
+  "PMS file": "PMS dosyası",
   "Revenue / occupied room": "Dolu oda başı gelir",
   "from {source} · {n} days": "{source} verisi · {n} gün",
   "no Opera occupancy yet for this period": "bu dönem için Opera doluluk verisi yok",

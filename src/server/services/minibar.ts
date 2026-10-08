@@ -232,7 +232,7 @@ export async function minibarReport(db: Db, actor: Actor, hotelId: string, f: { 
     rooms: roomsOut,
     totals: { ...totals, contribution: totals.revenue.minus(totals.consumedCost), netContribution: totals.revenue.minus(totals.cost), activeRooms, costPerRoom: activeRooms ? totals.cost.div(activeRooms) : null, revenuePerRoom: activeRooms ? totals.revenue.div(activeRooms) : null,
       /** Opera: room nights sold in the period and the days that were delivered */
-      occupiedRoomNights, occupancyDays: occupancy.length, occupancySource: [...new Set(occupancy.map((o) => o.source))].join(", ") || null,
+      occupiedRoomNights, occupancyDays: occupancy.length, occupancySource: [...new Set(occupancy.map((o) => (o.source === "OPERA" ? "Opera" : o.source === "PMS_IMPORT" ? "PMS file" : o.source)))].join(", ") || null,
       costPerOccupiedRoom: perOccupied(totals.cost), revenuePerOccupiedRoom: perOccupied(totals.revenue) },
   };
 }

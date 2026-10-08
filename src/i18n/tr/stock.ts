@@ -163,6 +163,7 @@ export const stock: Record<string, string> = {
   "Supplier invoices come from Micros automatically (see Imports); goods receipts post landed cost to the stock ledger and record supplier price history.": "Tedarikçi faturaları Micros'tan otomatik gelir (bkz. İçe aktarma); mal kabuller maliyete giren tüm giderlerle stoka işlenir ve tedarikçi fiyat geçmişine kaydedilir.",
   "Receive goods by hand (backup — when an invoice did not come from Micros)": "Elle mal kabul (yedek — fatura Micros'tan gelmediyse)",
   "Entered by hand": "Elle girildi",
+  "Latest {n} shown — the export lists the whole period": "Son {n} kayıt gösteriliyor — dışa aktarmada dönemin tamamı var",
   "Freight and other charges (optional)": "Nakliye ve diğer giderler (isteğe bağlı)",
   "From file import": "Dosyadan içe aktarıldı",
   "No receipts": "Mal kabul yok",
