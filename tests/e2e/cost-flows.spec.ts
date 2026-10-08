@@ -35,13 +35,12 @@ test("recipe flow: create with live server-side cost, approve, view cost explosi
   await login(page, "fb");
   await page.goto("/recipes/new");
   const code = `E2E${uniq()}`;
-  await page.getByLabel("Code", { exact: true }).fill(code);
+  await page.getByLabel("Code (optional)", { exact: true }).fill(code);
   await page.getByLabel("Menu / product name").fill(`E2E Chicken Bowl ${code}`);
-  await page.getByLabel("Usable portions").fill("4");
-  await page.getByLabel("Batch yield").fill("4");
+  await page.getByLabel("Portions").fill("4");
   await page.getByLabel("Selling price (net)").fill("300");
   await pickProduct(page, "Search ingredient", "Chicken Breast", /Chicken Breast/);
-  await page.getByLabel("Qty (EP)").fill("600");
+  await page.getByLabel("Quantity used").fill("600");
   await expect(page.getByText("Cost per portion")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("E2E Chicken Bowl");
@@ -62,7 +61,7 @@ test("waste flow: small waste posts at cost and reduces stock (spec §283)", asy
   await page.getByLabel("Unit").selectOption("g");
   await page.getByLabel("Reason").fill("E2E wilted leaves");
   await page.getByRole("button", { name: "Record waste" }).click();
-  await expect(page.getByRole("status")).toContainText("Waste posted at cost");
+  await expect(page.getByRole("status")).toContainText("1 line(s) posted");
   await expect(page.getByText("E2E wilted leaves").first()).toBeVisible();
 });
 

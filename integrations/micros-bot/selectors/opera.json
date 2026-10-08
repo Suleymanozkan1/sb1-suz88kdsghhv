@@ -1,0 +1,63 @@
+{
+  "_README": "Opera PMS ekran seçicileri. 'TODO' ile başlayan değerler otelin Opera ekranından doldurulmalı. OPERA_URL boşsa bu dosya kullanılmaz. Adım biçimi micros.json ile aynıdır.",
+  "numberFormat": "tr",
+  "dateFormat": "DD.MM.YYYY",
+  "dateTimeFormat": "DD.MM.YYYY HH:mm",
+
+  "login": {
+    "path": null,
+    "steps": [],
+    "username": "TODO: kullanıcı adı kutusu",
+    "password": "TODO: şifre kutusu",
+    "submit": "TODO: giriş düğmesi",
+    "loggedIn": "TODO: yalnızca giriş yapılınca görünen öğe",
+    "error": "TODO: hatalı şifre mesajı (yoksa null)"
+  },
+
+  "statistics": {
+    "_info": "Gece kapanışı istatistikleri (ör. Manager Report / History & Forecast) — iş günü için.",
+    "steps": [
+      { "goto": "TODO: istatistik raporunun yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Göster düğmesi" }
+    ],
+    "ready": null,
+    "fields": {
+      "availableRooms": "TODO: satılabilir oda sayısı",
+      "occupiedRooms": "TODO: dolu oda sayısı",
+      "guests": "TODO: konaklayan kişi sayısı",
+      "roomRevenue": "TODO: oda geliri (yoksa null)",
+      "outOfOrder": "TODO: arızalı (OOO) oda sayısı (yoksa null)"
+    },
+    "rooms": {
+      "_info": "Dolu oda numaraları listesi (minibar kontrolü için). Okunmayacaksa bu bloğun tamamını null yapın.",
+      "steps": [{ "goto": "TODO: konaklayan misafirler / in-house listesi yolu" }],
+      "row": "TODO: oda satırı",
+      "roomNumber": "TODO: oda numarası hücresi (satıra göre)",
+      "noData": null
+    }
+  },
+
+  "minibar": {
+    "_info": "Odalara yazılan minibar satışları (folyo hareketleri, minibar işlem kodlarıyla filtrelenmiş). Okunmayacaksa bu bloğun tamamını null yapın. row ve columns.*, table'a göre.",
+    "steps": [
+      { "goto": "TODO: minibar hareketleri / transaction code raporu yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Göster düğmesi" }
+    ],
+    "table": "TODO: hareket tablosu",
+    "row": "TODO: hareket satırı (table'a göre)",
+    "noData": "TODO: hareket yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "columns": {
+      "room": "TODO: oda numarası hücresi",
+      "itemCode": "TODO: ürün / işlem kodu hücresi (yoksa null)",
+      "itemName": "TODO: ürün adı hücresi",
+      "qty": "TODO: miktar hücresi",
+      "reference": "TODO: folyo / hareket numarası hücresi (tekrar göndermede çift kaydı önler)",
+      "postedAt": "TODO: hareket zamanı hücresi (yoksa null)"
+    },
+    "postedAtFormat": "DD.MM.YYYY HH:mm",
+    "skipItemNamePattern": "^(Toplam|Total)\\b"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "_README": "Oracle Micros ekran seçicileri. 'TODO' ile başlayan her değer otelin Micros ekranından bulunup doldurulmalı (bkz. README.md > Seçicileri güncelleme). null = bu sistemde kullanılmıyor. '_' ile başlayan anahtarlar açıklamadır.",
+  "_steps": "Adımlar: {\"goto\": \"/yol\"} | {\"click\": \"seçici\"} | {\"fill\": \"seçici\", \"value\": \"{date}\"} | {\"select\": \"seçici\", \"value\": \"...\"} | {\"press\": \"seçici\", \"key\": \"Enter\"} | {\"waitFor\": \"seçici\"} | {\"wait\": 1000}. Değişkenler: {date} = iş günü dateFormat biçiminde, {day} = YYYY-MM-DD, {yyyy} {mm} {dd}.",
+  "numberFormat": "tr",
+  "dateFormat": "DD.MM.YYYY",
+  "dateTimeFormat": "DD.MM.YYYY HH:mm",
+
+  "login": {
+    "_info": "Giriş sayfası. path MICROS_URL'e göredir (null = MICROS_URL'in kendisi).",
+    "path": null,
+    "steps": [],
+    "username": "TODO: kullanıcı adı kutusu, ör. input#username",
+    "password": "TODO: şifre kutusu, ör. input[type=password]",
+    "submit": "TODO: giriş düğmesi, ör. button[type=submit]",
+    "loggedIn": "TODO: yalnızca giriş yapılınca görünen öğe (menü / çıkış düğmesi), ör. #mainMenu",
+    "error": "TODO: hatalı şifre mesajı öğesi (yoksa null yazın)"
+  },
+
+  "checks": {
+    "_info": "Kapanmış çekler (adisyon) listesi → her çeki aç → satırları oku. row ve rowLink, list'e göre; detail.line.* her satıra göre CSS seçicileridir.",
+    "steps": [
+      { "goto": "TODO: kapanmış çekler ekranının yolu, ör. /reports/closedChecks" },
+      { "fill": "TODO: iş günü tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Listele / Göster düğmesi" }
+    ],
+    "list": "TODO: çek listesi tablosu, ör. #checkList",
+    "row": "TODO: listede tek çek satırı (list'e göre), ör. tbody tr",
+    "rowLink": "TODO: satırdaki çek detayı bağlantısı (satıra göre), ör. a",
+    "noData": "TODO: o gün çek yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "open": "link",
+    "detail": {
+      "ready": null,
+      "checkNo": "TODO: çek numarası",
+      "outlet": "TODO: satış noktası / revenue center adı",
+      "closedAt": "TODO: kapanış zamanı (yoksa null)",
+      "closedAtFormat": "DD.MM.YYYY HH:mm",
+      "lineRow": "TODO: çekteki ürün satırları, ör. #checkLines tbody tr",
+      "line": {
+        "itemCode": "TODO: menü ürün numarası hücresi (yoksa null), ör. td:nth-child(1)",
+        "itemName": "TODO: ürün adı hücresi, ör. td:nth-child(2)",
+        "qty": "TODO: miktar hücresi, ör. td:nth-child(3)",
+        "amount": "TODO: net tutar hücresi (indirim sonrası, KDV hariç), ör. td:nth-child(4)"
+      },
+      "skipItemNamePattern": "^(Toplam|Total|Ara Toplam|Subtotal)\\b",
+      "back": null
+    }
+  },
+
+  "invoices": {
+    "_info": "Satınalma faturaları. INVOICE_SOURCE=file ise bu blok kullanılmaz.",
+    "steps": [
+      { "goto": "TODO: satınalma faturaları / mal kabul listesi yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Listele düğmesi" }
+    ],
+    "list": "TODO: fatura listesi tablosu",
+    "row": "TODO: tek fatura satırı (list'e göre)",
+    "rowLink": "TODO: fatura detayı bağlantısı (satıra göre)",
+    "noData": "TODO: fatura yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "open": "link",
+    "detail": {
+      "ready": null,
+      "supplierName": "TODO: tedarikçi adı",
+      "invoiceNo": "TODO: fatura numarası",
+      "invoiceDate": "TODO: fatura tarihi",
+      "invoiceDateFormat": "DD.MM.YYYY",
+      "warehouse": "TODO: teslim alan depo (yoksa null)",
+      "lineRow": "TODO: fatura kalemleri, ör. #lines tbody tr",
+      "line": {
+        "itemCode": "TODO: stok kodu hücresi (yoksa null)",
+        "itemName": "TODO: ürün adı hücresi",
+        "qty": "TODO: miktar hücresi",
+        "unit": "TODO: birim hücresi",
+        "unitPrice": "TODO: birim fiyat hücresi (KDV hariç)",
+        "taxRatePct": "TODO: KDV % hücresi (yoksa null)"
+      },
+      "skipItemNamePattern": "^(Toplam|Total)\\b",
+      "back": null
+    }
+  },
+
+  "covers": {
+    "_info": "Satış noktası ve öğüne göre kişi (cover) sayısı raporu, ör. satılan kahvaltılar. row ve columns.*, table'a göre.",
+    "steps": [
+      { "goto": "TODO: cover / guest count raporunun yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Raporu göster düğmesi" }
+    ],
+    "table": "TODO: rapor tablosu",
+    "row": "TODO: rapor satırı (table'a göre), ör. tbody tr",
+    "noData": "TODO: veri yoksa görünen mesaj (yoksa null)",
+    "columns": {
+      "outlet": "TODO: satış noktası hücresi",
+      "meal": "TODO: öğün hücresi (rapor öğün göstermiyorsa null ve defaultMeal doldurun)",
+      "covers": "TODO: kişi sayısı hücresi"
+    },
+    "defaultMeal": null,
+    "skipOutletPattern": "^(Toplam|Total|Genel Toplam)\\b"
+  }
+}

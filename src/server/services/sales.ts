@@ -23,6 +23,8 @@ export const saleRow = z.object({
   posCode: z.string().trim().min(1).max(64),
   quantity: dec.refine((v) => Number(v) > 0, "Quantity must be positive"),
   netRevenue: dec.refine((v) => Number(v) >= 0, "Revenue cannot be negative"),
+  /** item name as the POS shows it: matches a recipe by name when no recipe carries the POS code */
+  name: z.string().trim().max(200).optional().nullable(),
 });
 export type SaleRowInput = z.input<typeof saleRow>;
 
@@ -70,7 +72,7 @@ export interface ImportPreviewRow {
 
 export async function previewSales(db: Db, actor: Actor, hotelId: string, rows: unknown[]) {
   authorize(actor, "sales:import", { hotelId });
-  const [departments, recipes] = await Promise.all([db.department.findMany({ where: { hotelId } }), db.recipe.findMany({ where: { hotelId, posCode: { not: null } } })]);
+  const [departments, recipes] = await Promise.all([db.department.findMany({ where: { hotelId } }), db.recipe.findMany({ where: { hotelId, active: true } })]);
   const seen = new Set<string>();
   const parsed: ImportPreviewRow[] = [];
   const candidates: Array<{ idx: number; externalId: string }> = [];
@@ -99,7 +101,9 @@ export async function previewSales(db: Db, actor: Actor, hotelId: string, rows: 
       return;
     }
     seen.add(d.externalId);
-    const recipe = recipes.find((x) => x.posCode === d.posCode);
+    // POS code first; hotels often have no codes, so the item name matches the recipe name too
+    const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
+    const recipe = recipes.find((x) => x.posCode === d.posCode) ?? byName(d.name ?? d.posCode);
     const messages = recipe ? [] : [`No recipe mapped to POS code '${d.posCode}' (will be imported as unmapped)`];
     parsed.push({ row: i + 1, status: recipe ? "VALID" : "WARNING", messages, data: { ...d, departmentId: dept.id, recipeId: recipe?.id ?? null } });
     candidates.push({ idx: parsed.length - 1, externalId: d.externalId });

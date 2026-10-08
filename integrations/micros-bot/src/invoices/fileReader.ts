@@ -22,7 +22,7 @@ import type { Invoice } from "../contract";
 import { BotError } from "../errors";
 import { log } from "../logger";
 import type { DetailResult } from "../screens/listDetail";
-import { parseNumber } from "../util/numbers";
+import { parseNumber, type NumberFormat } from "../util/numbers";
 import { parseDateTime, ymd } from "../util/time";
 import type { InvoiceReader } from "./source";
 
@@ -140,6 +140,22 @@ function toDay(v: Cell | undefined): string | null {
   return null;
 }
 
+/**
+ * "1.100" is 1100 in a Turkish file and 1.1 in an English one: decide per file from the unambiguous cells
+ * ("12,5" / "1.250,75" → Turkish; "12.5" / "1,250.75" → English).
+ */
+export function detectNumberFormat(cells: Array<Cell | undefined>): NumberFormat {
+  let tr = 0;
+  let en = 0;
+  for (const c of cells) {
+    if (typeof c !== "string") continue;
+    const s = c.trim();
+    if (/,\d{1,2}$/.test(s) || /\d\.\d{3},/.test(s) || /,\d{4,}$/.test(s)) tr++;
+    else if (/\.\d{1,2}$/.test(s) || /\d,\d{3}\./.test(s) || /\.\d{4,}$/.test(s)) en++;
+  }
+  return tr > en ? "tr" : en > tr ? "en" : "auto";
+}
+
 /** Rows (header first) → invoices. Row numbers in messages are 1-based file rows. */
 export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<Invoice> {
   const warnings: string[] = [];
@@ -154,6 +170,7 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     throw new BotError(`${fileLabel}: missing column(s) ${missing.join(", ")} (header: ${(rows[0] ?? []).map((h) => text(h)).join(" | ")})`);
   }
   const get = (r: Cell[], f: Field) => (col[f] === undefined ? undefined : r[col[f]!]);
+  const fmt = detectNumberFormat(rows.slice(1).flatMap((r) => [get(r, "qty"), get(r, "unitPrice"), get(r, "taxRatePct")]));
   const byKey = new Map<string, Invoice>();
   rows.slice(1).forEach((r, i) => {
     const rowNo = i + 2;
@@ -163,10 +180,10 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     const itemName = text(get(r, "itemName"));
     if (!supplierName && !invoiceNo && !itemName) return;
     const invoiceDate = toDay(get(r, "invoiceDate"));
-    const qty = parseNumber(get(r, "qty") as string | number);
-    const unitPrice = parseNumber(get(r, "unitPrice") as string | number);
+    const qty = parseNumber(get(r, "qty") as string | number, fmt);
+    const unitPrice = parseNumber(get(r, "unitPrice") as string | number, fmt);
     const taxRaw = get(r, "taxRatePct");
-    const taxRatePct = taxRaw === undefined || taxRaw === null || text(taxRaw) === "" ? null : parseNumber(taxRaw as string | number);
+    const taxRatePct = taxRaw === undefined || taxRaw === null || text(taxRaw) === "" ? null : parseNumber(String(taxRaw).replace("%", ""), fmt);
     const problems: string[] = [];
     if (!supplierName) problems.push("supplier empty");
     if (!invoiceNo) problems.push("invoice no empty");

@@ -22,7 +22,7 @@ export default async function AdminPage() {
       <AdminConsole
         me={actor.userId}
         canHotels={can(actor, "admin:hotels")}
-        hotel={{ name: o.hotel.name, totalRooms: o.hotel.totalRooms, baseCurrency: o.hotel.baseCurrency, timezone: o.hotel.timezone, priceAlertPct: o.hotel.priceAlertPct.toString(), wasteApprovalValue: o.hotel.wasteApprovalValue.toString(), adjustmentApprovalValue: o.hotel.adjustmentApprovalValue.toString(), marginTargetPct: o.hotel.marginTargetPct.toString() }}
+        hotel={{ name: o.hotel.name, totalRooms: o.hotel.totalRooms, baseCurrency: o.hotel.baseCurrency, timezone: o.hotel.timezone, priceAlertPct: o.hotel.priceAlertPct.toString(), wasteApprovalValue: o.hotel.wasteApprovalValue.toString(), adjustmentApprovalValue: o.hotel.adjustmentApprovalValue.toString(), marginTargetPct: o.hotel.marginTargetPct.toString(), businessDayCutoff: o.hotel.businessDayCutoff }}
         hotels={orgHotels}
         currentHotelId={hotelId}
         roles={o.roles}

@@ -8,11 +8,11 @@ import { isDomainError } from "@/domain/errors";
 import { translateMessage } from "@/i18n/core";
 import { getLocale } from "@/i18n/server";
 
-export async function pageContext(): Promise<{ actor: Actor; hotelId: string; hotel: { id: string; name: string; baseCurrency: string; timezone: string } }> {
+export async function pageContext(): Promise<{ actor: Actor; hotelId: string; hotel: { id: string; name: string; baseCurrency: string; timezone: string; businessDayCutoff: string } }> {
   const actor = await currentActor();
   const hotelId = await currentHotelId();
   if (!actor || !hotelId) redirect("/login");
-  const hotel = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { id: true, name: true, baseCurrency: true, timezone: true } });
+  const hotel = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { id: true, name: true, baseCurrency: true, timezone: true, businessDayCutoff: true } });
   return { actor, hotelId, hotel };
 }
 

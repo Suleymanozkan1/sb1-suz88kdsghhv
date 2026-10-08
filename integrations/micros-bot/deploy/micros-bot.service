@@ -1,0 +1,22 @@
+# Linux systemd servisi. Kurulum:
+#   sudo cp deploy/micros-bot.service /etc/systemd/system/
+#   (WorkingDirectory ve User satırlarını düzenleyin)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now micros-bot
+#   journalctl -u micros-bot -f        # canlı log
+[Unit]
+Description=HotelCost Micros/Opera bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hotelcost
+WorkingDirectory=/opt/hotelcost/micros-bot
+ExecStart=/usr/bin/env node --import tsx src/cli.ts daemon
+Restart=always
+RestartSec=30
+# .env dosyası WorkingDirectory içinde okunur; izinleri: chmod 600 .env
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

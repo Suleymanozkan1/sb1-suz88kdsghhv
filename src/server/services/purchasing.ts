@@ -112,6 +112,8 @@ export const receiptInput = z.object({
   otherCost: nonNeg.optional(),
   allocationMethod: z.enum(["BY_VALUE", "BY_QUANTITY", "BY_WEIGHT", "MANUAL"]).optional(),
   idempotencyKey: z.string().max(128).optional().nullable(),
+  /** MANUAL (the form) or where an import came from (MICROS: the purchasing automation) */
+  source: z.enum(["MANUAL", "MICROS", "IMPORT"]).optional(),
   items: z
     .array(
       z.object({
@@ -189,6 +191,7 @@ export async function postGoodsReceipt(db: Db, actor: Actor, hotelId: string, ra
           warehouseId: warehouse.id,
           receiptDate: input.receiptDate,
           invoiceNo: input.invoiceNo ?? null,
+          source: input.source ?? "MANUAL",
           currency: input.currency ?? supplier.currency,
           exchangeRate: input.exchangeRate ?? "1",
           freight: input.freight ?? "0",

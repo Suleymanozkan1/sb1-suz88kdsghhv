@@ -74,7 +74,7 @@ The high-volume ledger is written by `src/server/demo/engine.ts`. It reproduces 
 |---|---|---|
 | 1 | Supplier price increases of 3 / 5 / 10 / 15 / 20 / 30 % | Price alerts, purchase price variance, recipe cost |
 | 2 | High waste (kitchen, last full month) | Waste % vs target, waste report |
-| 3 | Low yield (QA: yield typed as 5 %) | Data quality: implausible yield |
+| 3 | (removed) Recipe quantities are the raw quantities used, so there is no yield to get wrong | — |
 | 4 | Over-portioning (restaurant proteins +25 %) | Theoretical vs actual: unexplained usage |
 | 5 | Critical stock (no deliveries in the last week) | Inventory status, order recommendations |
 | 6 | Dead stock (bought at go-live, never used) | Stock aging, carrying cost |
@@ -92,7 +92,6 @@ The QA tenant also has these **intentional errors**:
 - a product with no cost used in an approved recipe;
 - a purchase unit with no conversion;
 - a product with no supplier;
-- a 5 % yield;
 - negative kitchen stock;
 - a POS line dated 30 days ahead.
 

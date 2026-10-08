@@ -13,7 +13,7 @@ export const FEATURES = {
   /** list of products at their reorder point (all plans) */
   reorderAlerts: "BASIC",
   /** Micros / Opera automation (import API, nightly runs, run log) */
-  integrations: "STANDARD",
+  integrations: "BASIC",
   /** orders e-mailed to suppliers automatically when stock reaches the reorder point */
   autoOrderEmail: "PREMIUM",
 } as const satisfies Record<string, Plan>;

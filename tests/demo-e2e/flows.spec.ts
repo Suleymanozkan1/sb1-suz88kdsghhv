@@ -109,7 +109,7 @@ test("waste (chef) posts at cost", async ({ page }) => {
   const reason = `Demo wilted ${uniq()}`;
   await page.getByLabel("Reason").fill(reason);
   await page.getByRole("button", { name: "Record waste" }).click();
-  await expect(page.getByRole("status")).toContainText(/Waste posted at cost|approval/);
+  await expect(page.getByRole("status")).toContainText(/line\(s\) posted|approval/);
   await expect(page.getByText(reason).first()).toBeVisible();
 });
 
@@ -135,13 +135,12 @@ test("recipe (F&B manager): create with live cost, approve, cost explosion", asy
   await signIn(page, "fbm@test.local");
   await page.goto("/recipes/new");
   const code = `DEMO${uniq()}`;
-  await page.getByLabel("Code", { exact: true }).fill(code);
+  await page.getByLabel("Code (optional)", { exact: true }).fill(code);
   await page.getByLabel("Menu / product name").fill(`Demo Wings Plate ${code}`);
-  await page.getByLabel("Usable portions").fill("4");
-  await page.getByLabel("Batch yield").fill("4");
+  await page.getByLabel("Portions").fill("4");
   await page.getByLabel("Selling price (net)").fill("350");
   await pickProduct(page, "Search ingredient", "Chicken Wings", /Chicken Wings/);
-  await page.getByLabel("Qty (EP)").fill("800");
+  await page.getByLabel("Quantity used").fill("800");
   await expect(page.getByText("Cost per portion")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Demo Wings Plate");
@@ -274,7 +273,7 @@ test("integrity and data quality: clean company passes, QA tenant shows every in
   const qa = await ctx.newPage();
   await signIn(qa, "controller@demo-all-inclusive.test.local", "DAI-BLK");
   await qa.goto("/data-quality");
-  for (const t of ["Products with an implausible yield", "Purchase unit without a conversion", "Negative inventory", "Sales or waste dated in the future"]) {
+  for (const t of ["Purchase unit without a conversion", "Negative inventory", "Sales or waste dated in the future"]) {
     await expect(qa.getByText(t).first()).toBeVisible();
   }
   await ctx.close();
