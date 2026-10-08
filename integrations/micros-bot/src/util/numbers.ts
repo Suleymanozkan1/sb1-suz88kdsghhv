@@ -26,6 +26,8 @@ export function parseNumber(raw: string | number | null | undefined, format: Num
   if (!s || /[-+]/.test(s)) return Number.NaN;
 
   let fmt = format;
+  // "auto" is a fallback: "1.234" / "1,234" (one separator, three digits) cannot be told apart, so the selector
+  // files set numberFormat explicitly ("tr" for Turkish screens) and auto-detection is used only without it
   if (fmt === "auto") {
     const lastComma = s.lastIndexOf(",");
     const lastDot = s.lastIndexOf(".");
