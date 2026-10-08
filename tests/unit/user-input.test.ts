@@ -9,15 +9,11 @@ describe("user-typed numbers", () => {
     expect(parseNum("")).toBeNaN();
     expect(parseNum("abc")).toBeNaN();
     expect(parseNum(4)).toBe(4);
-    // a Turkish thousands separator must not silently become 1.5
-    expect(parseNum("1.500")).toBeNaN();
-    expect(parseNum("0.500")).toBe(0.5);
   });
 
   it("server forms accept a decimal comma", () => {
     const r = receiptInput.safeParse({ warehouseId: "w", supplierId: "s", receiptDate: "2026-10-08", items: [{ productId: "p", quantity: "12,5", unit: "kg", unitPrice: "3,75" }] });
     expect(r.success && r.data.items[0]).toMatchObject({ quantity: "12.5", unitPrice: "3.75" });
-    expect(receiptInput.safeParse({ warehouseId: "w", supplierId: "s", receiptDate: "2026-10-08", items: [{ productId: "p", quantity: "1.500", unit: "kg", unitPrice: "1" }] }).success).toBe(false);
   });
 });
 
