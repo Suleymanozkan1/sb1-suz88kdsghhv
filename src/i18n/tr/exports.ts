@@ -1,4 +1,4 @@
-/** PDF / Excel exports of the pages, and the screens added with them. One section per area (parallel edits). */
+/** PDF / Excel / CSV exports of the pages, and the screens added with them. One section per area (parallel edits). */
 export const exports: Record<string, string> = {
   // ── common ──
   Page: "Sayfa",
@@ -6,6 +6,7 @@ export const exports: Record<string, string> = {
   "Stock code": "Stok kodu",
   "Download as PDF (with the filters on screen)": "PDF olarak indir (ekrandaki filtrelerle)",
   "Download as Excel (with the filters on screen)": "Excel olarak indir (ekrandaki filtrelerle)",
+  "Download as CSV (with the filters on screen)": "CSV olarak indir (ekrandaki filtrelerle)",
   // ── group A ──
   Count: "Adet",
   Title: "Başlık",

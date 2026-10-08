@@ -1,5 +1,5 @@
 /**
- * Page exports (PDF + Excel). Every list/report page has a report definition here: it loads the same data
+ * Page exports (PDF + Excel + CSV). Every list/report page has a report definition here: it loads the same data
  * the page shows, with the same filters (the page's URL query), and returns plain tables. One renderer per
  * format turns any report into a file, so a new page only needs a definition (tests/unit/page-exports.test.ts
  * fails for a page without one).

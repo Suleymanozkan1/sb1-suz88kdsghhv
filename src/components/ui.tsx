@@ -8,7 +8,7 @@ export function cn(...a: Parameters<typeof clsx>) {
 }
 
 /**
- * Page title row. `exportKey`: the page's report (src/server/table-export/reports) — PDF and Excel buttons at the
+ * Page title row. `exportKey`: the page's report (src/server/table-export/reports) — PDF, Excel and CSV buttons at the
  * top right, after the page's own actions; every list/report page has one.
  */
 export function PageHeader({ title, subtitle, actions, exportKey, exportParams }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined> }) {
