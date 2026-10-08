@@ -348,7 +348,10 @@ export async function forecast(db: Db, actor: Actor, hotelId: string, f: { depar
  * from; the form keeps them editable.
  */
 export async function sessionDefaults(db: Db, actor: Actor, hotelId: string, q: { date: string; departmentId: string; type: string }) {
-  authorize(actor, "buffet:view", { hotelId });
+  authorize(actor, "buffet:view", { hotelId, departmentId: q.departmentId });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(q.date) || Number.isNaN(Date.parse(`${q.date}T00:00:00Z`)) || new Date(`${q.date}T00:00:00Z`).toISOString().slice(0, 10) !== q.date) {
+    throw new DomainError("VALIDATION", "Invalid date");
+  }
   const day = new Date(`${q.date}T00:00:00Z`);
   const [covers, occ] = await Promise.all([
     db.coverCount.findUnique({ where: { hotelId_businessDate_departmentId_meal: { hotelId, businessDate: day, departmentId: q.departmentId, meal: q.type } } }),

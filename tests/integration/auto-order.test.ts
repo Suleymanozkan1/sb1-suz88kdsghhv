@@ -69,14 +69,22 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     expect(sentMail.length).toBe(before + 1);
   });
 
+  it("two runs at the same moment (nightly + check now) send the order once", async () => {
+    const before = sentMail.length;
+    const at = new Date("2026-09-04T03:00:00Z"); // > 24 h after the first order
+    const [a, b] = await Promise.all([runAutoOrders(prisma, h.hotel.id, { now: at }), runAutoOrders(prisma, h.hotel.id, { now: at })]);
+    expect(a.sent + b.sent).toBe(1);
+    expect(sentMail.length).toBe(before + 1);
+  });
+
   it("a rule's own e-mail wins; a passive rule is never ordered", async () => {
     const rule = (await autoOrderOverview(prisma, pm, h.hotel.id)).rules.find((x) => x.product === "Flour")!;
     await saveRule(prisma, pm, h.hotel.id, { productId: flour.id, supplierId: h.supplier.id, reorderPoint: "60", orderQty: "25", email: "flour@anadolu.test" }, rule.id);
     await setRuleActive(prisma, pm, h.hotel.id, rule.id, false);
-    expect(await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-05T02:00:00Z") })).toMatchObject({ due: 1, sent: 1 }); // oil again (24 h passed), flour is passive
+    expect(await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-05T04:00:00Z") })).toMatchObject({ due: 1, sent: 1 }); // oil again (24 h passed), flour is passive
     await setRuleActive(prisma, pm, h.hotel.id, rule.id, true);
     const before = sentMail.length;
-    expect(await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-05T03:00:00Z") })).toMatchObject({ due: 1, sent: 1 });
+    expect(await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-05T05:00:00Z") })).toMatchObject({ due: 1, sent: 1 });
     expect(sentMail.slice(before).map((m) => m.to)).toEqual(["flour@anadolu.test"]);
   });
 

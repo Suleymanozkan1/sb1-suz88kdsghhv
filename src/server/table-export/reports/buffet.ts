@@ -2,6 +2,11 @@ import { prisma } from "../../db";
 import { monthRange } from "../../page";
 import { periodReport, sessionReport } from "../../services/buffet";
 import type { ReportDef } from "../types";
+import { BOARD_BASIS } from "@/lib/board-basis";
+
+/** a real calendar day / month: "2026-13" or "2026-02-30" are rejected (they fall back to the default range) */
+const isDay = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+const isMonth = (v?: string) => !!v && /^\d{4}-\d{2}$/.test(v) && Number(v.slice(5, 7)) >= 1 && Number(v.slice(5, 7)) <= 12;
 
 /** Buffet period: a single day or a whole month (or a free from–to range). */
 export function buffetRange(q: URLSearchParams | Record<string, string | undefined>) {
@@ -9,8 +14,8 @@ export function buffetRange(q: URLSearchParams | Record<string, string | undefin
   const period = get("period");
   const day = get("day");
   const month = get("month");
-  if (period === "day" && day && /^\d{4}-\d{2}-\d{2}$/.test(day)) return { period: "day" as const, ...monthRange({ from: day, to: day }), day, month: day.slice(0, 7) };
-  if (period === "month" && month && /^\d{4}-\d{2}$/.test(month)) {
+  if (period === "day" && day && isDay(day)) return { period: "day" as const, ...monthRange({ from: day, to: day }), day, month: day.slice(0, 7) };
+  if (period === "month" && month && isMonth(month)) {
     const last = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
     return { period: "month" as const, ...monthRange({ from: `${month}-01`, to: last }), day: `${month}-01`, month };
   }
@@ -51,7 +56,8 @@ export const buffet: ReportDef = {
             { key: "cost", header: t("Food cost"), type: "money" }, { key: "cpc", header: t("Cost / cover"), type: "money" }, { key: "waste", header: t("Waste"), type: "money" }, { key: "wpct", header: t("Waste %"), type: "pct" }, { key: "status", header: t("Status") },
           ],
           rows: r.sessions.map(({ session: s, metrics: m }) => ({ date: s.serviceDate, meal: t(s.type), outlet: s.department.name, covers: s.actualCovers ?? s.expectedCovers, rooms: s.occupiedRooms, cost: m.buffetFoodCost.toString(), cpc: s.status === "CLOSED" ? m.costPerCover?.toString() ?? null : null, waste: m.wasteCost.toString(), wpct: m.wastePct?.toString() ?? null, status: t(s.status) })),
-          totals: { date: null, meal: t("Total"), covers: r.totals.covers, cost: r.totals.cost.toString(), cpc: r.totals.costPerCover?.toString() ?? null, waste: r.sessions.reduce((a, x) => a + Number(x.metrics.wasteCost), 0) },
+          // the totals are those of the closed sessions (open ones are still being counted)
+          totals: { date: null, meal: t("Total (closed sessions)"), covers: r.totals.covers, cost: r.totals.cost.toString(), cpc: r.totals.costPerCover?.toString() ?? null, waste: r.totals.waste.toString() },
         },
       ],
     };
@@ -64,7 +70,7 @@ export const buffetSession: ReportDef = {
     const { session: s, metrics: m, names } = await sessionReport(prisma, actor, hotelId, q.get("id") ?? "");
     return {
       title: `${t(s.type)} · ${s.department.name} · ${s.serviceDate.toISOString().slice(0, 10)}`,
-      subtitle: `${t(s.status)} · ${t("Covers")}: ${s.actualCovers ?? s.expectedCovers ?? "—"}${s.boardBasis ? ` · ${s.boardBasis}` : ""}`,
+      subtitle: `${t(s.status)} · ${t("Covers")}: ${s.actualCovers ?? s.expectedCovers ?? "—"}${s.boardBasis ? ` · ${t(BOARD_BASIS.find(([c]) => c === s.boardBasis)?.[1] ?? s.boardBasis)}` : ""}`,
       fileName: `bufe-oturum-${s.serviceDate.toISOString().slice(0, 10)}`,
       tables: [
         {
