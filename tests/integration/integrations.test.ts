@@ -114,6 +114,10 @@ describe("run log, run now, health", () => {
     expect((await requestRun(prisma, admin, h.hotel.id, { source: "MICROS" })).alreadyWaiting).toBe(true);
     expect((await nextRequest(prisma, h.hotel.id, "MICROS")).request!.id).toBe(a.id);
     expect((await nextRequest(prisma, h.hotel.id, "MICROS")).request).toBeNull();
+    // two bots polling at the same moment: the request is handed out once
+    await requestRun(prisma, admin, h.hotel.id, { source: "OPERA" });
+    const polls = await Promise.all([nextRequest(prisma, h.hotel.id, "OPERA"), nextRequest(prisma, h.hotel.id, "OPERA")]);
+    expect(polls.filter((p) => p.request).length).toBe(1);
   });
   it("health: a failed run is a warning; a delivered last business day is OK", async () => {
     const now = new Date(`2026-09-21T06:00:00Z`); // 09:00 Istanbul → last closed business day 2026-09-20

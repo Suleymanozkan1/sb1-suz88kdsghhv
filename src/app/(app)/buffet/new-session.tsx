@@ -21,6 +21,7 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
   const [rooms, setRooms] = useState("");
   const [guests, setGuests] = useState("");
   const [src, setSrc] = useState<Defaults | null>(null);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // fields the user typed into for the current selection: a late default never overwrites them
   const edited = useRef({ covers: false, rooms: false, guests: false });
@@ -33,6 +34,7 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
     // a new date / outlet / meal starts empty: nothing from the previous selection can be submitted for it
     edited.current = { covers: false, rooms: false, guests: false };
     setSrc(null);
+    setLoading(true);
     setCovers("");
     setRooms("");
     setGuests("");
@@ -45,7 +47,8 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
         if (!edited.current.rooms) setRooms(v(d.occupiedRooms));
         if (!edited.current.guests) setGuests(v(d.guests));
       })
-      .catch(() => live && setSrc(null));
+      .catch(() => live && setSrc(null))
+      .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
@@ -65,7 +68,7 @@ export function NewSession({ departments, warehouses }: { departments: { id: str
   const name = (s: string | null | undefined) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "—");
   const hint = (value: number | null | undefined, source: string | null | undefined) => <p className="mt-1 text-[11px] text-ink-500">{value === null || value === undefined ? t("no data yet — enter by hand") : t("from {source}", { source: name(source) })}</p>;
   return (
-    <form onSubmit={submit} className="grid gap-3 md:grid-cols-8">
+    <form onSubmit={submit} className="grid gap-3 md:grid-cols-8" aria-busy={loading} data-testid="new-buffet-session">
       {err && <div className="md:col-span-8"><Alert>{err}</Alert></div>}
       <div><Label htmlFor="bs-type">{t("Meal")}</Label><Select id="bs-type" value={type} onChange={(e) => setType(e.target.value)}>{TYPES.map((ty) => <option key={ty} value={ty}>{t(ty)}</option>)}</Select></div>
       <div><Label htmlFor="bs-date">{t("Date")}</Label><Input id="bs-date" type="date" value={day} onChange={(e) => setDay(e.target.value)} /></div>

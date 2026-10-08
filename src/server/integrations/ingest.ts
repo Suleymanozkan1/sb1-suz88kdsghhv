@@ -267,7 +267,9 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
 export async function nextRequest(db: Db, hotelId: string, source?: string) {
   const req = await db.integrationRequest.findFirst({ where: { hotelId, pickedAt: null, ...(source ? { source } : {}) }, orderBy: { createdAt: "asc" } });
   if (!req) return { request: null };
-  await db.integrationRequest.update({ where: { id: req.id }, data: { pickedAt: new Date() } });
+  // two polls can see the same open request: only the one that flips pickedAt gets it
+  const claimed = await db.integrationRequest.updateMany({ where: { id: req.id, pickedAt: null }, data: { pickedAt: new Date() } });
+  if (claimed.count !== 1) return { request: null };
   return { request: { id: req.id, source: req.source, businessDay: req.businessDay } };
 }
 

@@ -10,8 +10,8 @@ test("buffet flow: open session, issue production, classify leftovers, close →
   for (let back = 0; back < 25; back++) {
     const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
     await page.getByLabel("Date", { exact: true }).fill(d);
-    // covers sold are filled in from Micros when known; the test types its own after the date is set
-    await page.waitForTimeout(300);
+    // covers sold are filled in from Micros when known; the test types its own once the defaults for this date have loaded
+    await expect(page.getByTestId("new-buffet-session")).toHaveAttribute("aria-busy", "false");
     await page.getByLabel("Covers sold").fill("100");
     await page.getByRole("button", { name: "Open session" }).click();
     const opened = await Promise.race([
