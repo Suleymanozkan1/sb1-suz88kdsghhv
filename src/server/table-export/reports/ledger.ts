@@ -41,7 +41,7 @@ export function sourceText(d: Pick<DetailLine, "check" | "dish" | "sold"> & { ro
 export const ledger: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const f = parseLedgerQuery(q);
-    const { rows } = await ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), take: 5000 });
+    const { rows, total } = await ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), take: 5000 });
     const lines = f.view === "detail" ? await explodeSalesRows(prisma, rows) : rows.map((r) => ({ row: r, quantity: r.quantity, total: r.totalCost }) as unknown as DetailLine);
     const [wh, product] = await Promise.all([f.warehouseId ? prisma.warehouse.findFirst({ where: { id: f.warehouseId, hotelId } }) : null, f.productId ? prisma.product.findFirst({ where: { id: f.productId, hotelId } }) : null]);
     const data: Array<Record<string, XValue>> = lines.map((d) => ({
@@ -54,6 +54,8 @@ export const ledger: ReportDef = {
       filters: [
         [t("Warehouse"), wh?.name ?? t("All")], [t("Type"), f.type ? t(f.type) : t("All")], [t("Product"), product?.name ?? t("All")],
         [t("Date range"), `${f.from ?? "…"} – ${f.to ?? "…"}`],
+        // the file holds at most 5000 movements: say so instead of presenting partial totals as complete
+        ...(total > rows.length ? [[t("Note"), t("Only the newest {shown} of {total} movements are included; narrow the date range for the rest.", { shown: rows.length, total })] as [string, string]] : []),
       ],
       tables: [{
         columns: [
