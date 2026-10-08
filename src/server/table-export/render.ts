@@ -80,17 +80,19 @@ function excelFormat(type: XType | undefined, currency: string): string | undefi
   }
 }
 
+// a text cell starting with = + - @ tab or CR would be read as a formula by spreadsheet programs
+const safeText = (s: string) => (/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
+
 function excelValue(v: XValue, type: XType | undefined): ExcelJS.CellValue {
   if (v === null || v === undefined || v === "") return null;
-  if (type === "date" || type === "datetime") return asDate(v) ?? String(v);
+  if (type === "date" || type === "datetime") return asDate(v) ?? safeText(String(v));
   if (type && NUMERIC.includes(type)) {
     const n = num(v);
     if (n === null) return String(v);
     return type === "pct" ? n / 100 : n;
   }
   const s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
-  // neutralise formula injection from user data
-  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+  return safeText(s);
 }
 
 const sheetName = (s: string, used: Set<string>) => {
