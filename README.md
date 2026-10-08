@@ -4,6 +4,8 @@ Cost intelligence for hotels: **purchase → stock → recipe → yield → cons
 
 > Status: **all six phases are implemented**: core cost engine, Excel layer, buffet & minibar, rooms & operating costs, planning, reports/imports/month-end, plus performance, hardening and full E2E. Wherever source data is missing, screens, exports and Excel show the figure as `NOT_AVAILABLE` / `INSUFFICIENT_DATA`, never as zero. Spec ↔ implementation ↔ tests: [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md).
 
+> Micros / Opera automation (nightly bot, ingest API, run log), automatic ordering and plans: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+
 ## Quick start
 
 ```bash

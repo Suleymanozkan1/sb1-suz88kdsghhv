@@ -6,11 +6,13 @@ test("buffet flow: open session, issue production, classify leftovers, close →
   await page.goto("/buffet");
   await page.getByLabel("Meal").selectOption("SPECIAL_EVENT");
   await page.getByLabel("Issue from").selectOption({ label: "Main Store" });
-  await page.getByLabel("Expected covers").fill("100");
   // The E2E database persists between runs and a meal/outlet/date is unique: walk back one day until a free date is found.
   for (let back = 0; back < 25; back++) {
     const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
     await page.getByLabel("Date", { exact: true }).fill(d);
+    // covers sold are filled in from Micros when known; the test types its own after the date is set
+    await page.waitForTimeout(300);
+    await page.getByLabel("Covers sold").fill("100");
     await page.getByRole("button", { name: "Open session" }).click();
     const opened = await Promise.race([
       page.waitForURL(/\/buffet\/[^/]+$/, { timeout: 10_000 }).then(() => true),

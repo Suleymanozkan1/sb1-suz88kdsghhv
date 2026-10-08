@@ -10,6 +10,8 @@ const PASSWORD = process.env.DEMO_PASSWORD ?? "Demo!2026-QA";
 // public or session plumbing (incl. first-run setup, which answers 409 once installed), or read-only POSTs a viewer may call
 const ALLOWED = new Set(["/api/auth/login", "/api/auth/logout", "/api/auth/hotel", "/api/invites/accept", "/api/integrity/check", "/api/recipes/preview", "/api/setup"]);
 const PARAM: Record<string, string> = { "[kind]": "expenses" };
+// the Micros / Opera automation's endpoints accept only an integration key: a signed-in user gets 401
+const KEY_ONLY = new Set(["/api/integrations/ingest", "/api/integrations/runs"]);
 
 function routes(dir = "src/app/api", base = "/api"): Array<{ path: string; methods: string[] }> {
   const out: Array<{ path: string; methods: string[] }> = [];
@@ -39,7 +41,7 @@ test("viewer gets 403 from every mutating endpoint", async ({ page }) => {
     for (const m of r.methods) {
       n++;
       const res = await page.request.fetch(r.path, { method: m, data: {}, headers: { origin } });
-      if (res.status() !== 403) bad.push(`${m} ${r.path} → ${res.status()} ${(await res.text()).slice(0, 120)}`);
+      if (res.status() !== (KEY_ONLY.has(r.path) ? 401 : 403)) bad.push(`${m} ${r.path} → ${res.status()} ${(await res.text()).slice(0, 120)}`);
     }
   }
   console.log(`${n} mutating endpoints checked`);

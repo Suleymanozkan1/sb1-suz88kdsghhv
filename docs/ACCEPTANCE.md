@@ -9,7 +9,7 @@ Each area of the master specification is listed with where it lives and what pro
 | Money, rounding, UOM conversions | `src/domain/money.ts`, `src/domain/uom.ts` | `unit/money-uom` |
 | Purchasing, landed cost, price variance, approvals | `src/domain/landed-cost.ts`, `purchasing.ts`, `server/services/purchasing.ts` | `unit/landed-costing`, `integration/ledger-purchasing`, `e2e/cost-flows` |
 | Append-only stock ledger, WAC/FIFO, transfers, counts, periods | `server/services/ledger.ts`, DB triggers `LEDGER_IMMUTABLE` | `integration/ledger-purchasing`, `integration/hardening` |
-| Recipes, sub-recipes, frozen versions, yield | `src/domain/recipe-cost.ts`, `yield.ts`, `server/services/recipes.ts`, trigger `RECIPE_VERSION_FROZEN` | `unit/yield-recipe`, `integration/recipe-variance` |
+| Recipes, sub-recipes, frozen versions (cost = raw quantity × unit cost) | `src/domain/recipe-cost.ts`, `yield.ts`, `server/services/recipes.ts`, trigger `RECIPE_VERSION_FROZEN` | `unit/yield-recipe`, `integration/recipe-variance` |
 | Waste, staff meals, complimentary items, approvals | `src/domain/waste.ts`, `server/services/waste.ts`, `approvals.ts` | `integration/approvals-waste` |
 | Theoretical vs actual, explained/unexplained variance | `src/domain/variance.ts`, `server/services/variance.ts` | `unit/variance-waste-purchasing`, `integration/recipe-variance` |
 | Roles, department scope, audit, data quality | `server/auth/*`, `services/audit.ts`, `src/domain/quality.ts` | `integration/security`, `integration/hardening` |
@@ -70,7 +70,7 @@ Report archive with content and period hashes, reproducibility check, PDF manage
 | 98–101, 127–130 Performance, background processing, load | Export jobs, bulk Excel, shared rate limits | `scripts/demo-perf.ts` on staging; `docs/PERFORMANCE.md` |
 | 102–106 Error injection, recovery, idempotency, concurrency, transaction integrity | | `hardening.test.ts` (parallel posting, duplicate imports, interrupted runs, rebuild), `export-jobs.test.ts` (stale / failed jobs) |
 | 107–112 Audit, historical price, recipe and stock integrity, month close and reopen | | `full-flow.test.ts` (closed month refuses postings), `demo:verify` (sales use their own version), existing period tests |
-| 113–114 Data quality detects the intentional errors and the score drops | New checks: implausible yield, missing conversion, future-dated records | `demo:verify` |
+| 113–114 Data quality detects the intentional errors and the score drops | New checks: missing conversion, future-dated records | `demo:verify` |
 | 115 Security tests | | IDOR / tenant escape: `tenancy.test.ts`. Privilege escalation: `permissions.test.ts`, `tenancy.test.ts`. SQL injection: `security.test.ts`. XSS, CSRF, oversized and malformed body: `e2e/hardening.spec.ts`. Session abuse: `hardening.test.ts`, `tenancy.test.ts`. Rate limiting: `export-jobs.test.ts`. |
 | 116–118 Test users per company; dev-only passwords | `generate.ts` (`DEMO_PASSWORD`) | `demo-dataset.test.ts` |
 | 120–124 Tenant deletion (authorised, demo only), backup, reset, production safety | `demo/reset.ts` (FK-ordered purge), `ops:*` scripts | `demo-dataset.test.ts` |

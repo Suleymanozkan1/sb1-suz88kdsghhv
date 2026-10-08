@@ -80,7 +80,7 @@ export const PRODUCT_TR: Record<string, string> = {
   "Door Lock Battery": "Kapı kilidi pili", "Faucet Cartridge": "Batarya kartuşu", "Compressor Relay": "Kompresör rölesi",
   // QA kiracısındaki kasıtlı veri hataları
   "Saffron (no cost yet)": "Safran (maliyeti henüz yok)", "Frozen Fries (case size missing)": "Dondurulmuş patates (koli içeriği tanımsız)",
-  "Truffle Oil (no supplier)": "Trüf yağı (tedarikçisi yok)", "Artichoke (yield typed as 5 %)": "Enginar (verim %5 girilmiş)",
+  "Truffle Oil (no supplier)": "Trüf yağı (tedarikçisi yok)",
 };
 
 /** catalogue categories by code */
