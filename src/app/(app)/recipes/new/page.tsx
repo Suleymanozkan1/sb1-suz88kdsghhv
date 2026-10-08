@@ -18,7 +18,7 @@ export default async function NewRecipePage() {
   ]);
   return (
     <>
-      <PageHeader title={t("New recipe")} subtitle={t("Type → product → ingredients (searched) → quantities, units, yield, waste → live cost → review → save.")} />
+      <PageHeader title={t("New recipe")} subtitle={t("Type → name → ingredients (searched) → quantities used → live cost → save.")} />
       <RecipeWizard types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} />
     </>
   );

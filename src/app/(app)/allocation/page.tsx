@@ -39,7 +39,7 @@ export default async function AllocationPage({ searchParams }: { searchParams: P
   const manage = can(actor, "allocation:manage");
   return (
     <>
-      <PageHeader title={t("Cost allocation")} subtitle={t("Moves hotel-level and service-department costs to the departments that consume them. Every split is previewed, posted as ALLOCATED cost-ledger rows (net zero for the hotel), and reversible. Direct and allocated cost are never mixed.")} />
+      <PageHeader title={t("Cost allocation")} subtitle={t("Moves hotel-level and service-department costs to the departments that consume them. Every split is previewed, posted as ALLOCATED cost-ledger rows (net zero for the hotel), and reversible. Direct and allocated cost are never mixed.")} exportKey="allocation" />
       {manage && <Card title={t("New allocation rule")} className="mb-4"><RuleForm categories={OPEX_CATEGORIES} drivers={DRIVER_LABEL} departments={departments.map((d) => ({ id: d.id, name: d.name }))} /></Card>}
       <Card title={t("Rules ({n})", { n: rules.data.length })} padded={false} className="mb-4">
         {rules.data.length === 0 ? <div className="p-4"><Empty title={t("No allocation rules yet")} /></div> : (

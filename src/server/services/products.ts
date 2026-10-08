@@ -16,7 +16,8 @@ const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
 export const productInput = z.object({
-  sku: z.string().trim().min(1).max(64),
+  /** optional: hotels rarely keep stock codes (Micros lists products by name); generated when empty */
+  sku: z.string().trim().max(64).optional().nullable(),
   name: z.string().trim().min(1).max(200),
   barcode: z.string().trim().max(64).optional().nullable(),
   brand: z.string().trim().max(100).optional().nullable(),
@@ -61,9 +62,12 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
       const s = await tx.supplier.findFirst({ where: { id: input.defaultSupplierId, hotelId } });
       if (!s) throw new DomainError("VALIDATION", "Supplier not found");
     }
-    const dup = await tx.product.findFirst({ where: { hotelId, sku: input.sku } });
-    if (dup) throw new DomainError("DUPLICATE", `SKU ${input.sku} already exists`);
-    const { conversions: _c, ...data } = input;
+    const sku = input.sku || (await nextSku(tx, hotelId));
+    const dup = await tx.product.findFirst({ where: { hotelId, sku } });
+    if (dup) throw new DomainError("DUPLICATE", `SKU ${sku} already exists`);
+    // a recipe quantity is the raw quantity used: products carry no yield; costing is the ledger's weighted average
+    const { conversions: _c, yieldPct: _y, costingMethod: _m, barcode: _b, ...rest } = input;
+    const data = { ...rest, sku };
     const product = await tx.product.create({
       data: { ...data, hotelId, conversions: { create: conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: c.factor })) } } as Prisma.ProductUncheckedCreateInput,
       include: { conversions: true },
@@ -71,6 +75,13 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
     await audit(tx, actor, { hotelId, action: "PRODUCT_CREATE", entityType: "Product", entityId: product.id, after: product });
     return product;
   });
+}
+
+/** Next free automatic stock code: STK-00001… */
+export async function nextSku(db: Db, hotelId: string): Promise<string> {
+  const used = await db.product.findMany({ where: { hotelId, sku: { startsWith: "STK-" } }, select: { sku: true } });
+  const max = used.reduce((m, p) => Math.max(m, Number(/^STK-(\d+)$/.exec(p.sku)?.[1] ?? 0)), 0);
+  return `STK-${String(max + 1).padStart(5, "0")}`;
 }
 
 export async function updateProduct(db: Db, actor: Actor, hotelId: string, productId: string, raw: unknown) {
@@ -112,14 +123,13 @@ export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: s
           OR: [
             { name: { contains: term, mode: "insensitive" } },
             { sku: { contains: term, mode: "insensitive" } },
-            { barcode: term },
             { brand: { contains: term, mode: "insensitive" } },
             { category: { name: { contains: term, mode: "insensitive" } } },
           ],
         }
       : {}),
   };
-  return db.product.findMany({ where, include: { category: true, conversions: true }, orderBy: { name: "asc" }, take: Math.min(opts.limit ?? 25, 200) });
+  return db.product.findMany({ where, include: { category: true, conversions: true, defaultSupplier: { select: { name: true } } }, orderBy: { name: "asc" }, take: Math.min(opts.limit ?? 25, 200) });
 }
 
 export type CostSource = "WAC" | "FIFO" | "LAST_PURCHASE" | "STANDARD" | "NONE";

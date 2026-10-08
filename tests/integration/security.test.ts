@@ -57,7 +57,11 @@ describe("tenant isolation / IDOR (spec §274, §287)", () => {
     const r = await searchProducts(prisma, aAdmin, A.hotel.id, "'; DROP TABLE \"Product\"; --");
     expect(r).toEqual([]);
     expect(await prisma.product.count()).toBeGreaterThan(0);
-    await expect(createProduct(prisma, aAdmin, A.hotel.id, { sku: "", name: "<script>alert(1)</script>", categoryId: A.cats.food.id, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g" })).rejects.toThrow();
+    await expect(createProduct(prisma, aAdmin, A.hotel.id, { sku: "X", name: "", categoryId: A.cats.food.id, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g" })).rejects.toThrow();
+    await expect(createProduct(prisma, aAdmin, A.hotel.id, { name: "Bad unit", categoryId: A.cats.food.id, purchaseUnit: "kg); DROP", stockUnit: "kg", recipeUnit: "g" })).rejects.toThrow();
+    // the stock code is optional: generated when empty; markup in a name is stored as plain text (never rendered as HTML)
+    const p = await createProduct(prisma, aAdmin, A.hotel.id, { sku: "", name: "<script>alert(1)</script>", categoryId: A.cats.food.id, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g" });
+    expect(p.sku).toMatch(/^STK-\d{5}$/);
     await expect(createProduct(prisma, aAdmin, A.hotel.id, { sku: "Z", name: "Z", categoryId: A.cats.food.id, purchaseUnit: "case", stockUnit: "kg", recipeUnit: "g" })).rejects.toThrow(/conversion/);
   });
 });

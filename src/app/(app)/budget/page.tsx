@@ -32,7 +32,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   const fmt = (unit: string, v: { times(n: number): unknown; toString(): string } | null) => (v === null ? "—" : unit === "pct" ? pct(f100(v), 2) : money(v, cur));
   return (
     <>
-      <PageHeader title={tr("Budget & targets")} subtitle={tr("Cost budget by month × department × category against the cost ledger. Approved budgets are frozen; revisions are new budgets. Targets are configured here — nothing is hard-coded.")} />
+      <PageHeader title={tr("Budget & targets")} subtitle={tr("Cost budget by month × department × category against the cost ledger. Approved budgets are frozen; revisions are new budgets. Targets are configured here — nothing is hard-coded.")} exportKey="budget" />
       <div className="mb-4 flex flex-wrap items-center gap-1 text-sm">
         {MONTHS.map((m, i) => <Link key={m} href={`?year=${year}&month=${i + 1}`} className={cn("rounded px-2 py-0.5", i + 1 === month ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100")}>{tr(m)}</Link>)}
         <span className="ml-2 text-ink-500">{year}</span>

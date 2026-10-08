@@ -37,6 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </span>
         }
         actions={<PeriodFilter from={range.fromStr} to={range.toStr} />}
+        exportKey="dashboard"
       />
 
       {d.quality.confidence !== "ACTUAL" && (

@@ -81,12 +81,13 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     burgerId = burger.id;
     burgerV1 = burger.versions[0]!.id;
     const approved = await approveVersion(prisma, fb, h.hotel.id, burgerV1, { effectiveFrom: day("2026-08-01") });
-    // beef 1020 + bun 80 + mayo 0.3×112=33.6 + ketchup 18 = 1151.6 food; +20 packaging
-    expect(approved.ingredientCost?.toString()).toBe("1151.6");
-    expect(approved.batchCost?.toString()).toBe("1171.6");
-    expect(approved.portionCost?.toString()).toBe("117.16");
+    // the recipe quantity is the raw quantity used (product yield 90 % and line waste 2 % are ignored):
+    // beef 1.5×600 = 900 + bun 80 + mayo 0.3×112=33.6 + ketchup 18 = 1031.6 food; packaging is not part of recipe cost
+    expect(approved.ingredientCost?.toString()).toBe("1031.6");
+    expect(approved.batchCost?.toString()).toBe("1031.6");
+    expect(approved.portionCost?.toString()).toBe("103.16");
     const snap = approved.costSnapshot as { requirements: Record<string, string> };
-    expect(snap.requirements[P.beef!]).toBe("1.700000");
+    expect(snap.requirements[P.beef!]).toBe("1.500000");
     expect(snap.requirements[P.oil!]).toBe("0.240000"); // 300 g mayo × 0.8 l oil per kg
 
     // approved versions are frozen at DB level
@@ -109,8 +110,8 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     expect(prev.summary).toMatchObject({ rows: 13, valid: 11, invalid: 1, duplicates: 1, warnings: 1 });
 
     const res = await commitSales(prisma, fb, h.hotel.id, { rows, source: "CSV", fileName: "pos-0910.csv" });
-    // food cost frozen per portion: (1.7×600 + 10×8 + 0.12×120 + 0.6×4 ... )/10 = 115.16
-    expect(D(res.theoreticalCost).toString()).toBe("11516");
+    // food cost frozen per portion: (1.5×600 + 10×8 + 0.24×120 + 1.2×4 + 0.2×90)/10 = 103.16
+    expect(D(res.theoreticalCost).toString()).toBe("10316");
     await expect(commitSales(prisma, fb, h.hotel.id, { rows, source: "CSV", fileName: "pos-0910.csv" })).rejects.toThrow(/already imported/);
     const again = await previewSales(prisma, fb, h.hotel.id, rows);
     expect(again.summary.duplicates).toBe(12);
@@ -124,7 +125,7 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     await approveVersion(prisma, fb, h.hotel.id, v2.id, { effectiveFrom: day("2026-09-15") });
     const old = await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "POS-1" } });
     expect(old.recipeVersionId).toBe(burgerV1);
-    expect(old.theoreticalUnitCost?.toString()).toBe("115.16");
+    expect(old.theoreticalUnitCost?.toString()).toBe("103.16");
     const v1 = await prisma.recipeVersion.findUniqueOrThrow({ where: { id: burgerV1 } });
     expect(v1.status).toBe("SUPERSEDED");
     expect(v1.effectiveTo?.toISOString()).toBe(day("2026-09-15").toISOString());
@@ -143,10 +144,11 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     const r = await theoreticalVsActual(prisma, cc, h.hotel.id, { from: day("2026-09-01"), to: day("2026-10-01") });
     const beef = r.products.find((p) => p.productId === P.beef)!;
     expect(beef.actual.qty.toString()).toBe("18.5");
-    expect(beef.theoreticalQty.toString()).toBe("17");
+    // 100 burgers × 0.15 kg raw beef per portion (the recipe quantity, nothing added for yield)
+    expect(beef.theoreticalQty.toString()).toBe("15");
     expect(beef.waste.qty.toString()).toBe("0.5");
-    expect(beef.unexplainedQty.toString()).toBe("1");
-    expect(beef.unexplainedValue.toString()).toBe("600");
+    expect(beef.unexplainedQty.toString()).toBe("3");
+    expect(beef.unexplainedValue.toString()).toBe("1800");
     const bun = r.products.find((p) => p.productId === P.bun)!;
     expect(bun.unexplainedQty.toString()).toBe("0");
 
@@ -184,7 +186,7 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     const b = impact.recipes.find((x) => x.recipeId === burgerId)!;
     expect(b).toBeDefined();
     expect(D(b.newPortionCost!).minus(D(b.oldPortionCost!)).eq(D(b.costChange!))).toBe(true);
-    expect(D(b.costChange!).toString()).toBe("16.32"); // current v2: 1.2 kg EP ÷ 0.9 × 1.02 = 1.36 kg AP × 120 TL ÷ 10 portions
+    expect(D(b.costChange!).toString()).toBe("14.4"); // current v2: 1.2 kg raw beef × 120 TL ÷ 10 portions
     expect(Number(b.marginChangePts)).toBeLessThan(0);
     // mayo is unaffected
     expect(impact.recipes.find((x) => x.recipeId === mayoId)).toBeUndefined();

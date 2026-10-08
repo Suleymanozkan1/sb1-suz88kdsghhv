@@ -12,7 +12,7 @@ export async function BasicDashboard({ hotelName, currency, timezone, range, d }
   const t = await getT();
   return (
     <>
-      <PageHeader title={t("Overview - {hotel}", { hotel: hotelName })} subtitle={t("Your role's view: stock, purchasing and alerts you are allowed to see.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
+      <PageHeader exportKey="dashboard" title={t("Overview - {hotel}", { hotel: hotelName })} subtitle={t("Your role's view: stock, purchasing and alerts you are allowed to see.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {d.stock && <Stat label={t("Stock value")} value={money(d.stock.value, currency, 0)} hint={t("{count} critical / out of stock", { count: d.stock.counts.CRITICAL + d.stock.counts.OUT_OF_STOCK })} />}
         {d.purchases && <Stat label={t("Purchases")} value={money(d.purchases.spend, currency, 0)} hint={t("{count} receipts", { count: d.purchases.receipts })} />}

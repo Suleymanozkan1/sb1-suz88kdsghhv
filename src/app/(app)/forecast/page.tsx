@@ -30,7 +30,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   const keep = (omit: string[]) => Object.entries(sp).filter(([k, v]) => v && !omit.includes(k)).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />);
   return (
     <>
-      <PageHeader title={t("Forecast & what-if")} subtitle={t("Forecast = fixed part (monthly average) + variable rate × expected volume (occupied rooms or covers) × known price change. What-if answers management questions from last month's actuals. Every number states its basis.")} />
+      <PageHeader title={t("Forecast & what-if")} subtitle={t("Forecast = fixed part (monthly average) + variable rate × expected volume (occupied rooms or covers) × known price change. What-if answers management questions from last month's actuals. Every number states its basis.")} exportKey="forecast" />
       <Card title={t("Forecast inputs")}>
         <form method="get" className="flex flex-wrap items-end gap-3">
           {keep(["month", "occupancyPct", "coversPct", "priceChangePct"])}

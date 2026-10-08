@@ -19,13 +19,7 @@ function Lines({ lines, depth = 0, cur, t }: { lines: CostedLine[]; depth?: numb
           <tr className={depth ? "bg-ink-50/60 text-ink-600" : ""}>
             <Td style={{ paddingLeft: 12 + depth * 20 }}>{depth > 0 && "↳ "}{l.name} {l.kind === "SUB_RECIPE" && <Badge tone="violet">{t("sub-recipe")}</Badge>}{l.children && <span className="ml-1 text-xs text-ink-400">{t("(breakdown below is per {qty} {unit} batch)", { qty: l.children.usableOutput.toString(), unit: l.children.outputUnit })}</span>} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td>
             <Td align="right">{qty(l.quantity.toString(), l.unit)}</Td>
-            <Td align="right">{pct(l.yieldPct.toString(), 0)}</Td>
-            <Td align="right">{pct(l.wastePct.toString(), 1)}</Td>
-            <Td align="right">{qty(l.apQty.toString(), l.baseUnit)}</Td>
-            <Td align="right">{l.unitCost ? money(l.unitCost.toString(), cur, 4) : "—"}</Td>
-            <Td align="right">{money(l.ingredientCost.toString(), cur)}</Td>
-            <Td align="right">{money(l.yieldAdjustment.toString(), cur)}</Td>
-            <Td align="right">{money(l.wasteCost.toString(), cur)}</Td>
+            <Td align="right">{l.unitCost ? `${money(l.unitCost.toString(), cur, 4)} / ${l.baseUnit}` : "—"}</Td>
             <Td align="right" className="font-medium">{money(l.lineCost.toString(), cur)}</Td>
           </tr>
           {l.children && <Lines lines={l.children.lines} depth={depth + 1} cur={cur} t={t} />}
@@ -48,23 +42,26 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
   const products = c.lines.filter((l) => l.kind === "PRODUCT").map((l) => ({ id: l.refId, name: l.name, unitCost: l.unitCost?.toString() ?? null, unit: l.baseUnit }));
   return (
     <>
-      <PageHeader title={recipe.name} subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}</span>} />
+      <PageHeader exportKey="recipe" exportParams={{ id }} title={recipe.name} subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}</span>} />
       {!c.complete && <div className="mb-4"><Alert tone="amber">{t("Incomplete cost:")} {c.issues.map((i) => `${t(i.issue)} (${i.path})`).join(", ")}</Alert></div>}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <Stat label={t("Food cost / batch")} value={money(c.foodCost.toString(), cur)} />
-        <Stat label={t("Full cost / batch")} value={money(c.fullBatchCost.toString(), cur)} />
-        <Stat label={t("Cost / portion")} value={money(c.portionCost?.toString(), cur)} hint={t("{n} portions", { n: c.portions.toString() })} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Stat label={t("Food cost")} value={money(c.foodCost.toString(), cur)} />
+        {/* a batch recipe (sauce, dough) is costed per kg / l / pc it makes, a dish per portion */}
+        {version.yieldUnit && version.yieldUnit !== "portion" ? (
+          <Stat label={t("Cost / {unit}", { unit: t(version.yieldUnit) })} value={money(c.portionCost?.toString(), cur)} hint={t("{n} {unit} made", { n: c.portions.toString(), unit: t(version.yieldUnit) })} />
+        ) : (
+          <Stat label={t("Cost / portion")} value={money(c.portionCost?.toString(), cur)} hint={t("{n} portions", { n: c.portions.toString() })} />
+        )}
         <Stat label={t("Selling price")} value={money(c.sellingPrice?.toString(), cur)} />
         <Stat label={t("Food cost %")} value={pct(c.foodCostPct?.toString())} />
         <Stat label={t("Margin %")} value={pct(c.grossMarginPct?.toString())} tone={c.grossMarginPct && c.grossMarginPct.lt(marginTargetPct.toString()) ? "warn" : "good"} hint={t("Contribution {amount} · target {target}%", { amount: money(c.grossContribution?.toString(), cur), target: marginTargetPct.toString() })} />
       </div>
       <Card title={t("Cost explosion")} className="mt-4" padded={false}>
         <Table>
-          <thead><tr><Th>{t("Ingredient")}</Th><Th align="right">{t("Qty (EP)")}</Th><Th align="right">{t("Yield")}</Th><Th align="right">{t("Waste")}</Th><Th align="right">{t("AP qty")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Ingredient")}</Th><Th align="right">{t("Yield adj.")}</Th><Th align="right">{t("Waste")}</Th><Th align="right">{t("Line cost")}</Th></tr></thead>
+          <thead><tr><Th>{t("Ingredient")}</Th><Th align="right">{t("Quantity used")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Line cost")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100"><Lines lines={c.lines} cur={cur} t={t} /></tbody>
           <tfoot className="border-t-2 border-ink-200 font-medium">
-            <tr><Td colSpan={6}>{t("Food cost")}</Td><Td align="right">{money(c.ingredientCost.toString(), cur)}</Td><Td align="right">{money(c.yieldAdjustment.toString(), cur)}</Td><Td align="right">{money(c.wasteCost.toString(), cur)}</Td><Td align="right">{money(c.foodCost.toString(), cur)}</Td></tr>
-            <tr><Td colSpan={9}>+ {t("Packaging")} {money(c.packagingCost.toString(), cur)} · {t("Labor")} {money(c.laborCost.toString(), cur)} · {t("Energy")} {money(c.energyCost.toString(), cur)} · {t("Other")} {money(c.otherCost.toString(), cur)}</Td><Td align="right">{money(c.fullBatchCost.toString(), cur)}</Td></tr>
+            <tr><Td colSpan={3}>{t("Food cost")}</Td><Td align="right">{money(c.foodCost.toString(), cur)}</Td></tr>
           </tfoot>
         </Table>
       </Card>

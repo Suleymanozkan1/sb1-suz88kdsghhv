@@ -59,9 +59,9 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
     const standardCost = num(r.standard_cost);
     const reorderPoint = num(r.reorder_point);
     const safetyStock = num(r.safety_stock);
-    const yieldPct = num(r.yield_pct) ?? "100";
-    for (const [k, v] of [["standard_cost", standardCost], ["reorder_point", reorderPoint], ["safety_stock", safetyStock], ["case_size", caseSize], ["yield_pct", yieldPct]] as const) if (!isNum(v)) msgs.push(`${k} must be a number`);
-    if (Number(yieldPct) <= 0 || Number(yieldPct) > 100) msgs.push("yield_pct must be in (0, 100]");
+    // products carry no yield any more (a recipe quantity is the raw quantity used): an old yield_pct column is ignored
+    const yieldPct = "100";
+    for (const [k, v] of [["standard_cost", standardCost], ["reorder_point", reorderPoint], ["safety_stock", safetyStock], ["case_size", caseSize]] as const) if (!isNum(v)) msgs.push(`${k} must be a number`);
     if (msgs.length) return { row: i + 1, status: "INVALID", messages: msgs };
     if (ex.has(sku) || seen.has(sku)) return { row: i + 1, status: "DUPLICATE", messages: [`SKU ${sku} already exists — the product master is never overwritten by an import`] };
     seen.add(sku);

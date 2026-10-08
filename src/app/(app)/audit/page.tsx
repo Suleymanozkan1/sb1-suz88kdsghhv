@@ -16,7 +16,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const short = (v: unknown) => (v ? JSON.stringify(v).slice(0, 160) : "");
   return (
     <>
-      <PageHeader title={t("Audit trail")} subtitle={t("Who · what · when · before · after · reason. Append-only — the database rejects edits and deletes.")} />
+      <PageHeader title={t("Audit trail")} subtitle={t("Who · what · when · before · after · reason. Append-only — the database rejects edits and deletes.")} exportKey="audit" />
       <Card padded={false}>
         <Table>
           <thead><tr><Th>{t("When")}</Th><Th>{t("User")}</Th><Th>{t("Action")}</Th><Th>{t("Entity")}</Th><Th>{t("Before")}</Th><Th>{t("After")}</Th><Th>{t("Reason")}</Th></tr></thead>

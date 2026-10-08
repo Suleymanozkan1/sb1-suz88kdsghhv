@@ -96,7 +96,7 @@ describe("recipe cost engine (spec §19–§34)", () => {
     sellingPrice: 450,
     packagingCost: 20,
     lines: [
-      { productId: "beef", quantity: 1.5, unit: "kg", wastePct: 2 }, // EP 1.5kg @90% → AP 1.6667kg
+      { productId: "beef", quantity: 1.5, unit: "kg", wastePct: 2 }, // raw 1.5 kg used: 900 (stored yield/waste are ignored)
       { productId: "bun", quantity: 10, unit: "pc" }, // 80
       { subRecipeId: "sauce", quantity: 300, unit: "g" }, // 33.96
     ],
@@ -109,25 +109,28 @@ describe("recipe cost engine (spec §19–§34)", () => {
     const s = costRecipe(sauce, r);
     expect(s.costPerOutputUnit!.toString()).toBe("113.2");
     const b = costRecipe(burger, r);
-    // beef: EP 1.5 × 600 = 900; AP = 1.666667; yield adj = 100; waste = 1000×2% = 20 → 1020
+    // beef: the recipe quantity is the raw quantity used → 1.5 × 600 = 900, nothing on top
+    // (product yield 90 % and line waste 2 % are old fields: ignored, otherwise the loss is counted twice)
     const beef = b.lines[0]!;
     expect(beef.ingredientCost.toString()).toBe("900");
-    expect(beef.yieldAdjustment.toDecimalPlaces(6).toString()).toBe("100");
-    expect(beef.wasteCost.toDecimalPlaces(6).toString()).toBe("20");
+    expect(beef.yieldAdjustment.toString()).toBe("0");
+    expect(beef.wasteCost.toString()).toBe("0");
+    expect(beef.lineCost.toString()).toBe("900");
     expect(b.lines[2]!.lineCost.toDecimalPlaces(6).toString()).toBe("33.96");
-    expect(b.foodCost.toDecimalPlaces(6).toString()).toBe("1133.96");
-    expect(b.fullBatchCost.toDecimalPlaces(6).toString()).toBe("1153.96");
-    expect(b.portionCost!.toDecimalPlaces(6).toString()).toBe("115.396");
-    expect(b.foodPortionCost!.toDecimalPlaces(6).toString()).toBe("113.396");
-    expect(b.foodCostPct!.toDecimalPlaces(4).toString()).toBe("25.1991");
-    expect(b.grossContribution!.toDecimalPlaces(3).toString()).toBe("334.604");
+    expect(b.foodCost.toDecimalPlaces(6).toString()).toBe("1013.96");
+    // packaging per batch is not part of recipe cost any more: full cost = food cost
+    expect(b.fullBatchCost.toDecimalPlaces(6).toString()).toBe("1013.96");
+    expect(b.portionCost!.toDecimalPlaces(6).toString()).toBe("101.396");
+    expect(b.foodPortionCost!.toDecimalPlaces(6).toString()).toBe("101.396");
+    expect(b.foodCostPct!.toDecimalPlaces(4).toString()).toBe("22.5324");
+    expect(b.grossContribution!.toDecimalPlaces(3).toString()).toBe("348.604");
     expect(b.complete).toBe(true);
   });
 
   it("explodes requirements to raw ingredients (AP, stock unit)", () => {
     const b = costRecipe(burger, r);
-    // beef AP incl. 2% standard waste = 1.5/0.9*1.02 = 1.7
-    expect(b.requirements.get("beef")!.toDecimalPlaces(6).toString()).toBe("1.7");
+    // beef: exactly the recipe quantity (raw), no yield or waste on top
+    expect(b.requirements.get("beef")!.toString()).toBe("1.5");
     // mayo oil: 0.3 kg sauce → 0.15 kg mayo → 0.12 l oil
     expect(b.requirements.get("mayo-oil")!.toDecimalPlaces(6).toString()).toBe("0.12");
     expect(b.requirements.get("bun")!.toString()).toBe("10");
@@ -154,11 +157,11 @@ describe("recipe cost engine (spec §19–§34)", () => {
     expect(() => costRecipe(a, resolver([], [a, bb]))).toThrow(/Circular/);
   });
 
-  it("production loss reduces usable output and raises unit cost (pastry)", () => {
+  it("a stored production loss is ignored: output = batch yield (pastry)", () => {
     const dough: RecipeDef = { recipeId: "d", name: "Dough", batchYieldQty: 10, yieldUnit: "kg", portions: 100, productionLossPct: 20, lines: [{ productId: "bun", quantity: 100, unit: "pc" }] };
     const res = costRecipe(dough, resolver(products, []));
-    expect(res.usableOutput.toString()).toBe("8");
-    expect(res.costPerOutputUnit!.toString()).toBe("100");
+    expect(res.usableOutput.toString()).toBe("10");
+    expect(res.costPerOutputUnit!.toString()).toBe("80");
     expect(res.portionCost!.toString()).toBe("8");
   });
 
@@ -182,13 +185,12 @@ describe("recipe cost engine (spec §19–§34)", () => {
         { productId: "beef", quantity: 1, unit: "l" },
         { productId: "inactive", quantity: 1, unit: "kg" },
         { productId: "nocost", quantity: 1, unit: "kg" },
-        { productId: "beef", quantity: 1, unit: "kg", yieldPct: 0 },
         { quantity: 1, unit: "kg" },
       ],
     };
     const res = resolver([...products, prod("inactive", "kg", "1", { active: false }), prod("nocost", "kg", null)], []);
     const msgs = validateRecipeDef(bad, res).map((i) => i.message).join("|");
-    for (const m of ["Zero quantity", "Negative quantity", "Missing UOM", "Invalid UOM", "Cannot convert", "Inactive product", "Missing cost", "Invalid yield", "Missing ingredient"]) {
+    for (const m of ["Zero quantity", "Negative quantity", "Missing UOM", "Invalid UOM", "Cannot convert", "Inactive product", "Missing cost", "Missing ingredient"]) {
       expect(msgs).toContain(m);
     }
     expect(validateRecipeDef({ ...bad, lines: [] }, res).map((i) => i.message)).toContain("Recipe has no ingredients");

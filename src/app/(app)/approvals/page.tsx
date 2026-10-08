@@ -21,7 +21,7 @@ export default async function ApprovalsPage() {
   const fmt = (p: unknown) => (p && typeof p === "object" ? Object.entries(p as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`).join(" · ") : "");
   return (
     <>
-      <PageHeader title={t("Approvals")} subtitle={t("Delete requests, high-value waste, stock adjustments. You can never approve your own request.")} />
+      <PageHeader title={t("Approvals")} subtitle={t("Delete requests, high-value waste, stock adjustments. You can never approve your own request.")} exportKey="approvals" />
       <Card title={t("Pending ({n})", { n: pending.length })} padded={false}>
         {pending.length === 0 ? <div className="p-4"><Empty title={t("Nothing waiting")} /></div> : (
           <Table>

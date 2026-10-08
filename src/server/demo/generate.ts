@@ -427,13 +427,13 @@ async function masterData(ctx: Ctx, index: number) {
   let seq = 0;
   for (const [i, { c, it }] of all.entries()) {
     if (skip.has(i)) continue;
-    const [name, stockUnit, pu, size, price, yieldPct] = it;
+    const [name, stockUnit, pu, size, price] = it;
     const id = randomUUID();
     const sku = `${c.code}-${String(++seq).padStart(3, "0")}`;
     const suppliers = SUPPLIER_PLAN.flatMap((sp, k) => (sp.cats.includes(c.code) ? [k] : []));
     const p = +(price * level).toFixed(4);
     const purchaseUnit = pu ?? stockUnit;
-    rows.push({ id, hotelId: H, sku, name: N.product(name), categoryId: catId.get(c.code)!, defaultSupplierId: ctx.suppliers[suppliers[0] ?? 0]!.id, purchaseUnit, stockUnit, recipeUnit: stockUnit === "kg" ? "g" : stockUnit === "l" ? "ml" : "pc", taxRatePct: c.group === "FOOD" ? "1" : "20", standardCost: p.toFixed(4), yieldPct: String(yieldPct), barcode: `869${String(hashSeed(sku + H) % 1e9).padStart(9, "0")}${String(seq % 10)}` });
+    rows.push({ id, hotelId: H, sku, name: N.product(name), categoryId: catId.get(c.code)!, defaultSupplierId: ctx.suppliers[suppliers[0] ?? 0]!.id, purchaseUnit, stockUnit, recipeUnit: stockUnit === "kg" ? "g" : stockUnit === "l" ? "ml" : "pc", taxRatePct: c.group === "FOOD" ? "1" : "20", standardCost: p.toFixed(4), barcode: `869${String(hashSeed(sku + H) % 1e9).padStart(9, "0")}${String(seq % 10)}` });
     if (pu && size) convs.push({ productId: id, fromUnit: pu, toUnit: stockUnit, factor: String(size) });
     const meta: ProductMeta = { id, sku, name, cat: c, item: it, categoryId: catId.get(c.code)!, stockUnit, purchaseUnit, caseSize: size, price: p, taxRatePct: c.group === "FOOD" ? 1 : 20, suppliers };
     ctx.products.push(meta);
@@ -1354,9 +1354,6 @@ async function intentionalErrors(ctx: Ctx, recipes: Carry["recipes"]) {
   // 4) missing supplier
   const noSup = await db.product.create({ data: { hotelId: H, sku: "QA-NOSUP", name: N.product("Truffle Oil (no supplier)"), categoryId: cat, purchaseUnit: "l", stockUnit: "l", recipeUnit: "ml", standardCost: "2400" } });
   scenario(ctx, "E04_MISSING_SUPPLIER", "Stock product without a default supplier", "INTENTIONAL_ERROR", "Data quality: products without default supplier", "Product", [noSup.id]);
-  // 5) wrong yield
-  const wrongYield = await db.product.create({ data: { hotelId: H, sku: "QA-YIELD", name: N.product("Artichoke (yield typed as 5 %)"), categoryId: cat, purchaseUnit: "kg", stockUnit: "kg", recipeUnit: "g", standardCost: "85", yieldPct: "5", defaultSupplierId: ctx.suppliers[2]!.id } });
-  scenario(ctx, "E05_WRONG_YIELD", "Yield entered as 5 % instead of 50 %", "INTENTIONAL_ERROR", "Data quality: implausible yield", "Product", [wrongYield.id]);
   // 6) negative stock: issued before the delivery was booked (allowed negative, as the ledger records it)
   const p = ctx.products.find((x) => x.cat.code === "VEG")!;
   const bal = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId: p.id } } });

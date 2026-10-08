@@ -14,7 +14,7 @@ export default async function SalesPage() {
   const imports = await prisma.salesImport.findMany({ where: { hotelId }, orderBy: { createdAt: "desc" }, take: 20 });
   return (
     <>
-      <PageHeader title={t("Sales import (cost input)")} subtitle={t("POS sales drive theoretical consumption. Preview → validate → commit. Duplicate files and POS lines are rejected.")} />
+      <PageHeader title={t("Sales import (cost input)")} subtitle={t("POS sales drive theoretical consumption. Preview → validate → commit. Duplicate files and POS lines are rejected.")} exportKey="sales" />
       <Card title={t("Import CSV")} className="mb-4"><SalesImporter /></Card>
       <Card title={t("Import history")} padded={false}>
         <Table>

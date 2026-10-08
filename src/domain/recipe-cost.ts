@@ -5,14 +5,12 @@
  * dashboard that shows a recipe cost must obtain it from here (via RecipeService).
  *
  * Conventions
- *  - Line quantities are EP (usable) quantities. AP = EP / yield.
- *  - Line cost = AP × unit cost × (1 + standard waste %).
- *      ingredientCost  = EP × unit cost              (what the usable product costs)
- *      yieldAdjustment = (AP − EP) × unit cost        (trim / prep / cooking loss)
- *      wasteCost       = AP × unit cost × waste%      (standard handling waste)
- *      foodCost        = ingredient + yield + waste   ("ingredient-only food cost")
- *  - fullBatchCost = foodCost + packaging + labor + energy + other.
- *  - usableOutput = batchYieldQty × (1 − productionLoss%).
+ *  - A line quantity is the raw quantity the kitchen uses for the dish (e.g. 105 g raw octopus for 70 g on the
+ *    plate): the chef writes what goes in, so the cost is simply quantity × unit cost.
+ *  - Yield %, standard waste %, production loss % and per-batch other costs (packaging, labor, energy, other)
+ *    are no longer part of recipe costing: applying a yield on top of a raw quantity counted the loss twice.
+ *    Old values stored in the database are ignored here (the result keeps those fields at 100 % / 0).
+ *      foodCost = Σ quantity × unit cost;  fullBatchCost = foodCost;  usableOutput = batchYieldQty.
  *  - Sub-recipes cascade recursively; their cost per output unit is used by the parent.
  *  - Missing costs never become silent zeros: the line is flagged and `complete` is false.
  */
@@ -124,6 +122,8 @@ export interface RecipeCostResult {
 }
 
 const MAX_DEPTH = 12;
+/** Version of the costing rules frozen into snapshots (see Conventions). */
+export const COST_MODEL = 2;
 
 export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: UnitConverter = defaultConverter, stack: string[] = []): RecipeCostResult {
   if (stack.includes(def.recipeId)) {
@@ -136,8 +136,7 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
   const portions = D(def.portions);
   if (batchYield.lte(0)) throw new DomainError("VALIDATION", `${def.name}: batch yield must be positive`);
   if (portions.lte(0)) throw new DomainError("VALIDATION", `${def.name}: portions must be positive`);
-  const lossPct = D(def.productionLossPct ?? 0);
-  if (lossPct.lt(0) || lossPct.gte(100)) throw new DomainError("VALIDATION", `${def.name}: production loss must be in [0, 100)`);
+  const lossPct = ZERO; // production loss is not applied (see Conventions)
 
   const lines: CostedLine[] = [];
   const requirements = new Map<string, Decimal>();
@@ -147,8 +146,7 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
   def.lines.forEach((line, idx) => {
     const qty = D(line.quantity);
     if (qty.lte(0)) throw new DomainError("VALIDATION", `${def.name} line ${idx + 1}: quantity must be positive`);
-    const wastePct = D(line.wastePct ?? 0);
-    if (wastePct.lt(0) || wastePct.gte(100)) throw new DomainError("VALIDATION", `${def.name} line ${idx + 1}: waste % must be in [0, 100)`);
+    const wastePct = ZERO; // standard waste is not applied (see Conventions)
     const lineIssues: LineIssue[] = [];
 
     if (line.productId) {
@@ -161,8 +159,7 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
       }
       if (!p.active) lineIssues.push("INACTIVE_PRODUCT");
       const ep = converter.convert(qty, line.unit, p.stockUnit, p.conversions).quantity;
-      const y = D(line.yieldPct ?? p.yieldPct);
-      if (y.lte(0) || y.gt(100)) throw new DomainError("VALIDATION", `${def.name} line ${idx + 1}: invalid yield ${y}%`);
+      const y = HUNDRED; // the quantity is the raw quantity used: no yield on top
       const ap = ep.div(y.div(HUNDRED));
       const apWithWaste = ap.times(wastePct.div(HUNDRED).plus(1));
       addReq(p.id, apWithWaste);
@@ -205,8 +202,7 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
       }
       const child = costRecipe(sub, resolver, converter, path);
       const epOut = converter.convert(qty, line.unit, child.outputUnit, sub.outputConversions ?? []).quantity;
-      const y = D(line.yieldPct ?? 100);
-      if (y.lte(0) || y.gt(100)) throw new DomainError("VALIDATION", `${def.name} line ${idx + 1}: invalid yield ${y}%`);
+      const y = HUNDRED;
       const apOut = epOut.div(y.div(HUNDRED));
       const factor = apOut.times(wastePct.div(HUNDRED).plus(1)).div(child.usableOutput); // batches of sub-recipe needed
       for (const [pid, q] of child.requirements) addReq(pid, q.times(factor));
@@ -248,10 +244,11 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
   const yieldAdjustment = sum(lines.map((l) => l.yieldAdjustment));
   const wasteCost = sum(lines.map((l) => l.wasteCost));
   const foodCost = ingredientCost.plus(yieldAdjustment).plus(wasteCost);
-  const packagingCost = D(def.packagingCost ?? 0);
-  const laborCost = D(def.laborCost ?? 0);
-  const energyCost = D(def.energyCost ?? 0);
-  const otherCost = D(def.otherCost ?? 0);
+  // per-batch other costs are not part of recipe costing any more (see Conventions)
+  const packagingCost = ZERO;
+  const laborCost = ZERO;
+  const energyCost = ZERO;
+  const otherCost = ZERO;
   const fullBatchCost = foodCost.plus(packagingCost).plus(laborCost).plus(energyCost).plus(otherCost);
   const usableOutput = batchYield.times(HUNDRED.minus(lossPct)).div(HUNDRED);
   const portionCost = safeDiv(fullBatchCost, portions);
@@ -298,8 +295,8 @@ function emptyLine(line: RecipeLineDef, kind: CostedLine["kind"], refId: string,
     unit: line.unit,
     epQty: ZERO,
     baseUnit: line.unit,
-    yieldPct: D(line.yieldPct ?? 100),
-    wastePct: D(line.wastePct ?? 0),
+    yieldPct: HUNDRED,
+    wastePct: ZERO,
     apQty: ZERO,
     unitCost: null,
     ingredientCost: ZERO,
@@ -327,6 +324,8 @@ export function margin(sellingPrice: Decimal | null, foodPortionCost: Decimal | 
 /** JSON-safe snapshot of a cost result, frozen on recipe-version approval (spec §30–§31). */
 export function serializeCost(r: RecipeCostResult): Record<string, unknown> {
   return {
+    /** 2 = raw-quantity costing (no yield / waste / production loss / other costs) */
+    model: COST_MODEL,
     recipeId: r.recipeId,
     versionId: r.versionId,
     name: r.name,
@@ -395,10 +394,6 @@ export function validateRecipeDef(def: RecipeDef, resolver: CostResolver, conver
     }
     if (!l.unit) out.push({ field: `${f}.unit`, message: "Missing UOM" });
     else if (!converter.has(l.unit)) out.push({ field: `${f}.unit`, message: `Invalid UOM '${l.unit}'` });
-    if (l.yieldPct !== null && l.yieldPct !== undefined) {
-      const y = D(l.yieldPct);
-      if (y.lte(0) || y.gt(100)) out.push({ field: `${f}.yieldPct`, message: "Invalid yield" });
-    }
     if (l.productId) {
       const p = resolver.product(l.productId);
       if (!p) out.push({ field: f, message: "Unknown product" });
