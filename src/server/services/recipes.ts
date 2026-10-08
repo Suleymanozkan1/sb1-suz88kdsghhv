@@ -406,15 +406,16 @@ type SnapTree = { recipeId: string; versionId?: string; model?: number; lines: S
  * with the SAME unit costs it was frozen with (read from the old snapshot) and the same sub-recipe versions, so
  * only the rule changes, not the prices. Idempotent: snapshots already on model 2 are skipped.
  */
-export async function refreezeSnapshots(db: Db, hotelId: string): Promise<number> {
+export async function refreezeSnapshots(db: Db, hotelId: string): Promise<{ refrozen: number; failed: string[] }> {
   const versions = await db.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } }, include: { recipe: true, lines: true } });
   const todo = versions.filter((v) => v.costSnapshot && (v.costSnapshot as SnapTree).model !== COST_MODEL);
-  if (!todo.length) return 0;
+  if (!todo.length) return { refrozen: 0, failed: [] };
   const byId = new Map(versions.map((v) => [v.id, v]));
   const current = new Map<string, (typeof versions)[number]>();
   for (const v of versions.sort((a, b) => a.version - b.version)) if (v.status === "APPROVED" || !current.has(v.recipeId)) current.set(v.recipeId, v);
   const products = new Map((await db.product.findMany({ where: { hotelId }, include: { conversions: true } })).map((p) => [p.id, p]));
   let n = 0;
+  const failed: string[] = [];
   for (const v of todo) {
     const snap = v.costSnapshot as SnapTree;
     const costs = new Map<string, string | null>();
@@ -444,8 +445,8 @@ export async function refreezeSnapshots(db: Db, hotelId: string): Promise<number
       await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
       n++;
     } catch (e) {
-      console.error(`[recipes:refreeze] ${v.recipe.code} v${v.version}:`, e instanceof Error ? e.message : e);
+      failed.push(`${v.recipe.code} v${v.version}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  return n;
+  return { refrozen: n, failed };
 }

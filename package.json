@@ -42,7 +42,7 @@
     "test:setup-ui": "playwright test -c playwright.setup.config.ts",
     "test:reconciliation": "vitest run --project integration tests/integration/demo-dataset.test.ts tests/integration/demo-engine.test.ts",
     "test:excel": "vitest run --project unit tests/unit/excel-bulk.test.ts tests/unit/vba-project.test.ts && vitest run --project integration tests/integration/excel-export.test.ts",
-    "vercel-build": "node scripts/check-build-env.mjs && prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && (tsx scripts/recipes-refreeze.ts || true) && next build",
+    "vercel-build": "node scripts/check-build-env.mjs && prisma generate && tsx scripts/gen-vba.ts && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && tsx scripts/recipes-refreeze.ts && next build",
     "setup:first-company": "tsx scripts/first-company.ts"
   },
   "prisma": {

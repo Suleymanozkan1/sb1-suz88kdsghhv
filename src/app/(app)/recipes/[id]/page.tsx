@@ -46,7 +46,12 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
       {!c.complete && <div className="mb-4"><Alert tone="amber">{t("Incomplete cost:")} {c.issues.map((i) => `${t(i.issue)} (${i.path})`).join(", ")}</Alert></div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Food cost")} value={money(c.foodCost.toString(), cur)} />
-        <Stat label={t("Cost / portion")} value={money(c.portionCost?.toString(), cur)} hint={t("{n} portions", { n: c.portions.toString() })} />
+        {/* a batch recipe (sauce, dough) is costed per kg / l / pc it makes, a dish per portion */}
+        {version.yieldUnit && version.yieldUnit !== "portion" ? (
+          <Stat label={t("Cost / {unit}", { unit: t(version.yieldUnit) })} value={money(c.portionCost?.toString(), cur)} hint={t("{n} {unit} made", { n: c.portions.toString(), unit: t(version.yieldUnit) })} />
+        ) : (
+          <Stat label={t("Cost / portion")} value={money(c.portionCost?.toString(), cur)} hint={t("{n} portions", { n: c.portions.toString() })} />
+        )}
         <Stat label={t("Selling price")} value={money(c.sellingPrice?.toString(), cur)} />
         <Stat label={t("Food cost %")} value={pct(c.foodCostPct?.toString())} />
         <Stat label={t("Margin %")} value={pct(c.grossMarginPct?.toString())} tone={c.grossMarginPct && c.grossMarginPct.lt(marginTargetPct.toString()) ? "warn" : "good"} hint={t("Contribution {amount} · target {target}%", { amount: money(c.grossContribution?.toString(), cur), target: marginTargetPct.toString() })} />

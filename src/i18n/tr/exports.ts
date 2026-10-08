@@ -153,4 +153,7 @@ export const exports: Record<string, string> = {
   "At reorder point": "Sipariş noktasında",
   Yes: "Evet",
   // ── integrations ──
+  // recipe detail: batch recipes
+  "Cost / {unit}": "Maliyet / {unit}",
+  "{n} {unit} made": "{n} {unit} üretilen",
 };
