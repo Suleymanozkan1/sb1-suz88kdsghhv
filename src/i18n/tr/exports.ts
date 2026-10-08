@@ -158,4 +158,7 @@ export const exports: Record<string, string> = {
   "{n} {unit} made": "{n} {unit} üretilen",
   // ledger export cap
   "Only the newest {shown} of {total} movements are included; narrow the date range for the rest.": "{total} hareketin yalnızca en yeni {shown} tanesi dahil; kalanlar için tarih aralığını daraltın.",
+  // buffet review fixes
+  "In-house guests": "Konaklayan misafir",
+  "Total (closed sessions)": "Toplam (kapanmış oturumlar)",
 };

@@ -40,6 +40,7 @@ export async function readMinibar(
     log.info("[minibar] no minibar postings for this day");
     return { items: [], warnings };
   }
+  let prevSignature = "";
   for (let pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
     const table = await screen.need("table");
     const rows = await screen.readRows(
@@ -48,7 +49,6 @@ export async function readMinibar(
       ["room", "itemName", "qty", "reference"],
       table,
     );
-    let added = 0;
     for (const r of rows) {
       const itemName = r.itemName ?? "";
       if (!itemName || (skip && skip.test(itemName))) continue;
@@ -62,17 +62,17 @@ export async function readMinibar(
           log.debug(`[minibar] ${r.reference}: non-positive quantity ${charge.qty} ignored`);
           continue;
         }
-        if (!byRef.has(charge.reference)) {
-          byRef.set(charge.reference, charge);
-          added++;
-        }
+        if (!byRef.has(charge.reference)) byRef.set(charge.reference, charge);
       } catch (err) {
         if (!(err instanceof ParseError)) throw err;
         warnings.push(`${err.message} — row skipped`);
       }
     }
+    // a page of only reversals / skipped rows is still a page: stop on an empty or unchanged page, not on "nothing added"
+    const signature = rows.map((r) => `${r.reference ?? ""}|${r.room ?? ""}|${r.itemName ?? ""}`).join("~");
     const next = screen.sel("nextPage", true);
-    if (!next || added === 0) break;
+    if (!next || rows.length === 0 || signature === prevSignature) break;
+    prevSignature = signature;
     const nextLoc = ctx.page.locator(next).first();
     if ((await nextLoc.count()) === 0 || (await nextLoc.isDisabled().catch(() => false))) break;
     await nextLoc.click();

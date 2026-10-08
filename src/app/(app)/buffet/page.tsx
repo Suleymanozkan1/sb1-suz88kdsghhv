@@ -69,7 +69,7 @@ export default async function BuffetPage({ searchParams }: { searchParams: Promi
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td colSpan={3}>{t("Total")}</Td><Td align="right">{r.totals.covers.toLocaleString("tr-TR")}</Td><Td align="right">{money(r.totals.cost, cur, 0)}</Td><Td align="right">{money(r.totals.costPerCover, cur)}</Td><Td align="right">{money(r.sessions.reduce((a, x) => a + Number(x.metrics.wasteCost), 0), cur, 0)}</Td><Td /></tr></tfoot>
+              <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td colSpan={3}>{t("Total (closed sessions)")}</Td><Td align="right">{r.totals.covers.toLocaleString("tr-TR")}</Td><Td align="right">{money(r.totals.cost, cur, 0)}</Td><Td align="right">{money(r.totals.costPerCover, cur)}</Td><Td align="right">{money(r.totals.waste, cur, 0)}</Td><Td /></tr></tfoot>
             </Table>
           )}
         </Card>

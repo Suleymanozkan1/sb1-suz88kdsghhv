@@ -235,7 +235,7 @@ async function runSource(
 
         const result = await post(kind, items, warnings, ingestSource);
         results.push(result);
-        if (result.ok && kind === "invoices" && !opts.dryRun) await invoiceReader!.commit?.(day);
+        if (result.ok && !result.rejected && kind === "invoices" && !opts.dryRun) await invoiceReader!.commit?.(day); // rejected invoices stay for the next run
       } catch (err) {
         const msg = describeError(err);
         fail(kind, msg);

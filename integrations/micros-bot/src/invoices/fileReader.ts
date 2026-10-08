@@ -220,12 +220,22 @@ export class FileInvoiceReader implements InvoiceReader {
     const items: Invoice[] = [];
     const warnings: string[] = [];
     if (this.files.length === 0) log.info(`[invoices] no files in ${this.dir}`);
+    // one malformed export must not block the others; it stays in the folder (not archived) for the operator
+    const ok: string[] = [];
     for (const file of this.files) {
-      const r = await readInvoiceFile(file);
+      let r: DetailResult<Invoice>;
+      try {
+        r = await readInvoiceFile(file);
+      } catch (err) {
+        warnings.push(`${path.basename(file)} skipped: ${(err as Error).message}`);
+        continue;
+      }
+      ok.push(file);
       log.info(`[invoices] ${path.basename(file)}: ${r.items.length} invoice(s)`);
       items.push(...r.items);
       warnings.push(...r.warnings);
     }
+    this.files = ok;
     return { items, warnings };
   }
 

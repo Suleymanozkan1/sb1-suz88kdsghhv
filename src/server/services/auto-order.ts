@@ -162,8 +162,16 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   const due = rules.filter((r) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString())) && (!r.lastOrderedAt || now.getTime() - r.lastOrderedAt.getTime() > RE_ORDER_HOURS * 3_600_000));
   if (!planHas(plan, "autoOrderEmail") || !due.length) return { due: due.length, sent: 0, failed: 0, plan, emailEnabled: planHas(plan, "autoOrderEmail") };
   const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true } });
-  const groups = new Map<string, typeof due>();
+  // claim each rule before e-mailing: the nightly run and a "check now" (or two clicks) at the same moment must not
+  // both order; only the run whose conditional update wins sends, a failed send gives the rule back
+  const cutoff = new Date(now.getTime() - RE_ORDER_HOURS * 3_600_000);
+  const claimed: typeof due = [];
   for (const r of due) {
+    const c = await db.autoOrderRule.updateMany({ where: { id: r.id, OR: [{ lastOrderedAt: null }, { lastOrderedAt: { lt: cutoff } }] }, data: { lastOrderedAt: now } });
+    if (c.count === 1) claimed.push(r);
+  }
+  const groups = new Map<string, typeof due>();
+  for (const r of claimed) {
     const to = r.email ?? r.supplier.email ?? "";
     const k = `${r.supplierId}|${to}`;
     groups.set(k, [...(groups.get(k) ?? []), r]);
@@ -179,7 +187,7 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
       : ({ ok: false, error: "Supplier has no e-mail address" } as const);
     for (const r of rs) {
       await db.autoOrderSend.create({ data: { hotelId, ruleId: r.id, quantity: r.orderQty, stockQty: (stock.get(r.productId) ?? ZERO).toString(), email: to || "-", status: res.ok ? "SENT" : "FAILED", error: res.ok ? null : res.error } });
-      if (res.ok) await db.autoOrderRule.update({ where: { id: r.id }, data: { lastOrderedAt: now } });
+      if (!res.ok) await db.autoOrderRule.update({ where: { id: r.id }, data: { lastOrderedAt: r.lastOrderedAt } });
     }
     if (res.ok) sent += rs.length;
     else failed += rs.length;
