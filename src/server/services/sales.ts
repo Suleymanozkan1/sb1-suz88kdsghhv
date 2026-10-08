@@ -309,6 +309,8 @@ export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string
       n++;
     }
   }
-  await db.saleLine.updateMany({ where: { id: { in: lines.map((l) => l.id) } }, data: { consumptionPosted: true } });
+  // a line whose outlet has no store to deduct from stays unposted: the next run (once a store exists) picks it up
+  const posted = lines.filter((l) => warehouseOf(l.departmentId));
+  if (posted.length) await db.saleLine.updateMany({ where: { id: { in: posted.map((l) => l.id) } }, data: { consumptionPosted: true } });
   return n;
 }
