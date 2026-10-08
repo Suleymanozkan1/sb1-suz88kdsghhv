@@ -21,6 +21,7 @@ export const minibar: ReportDef = {
             { k: t("Revenue"), v: tot.revenue.toString() }, { k: t("Consumed cost"), v: tot.consumedCost.toString() }, { k: t("Contribution"), v: tot.contribution.toString() },
             { k: t("Shrinkage"), v: tot.shrinkageCost.toString() }, { k: t("Cost / active room"), v: tot.costPerRoom?.toString() ?? null }, { k: t("Revenue / active room"), v: tot.revenuePerRoom?.toString() ?? null },
             { k: t("Rooms with activity"), n: tot.activeRooms },
+            { k: t("Occupied room nights"), n: tot.occupiedRoomNights }, { k: t("Revenue / occupied room"), v: tot.revenuePerOccupiedRoom?.toString() ?? null }, { k: t("Cost / occupied room"), v: tot.costPerOccupiedRoom?.toString() ?? null },
           ],
         },
         {

@@ -26,7 +26,7 @@ import { parseNumber, type NumberFormat } from "../util/numbers";
 import { parseDateTime, ymd } from "../util/time";
 import type { InvoiceReader } from "./source";
 
-type Field = "supplierName" | "invoiceNo" | "invoiceDate" | "warehouse" | "itemCode" | "itemName" | "qty" | "unit" | "unitPrice" | "taxRatePct";
+type Field = "supplierName" | "invoiceNo" | "invoiceDate" | "warehouse" | "itemCode" | "itemName" | "qty" | "unit" | "unitPrice" | "taxRatePct" | "invoiceTotal";
 
 const ALIASES: Record<Field, string[]> = {
   supplierName: ["tedarikci", "tedarikciadi", "tedarikciunvani", "firma", "firmaadi", "cari", "cariadi", "supplier", "suppliername", "vendor"],
@@ -39,6 +39,8 @@ const ALIASES: Record<Field, string[]> = {
   unit: ["birim", "olcubirimi", "unit", "uom"],
   unitPrice: ["birimfiyat", "fiyat", "birimfiyati", "unitprice", "price"],
   taxRatePct: ["kdv", "kdvorani", "kdvyuzde", "kdvyuzdesi", "vat", "vatpct", "vatrate", "taxrate", "taxratepct"],
+  /** optional: the invoice's grand total (incl. VAT), repeated on each of its rows */
+  invoiceTotal: ["faturatoplami", "faturatoplam", "faturatutari", "geneltoplam", "invoicetotal", "grandtotal"],
 };
 const REQUIRED: Field[] = ["supplierName", "invoiceNo", "invoiceDate", "itemName", "qty", "unit", "unitPrice"];
 
@@ -170,7 +172,7 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     throw new BotError(`${fileLabel}: missing column(s) ${missing.join(", ")} (header: ${(rows[0] ?? []).map((h) => text(h)).join(" | ")})`);
   }
   const get = (r: Cell[], f: Field) => (col[f] === undefined ? undefined : r[col[f]!]);
-  const fmt = detectNumberFormat(rows.slice(1).flatMap((r) => [get(r, "qty"), get(r, "unitPrice"), get(r, "taxRatePct")]));
+  const fmt = detectNumberFormat(rows.slice(1).flatMap((r) => [get(r, "qty"), get(r, "unitPrice"), get(r, "taxRatePct"), get(r, "invoiceTotal")]));
   const byKey = new Map<string, Invoice>();
   rows.slice(1).forEach((r, i) => {
     const rowNo = i + 2;
@@ -192,6 +194,9 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     if (!Number.isFinite(qty)) problems.push(`invalid qty "${text(get(r, "qty"))}"`);
     if (!Number.isFinite(unitPrice)) problems.push(`invalid unit price "${text(get(r, "unitPrice"))}"`);
     if (taxRatePct !== null && !Number.isFinite(taxRatePct)) problems.push(`invalid VAT "${text(taxRaw)}"`);
+    const totalRaw = get(r, "invoiceTotal");
+    const total = totalRaw === undefined || totalRaw === null || text(totalRaw) === "" ? null : parseNumber(totalRaw as string | number, fmt);
+    if (total !== null && !Number.isFinite(total)) problems.push(`invalid invoice total "${text(totalRaw)}"`);
     if (problems.length) {
       warnings.push(`${where} skipped: ${problems.join(", ")}`);
       return;
@@ -199,10 +204,15 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     const key = `${supplierName.toLocaleLowerCase("tr-TR")}\u0000${invoiceNo}`;
     let inv = byKey.get(key);
     if (!inv) {
-      inv = { supplierName, invoiceNo, invoiceDate: invoiceDate!, warehouse: text(get(r, "warehouse")) || null, lines: [] };
+      inv = { supplierName, invoiceNo, invoiceDate: invoiceDate!, warehouse: text(get(r, "warehouse")) || null, total, lines: [] };
       byKey.set(key, inv);
     } else if (inv.invoiceDate !== invoiceDate) {
       warnings.push(`${where}: invoice ${invoiceNo} has a different date (${invoiceDate}) than its first row (${inv.invoiceDate}); first one kept`);
+    }
+    // the total repeats on every row of an invoice: take the first one given, warn when rows disagree
+    if (total !== null) {
+      if (inv.total === null || inv.total === undefined) inv.total = total;
+      else if (Math.abs(inv.total - total) > 0.005) warnings.push(`${where}: invoice ${invoiceNo} has a different total (${total}) than an earlier row (${inv.total}); first one kept`);
     }
     inv.lines.push({ itemCode: text(get(r, "itemCode")) || null, itemName, qty, unit: text(get(r, "unit")), unitPrice, taxRatePct });
   });

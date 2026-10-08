@@ -165,6 +165,18 @@ describe("minibar E2E (spec 282 / 334: Room 215)", () => {
     await expect(recordMovement(prisma, cc, h.hotel.id, { roomId: room215, type: "CONSUMED", movedAt: day("2026-09-06"), items: [{ productId: P.choc, quantity: 2 }] })).rejects.toThrow(/has only 1/);
   });
 
+  it("Opera's occupied room nights give revenue and cost per occupied room", async () => {
+    for (const [d, occ] of [["2026-09-05", 80], ["2026-09-06", 120]] as const) await prisma.occupancyImport.create({ data: { hotelId: h.hotel.id, businessDate: day(d), availableRooms: 150, occupiedRooms: occ, guests: occ * 2, roomRevenue: 0, source: "OPERA" } });
+    const rep = await minibarReport(prisma, cc, h.hotel.id, { from: day("2026-09-01"), to: day("2026-10-01") });
+    expect([rep.totals.occupiedRoomNights, rep.totals.occupancyDays, rep.totals.occupancySource]).toEqual([200, 2, "Opera"]);
+    expect(rep.totals.revenuePerOccupiedRoom!.toString()).toBe(rep.totals.revenue.div(200).toString());
+    // one room's statement is not divided by the hotel's room nights
+    const one = await minibarReport(prisma, cc, h.hotel.id, { from: day("2026-09-01"), to: day("2026-10-01"), roomId: room215 });
+    expect(one.totals.revenuePerOccupiedRoom).toBeNull();
+    const none = await minibarReport(prisma, cc, h.hotel.id, { from: day("2026-08-01"), to: day("2026-09-01") });
+    expect([none.totals.occupiedRoomNights, none.totals.revenuePerOccupiedRoom]).toEqual([0, null]);
+  });
+
   it("count difference becomes shrinkage; sub-ledger equals the in-room warehouse", async () => {
     await countRoom(prisma, cc, h.hotel.id, { roomId: room215, countedAt: day("2026-09-07"), lines: [{ productId: P.choc, countedQty: 0 }, { productId: P.coke, countedQty: 1 }] });
     const rep = await minibarReport(prisma, cc, h.hotel.id, { from: day("2026-09-01"), to: day("2026-10-01"), roomId: room215 });

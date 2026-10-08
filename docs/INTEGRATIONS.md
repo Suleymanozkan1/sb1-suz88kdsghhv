@@ -36,6 +36,9 @@ selectors.
 - **Invoice lines → products.** By stock code, otherwise by name. An unknown product is created in the category
   "Micros'tan yeni ürünler (sınıflandırılacak)" with the invoice's unit. An unknown unit (çuval, teneke…)
   rejects that invoice until the product card exists.
+- **Invoice total.** When the bot sends the invoice's printed grand total (`total`, incl. VAT), the lines must add up
+  to it (tolerance 1.00 or 0.5 %); otherwise the invoice is rejected, so a line missed on a paged screen never
+  posts a wrong receipt. The file export may carry it as a "Fatura Toplamı" / "Genel Toplam" column.
 - **Suppliers.** Matched by name; created when new.
 
 Contract: `src/server/integrations/contract.ts`. Server: `src/server/integrations/ingest.ts`.

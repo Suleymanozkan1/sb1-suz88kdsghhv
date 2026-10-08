@@ -31,16 +31,16 @@ export default async function CountSummaryPage({ searchParams }: { searchParams:
       </div>
       <Card className="mt-4" padded={false} title={t("By warehouse")}>
         <Table>
-          <thead><tr><Th>{t("Warehouse")}</Th><Th align="right">{t("Opening value")}</Th><Th align="right">{t("Received")}</Th><Th align="right">{t("Consumed")}</Th><Th align="right">{t("Waste")}</Th><Th align="right">{t("Other out")}</Th><Th align="right">{t("Count difference")}</Th><Th align="right">{t("Closing value")}</Th><Th align="right">{t("Counts")}</Th><Th>{t("Last count")}</Th></tr></thead>
+          <thead><tr><Th>{t("Warehouse")}</Th><Th align="right">{t("Opening value")}</Th><Th align="right">{t("Received")}</Th><Th align="right">{t("Consumed")}</Th><Th align="right">{t("Waste")}</Th><Th align="right">{t("Other out")}</Th><Th align="right">{t("Count difference")}</Th><Th align="right">{t("Other adjustments")}</Th><Th align="right">{t("Closing value")}</Th><Th align="right">{t("Counts")}</Th><Th>{t("Last count")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">
             {rows.map((r) => (
               <tr key={r.warehouseId}>
                 <Td className="font-medium">{r.warehouse}</Td><Td align="right">{m(r.opening)}</Td><Td align="right">{m(r.received)}</Td><Td align="right">{m(r.consumed)}</Td><Td align="right">{m(r.waste)}</Td><Td align="right">{m(r.otherOut)}</Td>
-                <Td align="right" className={r.countDiff.lt(0) ? "text-red-700" : r.countDiff.gt(0) ? "text-brand-700" : ""}>{m(r.countDiff)}</Td><Td align="right" className="font-medium">{m(r.closing)}</Td><Td align="right">{r.counts}</Td><Td>{r.lastCount ? date(r.lastCount) : "—"}</Td>
+                <Td align="right" className={r.countDiff.lt(0) ? "text-red-700" : r.countDiff.gt(0) ? "text-brand-700" : ""}>{m(r.countDiff)}</Td><Td align="right">{m(r.otherAdjustments)}</Td><Td align="right" className="font-medium">{m(r.closing)}</Td><Td align="right">{r.counts}</Td><Td>{r.lastCount ? date(r.lastCount) : "—"}</Td>
               </tr>
             ))}
           </tbody>
-          <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td>{t("Total")}</Td><Td align="right">{m(totals.opening)}</Td><Td align="right">{m(totals.received)}</Td><Td align="right">{m(totals.consumed)}</Td><Td align="right">{m(totals.waste)}</Td><Td align="right">{m(totals.otherOut)}</Td><Td align="right">{m(totals.countDiff)}</Td><Td align="right">{m(totals.closing)}</Td><Td /><Td /></tr></tfoot>
+          <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td>{t("Total")}</Td><Td align="right">{m(totals.opening)}</Td><Td align="right">{m(totals.received)}</Td><Td align="right">{m(totals.consumed)}</Td><Td align="right">{m(totals.waste)}</Td><Td align="right">{m(totals.otherOut)}</Td><Td align="right">{m(totals.countDiff)}</Td><Td align="right">{m(totals.otherAdjustments)}</Td><Td align="right">{m(totals.closing)}</Td><Td /><Td /></tr></tfoot>
         </Table>
       </Card>
       <p className="mt-3 text-sm"><Link href="/inventory/counts" className="text-brand-700 hover:underline">← {t("Stock counts")}</Link></p>

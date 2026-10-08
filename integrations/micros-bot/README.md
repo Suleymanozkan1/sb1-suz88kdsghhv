@@ -54,7 +54,7 @@ dosyalarında asla yer almaz. Tüm ayarlar `.env.example` içinde açıklamalıd
 | `OPERA_URL`, `OPERA_USERNAME`, `OPERA_PASSWORD` | Opera (boşsa doluluk ve minibar okunmaz) | — |
 | `HOTELCOST_URL`, `HOTELCOST_API_KEY` | HotelCost adresi ve otelin entegrasyon anahtarı | — |
 | `TIMEZONE` | Otelin saat dilimi | `Europe/Istanbul` |
-| `NIGHT_AUDIT_CUTOFF` | Gece kapanışının bittiği saat; iş günü bu saatte biter | `03:30` |
+| `NIGHT_AUDIT_CUTOFF` | Gece kapanışının bittiği saat; iş günü bu saatte biter. HotelCost'taki "İş günü bitişi" ayarı her yoklamada gelir ve bunun yerine geçer; buradaki değer yalnızca ilk bağlantıya kadar kullanılır | `03:30` |
 | `RUN_AT` | Gece çalışmasının saati (kapanıştan sonra olmalı) | `04:15` |
 | `POLL_MINUTES` | "Şimdi çalıştır" isteklerini kontrol aralığı (dk) | `2` |
 | `CATCH_UP` | Bilgisayar RUN_AT'te kapalıysa açılınca o günün çalışmasını yap | `true` |
@@ -177,7 +177,7 @@ yaptığını izleyebilir, sonucu ekranda JSON olarak görebilirsiniz (HotelCost
 |---|---|
 | `login` | `username`, `password`, `submit`, `loggedIn` (yalnız girişten sonra görünen öğe), `error` (hatalı şifre mesajı) |
 | `checks` | liste: `list`, `row`, `rowLink`, `noData`, `nextPage`; çek: `checkNo`, `outlet` (revenue center), `closedAt`; satırlar: `lineRow` + `itemCode`, `itemName`, `qty`, `amount` (indirim sonrası net, KDV hariç) |
-| `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`; kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
+| `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`, `total` (KDV dahil genel toplam, isteğe bağlı — kalemler tutmazsa HotelCost faturayı reddeder); kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
 | `covers` | `table`, `row`, `columns.outlet`, `columns.meal` (yoksa `defaultMeal`), `columns.covers` |
 | `statistics` (Opera) | `fields.availableRooms`, `occupiedRooms`, `guests`, `roomRevenue`, `outOfOrder`; `rooms` (dolu oda listesi, isteğe bağlı) |
 | `minibar` (Opera) | `table`, `row`, `columns.room`, `itemCode`, `itemName`, `qty`, `reference` (folyo/hareket no), `postedAt` |

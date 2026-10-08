@@ -195,10 +195,12 @@ export async function countRoom(db: Db, actor: Actor, hotelId: string, raw: unkn
 /** Room × product statement and per-room totals for a period (spec 94-98). */
 export async function minibarReport(db: Db, actor: Actor, hotelId: string, f: { from: Date; to: Date; roomId?: string }) {
   authorize(actor, "minibar:view", { hotelId });
-  const [moves, rooms, products] = await Promise.all([
+  const [moves, rooms, products, occupancy] = await Promise.all([
     db.minibarMovement.findMany({ where: { hotelId, movedAt: { lt: f.to }, ...(f.roomId ? { roomId: f.roomId } : {}) }, orderBy: { movedAt: "asc" } }),
     db.room.findMany({ where: { hotelId }, orderBy: { number: "asc" } }),
     db.product.findMany({ where: { hotelId } }),
+    // occupied room nights of the period from Opera's night-audit statistics (the automation writes them daily)
+    db.occupancyImport.findMany({ where: { hotelId, businessDate: { gte: f.from, lt: f.to } }, select: { occupiedRooms: true, source: true } }),
   ]);
   const roomMap = new Map(rooms.map((r) => [r.id, r]));
   const pMap = new Map(products.map((p) => [p.id, p]));
@@ -223,10 +225,16 @@ export async function minibarReport(db: Db, actor: Actor, hotelId: string, f: { 
   const roomsOut = [...perRoom.values()].map((e) => ({ ...e, contribution: e.revenue.minus(e.consumedCost), netContribution: e.revenue.minus(e.cost) })).sort((a, b) => a.room.localeCompare(b.room, undefined, { numeric: true }));
   const totals = { cost: sum(roomsOut.map((r) => r.cost)), revenue: sum(roomsOut.map((r) => r.revenue)), consumedCost: sum(roomsOut.map((r) => r.consumedCost)), shrinkageCost: sum(roomsOut.map((r) => r.shrinkageCost)), wasteCost: sum(roomsOut.map((r) => r.wasteCost)) };
   const activeRooms = roomsOut.filter((r) => r.cost.gt(0) || r.revenue.gt(0)).length;
+  const occupiedRoomNights = occupancy.reduce((a, o) => a + o.occupiedRooms, 0);
+  // hotel-wide room nights: a single-room statement has no "per occupied room" figure
+  const perOccupied = (v: Decimal) => (occupiedRoomNights > 0 && !f.roomId ? v.div(occupiedRoomNights) : null);
   return {
     lines,
     rooms: roomsOut,
-    totals: { ...totals, contribution: totals.revenue.minus(totals.consumedCost), netContribution: totals.revenue.minus(totals.cost), activeRooms, costPerRoom: activeRooms ? totals.cost.div(activeRooms) : null, revenuePerRoom: activeRooms ? totals.revenue.div(activeRooms) : null },
+    totals: { ...totals, contribution: totals.revenue.minus(totals.consumedCost), netContribution: totals.revenue.minus(totals.cost), activeRooms, costPerRoom: activeRooms ? totals.cost.div(activeRooms) : null, revenuePerRoom: activeRooms ? totals.revenue.div(activeRooms) : null,
+      /** Opera: room nights sold in the period and the days that were delivered */
+      occupiedRoomNights, occupancyDays: occupancy.length, occupancySource: [...new Set(occupancy.map((o) => (o.source === "OPERA" ? "Opera" : o.source === "PMS_IMPORT" ? "PMS file" : o.source)))].join(", ") || null,
+      costPerOccupiedRoom: perOccupied(totals.cost), revenuePerOccupiedRoom: perOccupied(totals.revenue) },
   };
 }
 

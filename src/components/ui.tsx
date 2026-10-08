@@ -11,17 +11,17 @@ export function cn(...a: Parameters<typeof clsx>) {
  * Page title row. `exportKey`: the page's report (src/server/table-export/reports) — PDF, Excel and CSV buttons at the
  * top right, after the page's own actions; every list/report page has one.
  */
-export function PageHeader({ title, subtitle, actions, exportKey, exportParams }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined> }) {
+export function PageHeader({ title, subtitle, actions, exportKey, exportParams, canExport = true }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined>; /** false hides the buttons for a user whose role may not export this report */ canExport?: boolean }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink-950">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
       </div>
-      {(actions || exportKey) && (
+      {(actions || (exportKey && canExport)) && (
         <div className="flex flex-wrap items-end gap-2 sm:shrink-0 sm:justify-end">
           {actions}
-          {exportKey && (
+          {exportKey && canExport && (
             <Suspense fallback={null}>
               <ExportButtons report={exportKey} params={exportParams} />
             </Suspense>

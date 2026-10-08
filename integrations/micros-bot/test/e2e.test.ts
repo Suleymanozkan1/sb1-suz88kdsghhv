@@ -99,6 +99,8 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const expEge = invoicesFor(DAY)[0]!;
     assert.deepEqual(ege, {
       supplierName: expEge.supplier, invoiceNo: expEge.invoiceNo, invoiceDate: DAY, warehouse: "Ana Depo",
+      // the printed grand total (incl. VAT) travels with the invoice so HotelCost can check the lines add up
+      total: Number(expEge.lines.reduce((a, l) => a + l.qty * l.price * (1 + l.vat / 100), 0).toFixed(2)),
       lines: expEge.lines.map((l) => ({ itemCode: l.code, itemName: l.name, qty: l.qty, unit: l.unit, unitPrice: l.price, taxRatePct: l.vat })),
     });
     const ak = inv[0]!.items.find((i: any) => i.supplierName === "Akdeniz Et Ltd.");
@@ -240,6 +242,14 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const runs = hc.runs();
     assert.deepEqual(runs.map((r) => `${r.source}:${r.status}:${r.requestId}:${r.businessDay}`), ["OPERA:STARTED:req_42:2026-10-05", "OPERA:SUCCEEDED:req_42:2026-10-05"]);
     assert.equal(await daemon.pollOnce(), null);
+  });
+
+  test("daemon: follows the night-audit cut-off set in HotelCost", async () => {
+    hc.state.settings = { businessDayCutoff: "04:00", timezone: "Europe/Istanbul" };
+    const c = cfg({ NIGHT_AUDIT_CUTOFF: "03:30" });
+    await new Daemon(c).pollOnce();
+    assert.equal(c.nightAuditCutoff, "04:00");
+    hc.state.settings = undefined;
   });
 
   test("daemon: nightly schedule is due after RUN_AT once per local day", () => {

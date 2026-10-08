@@ -118,7 +118,8 @@ async function ingestChecks(db: Db, actor: Actor, hotelId: string, p: Extract<In
     }
     for (const [code, g] of byItem) {
       if (g.qty.lte(0)) continue;
-      rows.push({ externalId: `${p.source}:${p.businessDay}:${c.checkNo}:${code}`, saleDate: dayDate(p.businessDay), department: d.code, posCode: code, name: g.name, quantity: toStorage(g.qty).toString(), netRevenue: toStorage(Decimal.max(g.amount, ZERO)).toString(), check: i });
+      // outlets can reuse check numbers on the same day: the outlet is part of the key
+      rows.push({ externalId: `${p.source}:${p.businessDay}:${d.code}:${c.checkNo}:${code}`, saleDate: dayDate(p.businessDay), department: d.code, posCode: code, name: g.name, quantity: toStorage(g.qty).toString(), netRevenue: toStorage(Decimal.max(g.amount, ZERO)).toString(), check: i });
     }
   });
   const known = new Set((await db.saleLine.findMany({ where: { hotelId, externalId: { in: rows.map((r) => r.externalId) } }, select: { externalId: true } })).map((s) => s.externalId));
@@ -174,6 +175,12 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
         }
         items.push({ productId: prod.id, quantity: l.qty, unit: unit ?? l.unit, unitPrice: l.unitPrice, taxRatePct: l.taxRatePct ?? Number(prod.taxRatePct) });
       }
+      // a line missed on a paged screen or misread would post a wrong invoice: the printed total must match the
+      // lines as they will be posted (a line without a VAT rate takes its product's rate, as the receipt does)
+      if (inv.total !== null && inv.total !== undefined) {
+        const lines = items.reduce((a, l) => a + l.quantity * l.unitPrice * (1 + l.taxRatePct / 100), 0);
+        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT) — check that every line was read`);
+      }
       await postGoodsReceipt(db, actor, hotelId, { supplierId: s.id, warehouseId: wh.id, receiptDate: dayDate(inv.invoiceDate), invoiceNo: inv.invoiceNo, idempotencyKey: key, source: p.source === "MICROS" ? "MICROS" : "IMPORT", items });
       accepted++;
     } catch (e) {
@@ -216,7 +223,8 @@ async function ingestMinibar(db: Db, actor: Actor, hotelId: string, p: Extract<I
       if (!room) throw new DomainError("VALIDATION", `Unknown room ${m.room}`);
       const prod = (m.itemCode ? await db.product.findFirst({ where: { hotelId, sku: m.itemCode } }) : null) ?? (await db.product.findFirst({ where: { hotelId, name: { equals: m.itemName.trim(), mode: "insensitive" } } }));
       if (!prod) throw new DomainError("VALIDATION", `Unknown minibar product '${m.itemName}'`);
-      await recordMovement(db, actor, hotelId, { roomId: room.id, type: "CONSUMED", movedAt: m.postedAt ? new Date(m.postedAt) : dayDate(p.businessDay), items: [{ productId: prod.id, quantity: m.qty }], folioRef: m.reference, idempotencyKey: key });
+      // a charge posted after midnight but before night audit belongs to that business day, as the sales do
+      await recordMovement(db, actor, hotelId, { roomId: room.id, type: "CONSUMED", movedAt: dayDate(p.businessDay), items: [{ productId: prod.id, quantity: m.qty }], folioRef: m.reference, idempotencyKey: key });
       accepted++;
     } catch (e) {
       errors.push({ item: i, message: `${m.room} ${m.itemName}: ${msg(e)}` });
@@ -265,12 +273,15 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
 
 /** The bot asks whether someone pressed "run now"; the oldest open request is handed out once. */
 export async function nextRequest(db: Db, hotelId: string, source?: string) {
+  // the hotel's own night-audit cut-off travels with every poll, so the automation follows the admin setting
+  const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { businessDayCutoff: true, timezone: true } });
+  const settings = { businessDayCutoff: hotel.businessDayCutoff, timezone: hotel.timezone };
   const req = await db.integrationRequest.findFirst({ where: { hotelId, pickedAt: null, ...(source ? { source } : {}) }, orderBy: { createdAt: "asc" } });
-  if (!req) return { request: null };
+  if (!req) return { request: null, settings };
   // two polls can see the same open request: only the one that flips pickedAt gets it
   const claimed = await db.integrationRequest.updateMany({ where: { id: req.id, pickedAt: null }, data: { pickedAt: new Date() } });
-  if (claimed.count !== 1) return { request: null };
-  return { request: { id: req.id, source: req.source, businessDay: req.businessDay } };
+  if (claimed.count !== 1) return { request: null, settings };
+  return { request: { id: req.id, source: req.source, businessDay: req.businessDay }, settings };
 }
 
 // ───────── screen ─────────

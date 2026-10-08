@@ -52,10 +52,10 @@ export const countSummaryReport: ReportDef = {
         columns: [
           { key: "warehouse", header: t("Warehouse") }, { key: "opening", header: t("Opening value"), type: "money" }, { key: "received", header: t("Received (purchases, transfers in)"), type: "money" },
           { key: "consumed", header: t("Consumed"), type: "money" }, { key: "waste", header: t("Waste"), type: "money" }, { key: "otherOut", header: t("Other out (staff, complimentary, transfers)"), type: "money" },
-          { key: "countDiff", header: t("Count difference"), type: "money" }, { key: "closing", header: t("Closing value"), type: "money" },
+          { key: "countDiff", header: t("Count difference"), type: "money" }, { key: "otherAdjustments", header: t("Other adjustments (corrections, reversals)"), type: "money" }, { key: "closing", header: t("Closing value"), type: "money" },
           { key: "counts", header: t("Counts"), type: "int" }, { key: "lastCount", header: t("Last count"), type: "date" }, { key: "shortage", header: t("Shortage"), type: "money" }, { key: "surplus", header: t("Surplus"), type: "money" },
         ],
-        rows: s.rows.map((r) => ({ ...r, opening: r.opening.toString(), received: r.received.toString(), consumed: r.consumed.toString(), waste: r.waste.toString(), otherOut: r.otherOut.toString(), countDiff: r.countDiff.toString(), closing: r.closing.toString(), shortage: r.shortage.toString(), surplus: r.surplus.toString() })),
+        rows: s.rows.map((r) => ({ ...r, opening: r.opening.toString(), received: r.received.toString(), consumed: r.consumed.toString(), waste: r.waste.toString(), otherOut: r.otherOut.toString(), countDiff: r.countDiff.toString(), otherAdjustments: r.otherAdjustments.toString(), closing: r.closing.toString(), shortage: r.shortage.toString(), surplus: r.surplus.toString() })),
         totals: { warehouse: t("Total"), ...Object.fromEntries(Object.entries(s.totals).map(([k, v]) => [k, v.toString()])) },
       }],
     };

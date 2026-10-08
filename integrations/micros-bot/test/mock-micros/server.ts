@@ -171,7 +171,7 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
       const inv = invoicesFor(day).find((i) => i.id === url.searchParams.get("id"));
       if (!inv) return send(404, page("Yok", ""));
       return send(200, page(`Fatura ${inv.invoiceNo}`, `<dl><dt>Tedarikçi</dt><dd id="supplier">${esc(inv.supplier)}</dd><dt>Fatura No</dt><dd id="invoiceNo">${esc(inv.invoiceNo)}</dd>
-        <dt>Tarih</dt><dd id="invoiceDate">${trDate(inv.date)}</dd><dt>Depo</dt><dd id="store">${esc(inv.store)}</dd></dl>
+        <dt>Tarih</dt><dd id="invoiceDate">${trDate(inv.date)}</dd><dt>Depo</dt><dd id="store">${esc(inv.store)}</dd><dt>Genel Toplam</dt><dd id="invoiceTotal">${trNum(inv.lines.reduce((a, l) => a + l.qty * l.price * (1 + l.vat / 100), 0))}</dd></dl>
         <table id="invoiceLines"><thead><tr><th>Kod</th><th>Ürün</th><th>Miktar</th><th>Birim</th><th>Birim Fiyat</th><th>KDV</th></tr></thead><tbody>${inv.lines
           .map((l) => `<tr><td>${esc(l.code)}</td><td>${esc(l.name)}</td><td>${trNum(l.qty, l.qty % 1 ? 2 : 0)}</td><td>${esc(l.unit)}</td><td>${trNum(l.price)}</td><td>%${l.vat}</td></tr>`)
           .join("")}</tbody></table>`));

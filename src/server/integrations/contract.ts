@@ -40,6 +40,8 @@ export const invoiceSchema = z.object({
   invoiceDate: day,
   /** receiving store as named in the purchasing module; default: the hotel's main store */
   warehouse: z.string().trim().max(100).optional().nullable(),
+  /** the invoice's grand total incl. VAT as printed; when given, the lines must add up to it */
+  total: num.optional().nullable(),
   lines: z.array(z.object({
     itemCode: z.string().trim().max(64).optional().nullable(),
     itemName: z.string().trim().min(1).max(200),

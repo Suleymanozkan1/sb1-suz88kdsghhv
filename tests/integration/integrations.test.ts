@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct } from "./fixtures";
 import { createIntegrationKey, ingest, integrationActor, integrationHealth, nextRequest, reportRun, requestRun, revokeIntegrationKey } from "@/server/integrations/ingest";
 import type { Actor } from "@/server/auth/actor";
+import { checkNumber } from "@/domain/check-number";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
 let admin: Actor;
@@ -52,10 +53,15 @@ describe("checks → sales (idempotent per check no. + business day)", () => {
     expect(r.errors).toEqual([{ item: 2, message: "Check 1003: unknown outlet 'Pool Bar'" }]);
     const lines = await prisma.saleLine.findMany({ where: { hotelId: h.hotel.id }, include: { recipe: true }, orderBy: { externalId: "asc" } });
     expect(lines.map((l) => [l.externalId, l.quantity.toString(), l.recipe?.name ?? null])).toEqual([
-      [`MICROS:${DAY}:1001:Ayran`, "2", null],
-      [`MICROS:${DAY}:1001:Izgara Köfte`, "2", "Izgara Köfte"],
-      [`MICROS:${DAY}:1002:K1`, "1", "Izgara Köfte"],
+      [`MICROS:${DAY}:REST:1001:Ayran`, "2", null],
+      [`MICROS:${DAY}:REST:1001:Izgara Köfte`, "2", "Izgara Köfte"],
+      [`MICROS:${DAY}:REST:1002:K1`, "1", "Izgara Köfte"],
     ]);
+  });
+  it("the check number is read back from the key; the outlet keeps equal numbers apart", () => {
+    expect(checkNumber(`MICROS:${DAY}:REST:1001:Ayran`)).toBe("1001");
+    expect(checkNumber(`MICROS:${DAY}:1001:Ayran`)).toBe("1001"); // older keys without the outlet
+    expect(checkNumber("POS-77")).toBe("POS-77");
   });
   it("sending the same day again writes nothing", async () => {
     const r = await ingest(prisma, bot, h.hotel.id, { ...payload, runId: "run-2" });
@@ -75,6 +81,17 @@ describe("invoices → goods receipts", () => {
     expect(grn.items.map((i) => i.product.name).sort()).toEqual(["Domates", "Maydanoz"]); // "domates" matched by name
     expect(grn.items.find((i) => i.product.name === "Maydanoz")!.product.category.code).toBe("MICROS-NEW");
     expect(await ingest(prisma, bot, h.hotel.id, inv)).toMatchObject({ accepted: 0, duplicates: 1 });
+  });
+  it("an invoice whose lines do not add up to its printed total is rejected, not posted", async () => {
+    const lines = [{ itemName: "Domates", qty: 10, unit: "kg", unitPrice: 25, taxRatePct: 1 }]; // 250 + 1 % VAT = 252.50
+    const bad = await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-90", total: 500, lines }] });
+    expect(bad.accepted).toBe(0);
+    expect(bad.errors[0]!.message).toContain("does not match its lines 252.50");
+    expect(await prisma.goodsReceipt.count({ where: { hotelId: h.hotel.id, invoiceNo: "A-90" } })).toBe(0);
+    expect(await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-91", total: 252.5, lines }] })).toMatchObject({ accepted: 1, errors: [] });
+    // a line without a VAT rate is checked with its product's rate, as the receipt posts it
+    await prisma.product.updateMany({ where: { hotelId: h.hotel.id, name: "Domates" }, data: { taxRatePct: 10 } });
+    expect(await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-92", total: 275, lines: [{ itemName: "Domates", qty: 10, unit: "kg", unitPrice: 25 }] }] })).toMatchObject({ accepted: 1, errors: [] });
   });
   it("an unknown unit on a new product is an error for that invoice only", async () => {
     const r = await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-78", lines: [{ itemName: "Peynir", qty: 1, unit: "teneke", unitPrice: 900 }] }] });

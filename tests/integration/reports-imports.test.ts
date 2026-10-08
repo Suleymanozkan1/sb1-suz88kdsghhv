@@ -46,6 +46,30 @@ describe("import engine (spec 245–249)", () => {
     await expect(commitProducts(prisma, cc, h.hotel.id, "products-copy.csv", [products[0]!, products[2]!])).rejects.toThrow(/already imported/);
   });
 
+  it("product master without stock codes: the code is generated, the product is found by name, removed fields are ignored", async () => {
+    const rows: Array<Record<string, string>> = [{ name: "Patlıcan", category: "Food", stock_unit: "kg", barcode: "8690000000000", reorder_point: "5", yield_pct: "80" }, { name: "zucchini", category: "Food", stock_unit: "kg" }];
+    const p = await previewProducts(prisma, cc, h.hotel.id, rows);
+    expect(p.rows.map((r) => r.status)).toEqual(["VALID", "DUPLICATE"]); // "Zucchini" exists (names are case-insensitive)
+    await commitProducts(prisma, cc, h.hotel.id, "no-sku.csv", [rows[0]!]);
+    const pat = await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, name: "Patlıcan" } });
+    expect(pat.sku).toMatch(/^STK-\d{5}$/);
+    expect([pat.barcode, pat.reorderPoint, pat.yieldPct.toString()]).toEqual([null, null, "100"]);
+    const prices = await previewSupplierPrices(prisma, cc, h.hotel.id, [{ supplier: h.supplier.code, product: "patlıcan", price_date: "2026-09-01", price: "30" }]);
+    expect(prices.rows[0]!.status).toBe("VALID");
+  });
+
+  it("a name two products share is ambiguous; codes given in the file are never generated for another row", async () => {
+    await prisma.product.create({ data: { hotelId: h.hotel.id, sku: "PAT-2", name: "Patlıcan", categoryId: h.cats.food.id, stockUnit: "kg", purchaseUnit: "kg", recipeUnit: "g" } });
+    const amb = await previewSupplierPrices(prisma, cc, h.hotel.id, [{ supplier: h.supplier.code, product: "Patlıcan", price_date: "2026-09-02", price: "31" }]);
+    expect(amb.rows[0]!.messages[0]).toMatch(/ambiguous/);
+    const next = Number((await prisma.product.findMany({ where: { hotelId: h.hotel.id, sku: { startsWith: "STK-" } } })).map((p) => p.sku.slice(4)).sort().at(-1) ?? 0) + 1;
+    const taken = `STK-${String(next).padStart(5, "0")}`;
+    const r = await commitProducts(prisma, cc, h.hotel.id, "reserve.csv", [{ name: "Bamya", category: "Food", stock_unit: "kg" }, { sku: taken, name: "Börülce", category: "Food", stock_unit: "kg" }]);
+    expect(r.posted).toBe(2);
+    const bamya = await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, name: "Bamya" } });
+    expect(bamya.sku).not.toBe(taken);
+  });
+
   it("Excel (.xlsx) rows map to the same objects as CSV", async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Prices");

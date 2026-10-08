@@ -106,6 +106,22 @@ describe("purchase → receipt → stock → average cost → price variance (sp
     expect(bal.value.toString()).toBe("650");
   });
 
+  it("FIFO with allowNegative (sales deducted before a late receipt): shortfall at the latest cost, settled by the next receipt", async () => {
+    const fish = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "FIFO-NEG", name: "Salmon FIFO", costingMethod: "FIFO" });
+    const mv = (quantity: number, txDate: string, unitCost?: number) => postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: fish.id, type: quantity > 0 ? "PURCHASE" : "CONSUMPTION", quantity, unitCost, txDate: day(txDate), sourceType: "MANUAL", allowNegative: quantity < 0 });
+    await mv(1, "2026-09-01", 800);
+    const out = await mv(-1.5, "2026-09-02");
+    expect(out.totalCost.toString()).toBe("-1200"); // 1 × 800 from the layer + 0.5 × 800 shortfall
+    await expect(postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: fish.id, type: "CONSUMPTION", quantity: -1, txDate: day("2026-09-02"), sourceType: "MANUAL" })).rejects.toThrow(/Insufficient/); // still refused without allowNegative
+    await mv(2, "2026-09-03", 900);
+    const bal = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.main.id, productId: fish.id } } });
+    expect([bal.quantity.toString(), bal.value.toString()]).toEqual(["1.5", "1350"]); // 1.5 × 900
+    const layers = await prisma.fifoLayer.findMany({ where: { productId: fish.id, remainingQty: { gt: 0 } } });
+    expect(layers.map((l) => [l.remainingQty.toString(), l.unitCost.toString()])).toEqual([["1.5", "900"]]);
+    const inv = await ledgerInvariant(h.wh.main.id, fish.id);
+    expect([inv.ledgerQty, inv.ledgerValue]).toEqual([inv.balanceQty, inv.balanceValue]);
+  });
+
   it("transfers move value between warehouses at cost", async () => {
     const before = await ledgerInvariant(h.wh.main.id, chicken.id);
     const t = await transferStock(prisma, cc, { hotelId: h.hotel.id, fromWarehouseId: h.wh.main.id, toWarehouseId: h.wh.restStore.id, productId: chicken.id, quantity: 4, txDate: day("2026-09-06") });

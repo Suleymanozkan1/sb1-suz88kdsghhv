@@ -34,7 +34,8 @@ test("every list/report page downloads PDF, Excel and CSV", async ({ page }) => 
   for (const route of [...ROUTES, ...details]) {
     await page.goto(route);
     const box = page.locator("[data-export]").first();
-    if (!(await box.isVisible())) {
+    // the buttons are a client component: give a slow page (e.g. /reports verifying hashes) time to hydrate
+    if (!(await box.waitFor({ state: "visible", timeout: 10_000 }).then(() => true, () => false))) {
       failed.push(`${route}: no export buttons`);
       continue;
     }

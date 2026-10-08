@@ -2,7 +2,8 @@
  * Purchase invoices of the business day from the Micros purchasing web screens.
  * Selectors: "invoices" block of selectors/micros.json
  *   steps / list / row / rowLink / noData / nextPage / open   as for checks
- *   detail.supplierName / detail.invoiceNo / detail.invoiceDate / detail.warehouse (optional)
+ *   detail.supplierName / detail.invoiceNo / detail.invoiceDate / detail.warehouse (optional) / detail.total (optional:
+ *   grand total incl. VAT; HotelCost rejects an invoice whose lines do not add up to it)
  *   detail.lineRow;  detail.line.{itemCode?, itemName, qty, unit, unitPrice, taxRatePct?}
  *   detail.invoiceDateFormat   overrides the file-level "dateFormat"
  * The purchasing data can also come from export files instead (INVOICE_SOURCE=file, see src/invoices/fileReader.ts).
@@ -27,6 +28,7 @@ export async function readInvoicesFromWeb(ctx: ScreenContext<MicrosSelectors>): 
     const invoiceNo = await screen.text("detail.invoiceNo");
     const invoiceDate = toDay(await screen.text("detail.invoiceDate"), dateFormat, `invoice ${invoiceNo} date`);
     const warehouse = (await screen.optionalText("detail.warehouse")) || null;
+    const total = optNum(await screen.optionalText("detail.total"), `invoice ${invoiceNo} total`, fmt);
     const rows = await screen.readRows(
       "detail.lineRow",
       {
@@ -53,6 +55,6 @@ export async function readInvoicesFromWeb(ctx: ScreenContext<MicrosSelectors>): 
     }
     if (!supplierName || !invoiceNo) throw new ParseError("invoice without supplier or number");
     if (lines.length === 0) throw new ParseError(`invoice ${supplierName} ${invoiceNo} has no lines`);
-    return { supplierName, invoiceNo, invoiceDate, warehouse, lines };
+    return { supplierName, invoiceNo, invoiceDate, warehouse, total, lines };
   });
 }

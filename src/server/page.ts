@@ -26,10 +26,17 @@ export async function guarded<T>(fn: () => Promise<T>): Promise<{ ok: true; data
   }
 }
 
+/** A real calendar day "YYYY-MM-DD" (anything else, e.g. a hand-edited URL, falls back to the default range). */
+function isDay(v: string | undefined): v is string {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 export function monthRange(sp: { from?: string; to?: string }) {
   const now = new Date();
-  const from = sp.from ? new Date(`${sp.from}T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const to = sp.to ? new Date(new Date(`${sp.to}T00:00:00Z`).getTime() + 86400000) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const from = isDay(sp.from) ? new Date(`${sp.from}T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const to = isDay(sp.to) ? new Date(new Date(`${sp.to}T00:00:00Z`).getTime() + 86400000) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   return { from, to, fromStr: from.toISOString().slice(0, 10), toStr: new Date(to.getTime() - 86400000).toISOString().slice(0, 10) };
 }
 

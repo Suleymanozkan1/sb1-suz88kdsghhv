@@ -20,6 +20,7 @@ test("purchase flow: receipt posts stock and appears in the ledger (spec §284)"
   await login(page, "warehouse");
   await page.goto("/purchasing");
   const inv = `E2E-${uniq()}`;
+  await page.getByText("Receive goods by hand").click(); // the manual form is the backup: invoices normally come from Micros
   await page.getByLabel("Invoice no").fill(inv);
   await pickProduct(page, "Product 1", "Tomato", /Tomato/);
   await page.getByLabel("Qty").fill("12");
@@ -101,7 +102,7 @@ test("variance page reconciles and export is permission-gated (spec §243)", asy
   await page.goto("/variance");
   await expect(page.getByText("= Actual usage (COGS)")).toBeVisible();
   await expect(page.getByText("= Unexplained")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Export CSV" })).toBeVisible();
+  await expect(page.locator("[data-export=variance]").getByRole("link", { name: "CSV" })).toBeVisible();
 
   const ctx = await page.context().storageState();
   expect(ctx.cookies.some((c) => c.name === "hc_session")).toBeTruthy();

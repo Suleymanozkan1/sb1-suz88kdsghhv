@@ -67,6 +67,7 @@
       "invoiceDate": "TODO: fatura tarihi",
       "invoiceDateFormat": "DD.MM.YYYY",
       "warehouse": "TODO: teslim alan depo (yoksa null)",
+      "total": "TODO: fatura genel toplamı, KDV dahil (yoksa null; varsa HotelCost kalemlerin toplamıyla karşılaştırır)",
       "lineRow": "TODO: fatura kalemleri, ör. #lines tbody tr",
       "line": {
         "itemCode": "TODO: stok kodu hücresi (yoksa null)",

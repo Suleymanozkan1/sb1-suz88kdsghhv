@@ -13,7 +13,7 @@ import { runBot, type RunReport } from "./runner";
 import { StateStore } from "./state";
 import { localParts, parseHHMM, ymd } from "./util/time";
 import { describeError } from "./errors";
-import type { RunRequest } from "./contract";
+import type { HotelSettings, RunRequest } from "./contract";
 
 export interface DaemonDeps {
   client?: HotelCostClient;
@@ -75,9 +75,21 @@ export class Daemon {
     await this.exclusive(() => this.run(this.config, {}), "nightly run");
   }
 
+  /** Follow the night-audit cut-off set in HotelCost (Admin); the .env value is only the default until the first poll. */
+  applySettings(settings: HotelSettings | null | undefined): void {
+    const cutoff = settings?.businessDayCutoff;
+    if (!cutoff || !/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff) || cutoff === this.config.nightAuditCutoff) return;
+    log.info(`night audit cut-off from HotelCost: ${cutoff} (was ${this.config.nightAuditCutoff})`);
+    this.config.nightAuditCutoff = cutoff;
+    const run = parseHHMM(this.config.runAt);
+    const cut = parseHHMM(cutoff);
+    if (run.hour * 60 + run.minute <= cut.hour * 60 + cut.minute) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);
+  }
+
   /** Ask HotelCost for a "run now" request; run it if there is one. */
   async pollOnce(): Promise<RunRequest | null> {
     const res = await this.client.nextRequest();
+    this.applySettings(res?.settings);
     const req = res?.request ?? null;
     if (!req) return null;
     log.info(`run request ${req.id} received (source ${req.source}, day ${req.businessDay ?? "default"})`);

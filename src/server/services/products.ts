@@ -15,11 +15,11 @@ import { currentUnitCosts } from "./ledger";
 const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
+/** Barcode, yield and costing method are not on the product card any more: such keys are dropped (weighted average costing). */
 export const productInput = z.object({
   /** optional: hotels rarely keep stock codes (Micros lists products by name); generated when empty */
   sku: z.string().trim().max(64).optional().nullable(),
   name: z.string().trim().min(1).max(200),
-  barcode: z.string().trim().max(64).optional().nullable(),
   brand: z.string().trim().max(100).optional().nullable(),
   categoryId: z.string().min(1),
   defaultSupplierId: z.string().optional().nullable(),
@@ -27,7 +27,6 @@ export const productInput = z.object({
   stockUnit: unitCode,
   recipeUnit: unitCode,
   taxRatePct: dec.optional(),
-  costingMethod: z.enum(["WEIGHTED_AVERAGE", "FIFO", "STANDARD", "LAST_PURCHASE", "CONTRACT"]).optional(),
   standardCost: dec.optional().nullable(),
   minStock: dec.optional().nullable(),
   maxStock: dec.optional().nullable(),
@@ -35,7 +34,6 @@ export const productInput = z.object({
   safetyStock: dec.optional().nullable(),
   leadTimeDays: z.number().int().min(0).optional().nullable(),
   shelfLifeDays: z.number().int().min(0).optional().nullable(),
-  yieldPct: dec.refine((v) => Number(v) > 0 && Number(v) <= 100, "Yield must be in (0, 100]").optional(),
   conversions: z.array(z.object({ fromUnit: unitCode, toUnit: unitCode, factor: dec.refine((v) => Number(v) > 0, "Factor must be positive") })).optional(),
 });
 export type ProductInput = z.infer<typeof productInput>;
@@ -66,7 +64,7 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
     const dup = await tx.product.findFirst({ where: { hotelId, sku } });
     if (dup) throw new DomainError("DUPLICATE", `SKU ${sku} already exists`);
     // a recipe quantity is the raw quantity used: products carry no yield; costing is the ledger's weighted average
-    const { conversions: _c, yieldPct: _y, costingMethod: _m, barcode: _b, ...rest } = input;
+    const { conversions: _c, ...rest } = input;
     const data = { ...rest, sku };
     const product = await tx.product.create({
       data: { ...data, hotelId, conversions: { create: conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: c.factor })) } } as Prisma.ProductUncheckedCreateInput,
@@ -110,7 +108,7 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
   });
 }
 
-/** Ingredient search by name, SKU, barcode, category or brand (spec §27). */
+/** Ingredient search by name, SKU, category or brand (spec §27). */
 export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: { limit?: number; categoryGroup?: string; activeOnly?: boolean } = {}) {
   authorize(actor, "product:view", { hotelId });
   const term = q.trim();

@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { D, ZERO, type Decimal } from "@/domain/money";
 import { businessDay } from "@/domain/business-day";
+import { checkNumber } from "@/domain/check-number";
 import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { recommendOrder, expectedConsumption } from "@/domain/purchasing";
@@ -186,7 +187,7 @@ export async function explodeSalesRows(db: Db, rows: LedgerRow[]): Promise<Detai
       const req = snap?.requirements?.[r.productId];
       if (!req || !snap?.portions) continue;
       const q = D(req).div(D(snap.portions)).times(D(l.quantity.toString())).neg();
-      parts.push({ row: r, quantity: q, total: ZERO, check: l.externalId, dish: l.recipe?.name ?? l.posCode, sold: D(l.quantity.toString()), saleDate: l.saleDate });
+      parts.push({ row: r, quantity: q, total: ZERO, check: checkNumber(l.externalId), dish: l.recipe?.name ?? l.posCode, sold: D(l.quantity.toString()), saleDate: l.saleDate });
     }
     if (!parts.length) {
       out.push({ row: r, quantity: D(r.quantity.toString()), total: D(r.totalCost.toString()) });

@@ -23,7 +23,13 @@ export default async function MinibarPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader exportKey="minibar" title={t("Minibar cost")} subtitle={t("Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage — shown, never hidden.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="minibar-occupancy">
+        <Stat label={t("Occupied room nights")} value={tot.occupancyDays ? qty(tot.occupiedRoomNights) : "—"} hint={tot.occupancyDays ? t("from {source} · {n} days", { source: t(tot.occupancySource ?? "Opera"), n: tot.occupancyDays }) : t("no Opera occupancy yet for this period")} />
+        <Stat label={t("Revenue / occupied room")} value={money(tot.revenuePerOccupiedRoom, cur)} />
+        <Stat label={t("Cost / occupied room")} value={money(tot.costPerOccupiedRoom, cur)} />
+        <Stat label={t("Rooms with activity")} value={tot.activeRooms} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-6">
         <Stat label={t("Revenue")} value={money(tot.revenue, cur, 0)} />
         <Stat label={t("Consumed cost")} value={money(tot.consumedCost, cur, 0)} />
         <Stat label={t("Contribution")} value={money(tot.contribution, cur, 0)} tone="good" />

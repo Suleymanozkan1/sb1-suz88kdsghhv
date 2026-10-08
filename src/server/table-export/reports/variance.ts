@@ -7,6 +7,8 @@ import { metricTable } from "./metrics";
 
 /** /variance — theoretical vs actual for the period, department and category group on screen. */
 export const variance: ReportDef = {
+  /** exporting is a separate permission from viewing (spec §243) */
+  perm: "report:export",
   async load({ actor, hotelId, hotel, t, q }) {
     const range = monthRange({ from: q.get("from") || undefined, to: q.get("to") || undefined });
     const departmentId = q.get("departmentId") || null;
