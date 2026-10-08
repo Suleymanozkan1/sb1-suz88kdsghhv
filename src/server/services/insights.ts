@@ -18,7 +18,7 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
   authorize(actor, "inventory:view", { hotelId });
   const warehouses = await db.warehouse.findMany({ where: { hotelId, ...(actor.departmentIds === "ALL" ? {} : { OR: [{ departmentId: { in: [...actor.departmentIds] } }] }) } });
   const whIds = warehouses.map((w) => w.id).filter((id) => !opts.warehouseId || id === opts.warehouseId);
-  const [balances, products, openPo, usage] = await Promise.all([
+  const [balances, products, openPo, usage, rules] = await Promise.all([
     db.stockBalance.findMany({ where: { hotelId, warehouseId: { in: whIds } } }),
     db.product.findMany({ where: { hotelId, ...(opts.categoryGroup ? { category: { group: opts.categoryGroup } } : {}) }, include: { category: true } }),
     openPoQuantities(db, hotelId),
@@ -28,7 +28,12 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
       _sum: { quantity: true },
       _max: { txDate: true },
     }),
+    db.autoOrderRule.findMany({ where: { hotelId }, orderBy: [{ active: "desc" }, { createdAt: "asc" }], select: { productId: true, reorderPoint: true, safetyStock: true } }),
   ]);
+  // reorder point / safety stock are set on the automatic-ordering rules (no longer on the product card);
+  // older product-level values still count for a product without a rule
+  const ruleBy = new Map<string, (typeof rules)[number]>();
+  for (const r of rules) if (!ruleBy.has(r.productId)) ruleBy.set(r.productId, r);
   const lastOut = await db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, quantity: { lt: 0 } }, _max: { txDate: true } });
   // index once (10k products × 10k balances must not be a nested scan)
   const balByProduct = new Map<string, typeof balances>();
@@ -54,7 +59,9 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
         quantity: qty,
         value,
         unitCost: qty.gt(0) ? value.div(qty) : null,
-        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: p.reorderPoint?.toString(), maxStock: p.maxStock?.toString(), safetyStock: p.safetyStock?.toString() }),
+        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: (ruleBy.get(p.id)?.reorderPoint ?? p.reorderPoint)?.toString(), maxStock: p.maxStock?.toString(), safetyStock: (ruleBy.get(p.id)?.safetyStock ?? p.safetyStock)?.toString() }),
+        reorderPoint: (ruleBy.get(p.id)?.reorderPoint ?? p.reorderPoint)?.toString() ?? null,
+        safetyStock: (ruleBy.get(p.id)?.safetyStock ?? p.safetyStock)?.toString() ?? null,
         openPo: openPo.get(p.id) ?? ZERO,
         avgDailyUsage: avgDaily,
         daysOfStock: daysOfStock(qty, avgDaily),

@@ -13,7 +13,7 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { finishBatch, openBatch, type BatchMeta } from "./imports";
 import { postMovement } from "./ledger";
-import { toConversions } from "./products";
+import { nextSku, toConversions } from "./products";
 
 export type RowStatus = "VALID" | "INVALID" | "DUPLICATE" | "WARNING";
 export interface PreviewRow<T> {
@@ -25,6 +25,13 @@ export interface PreviewRow<T> {
 const counts = (rows: { status: RowStatus }[]) => ({ total: rows.length, valid: rows.filter((r) => r.status === "VALID" || r.status === "WARNING").length, invalid: rows.filter((r) => r.status === "INVALID").length, duplicate: rows.filter((r) => r.status === "DUPLICATE").length, warning: rows.filter((r) => r.status === "WARNING").length });
 const num = (v: string | undefined) => (v === undefined || v.trim() === "" ? null : v.replace(",", ".").trim());
 const isNum = (v: string | null) => v === null || Number.isFinite(Number(v));
+/** A row names its product by stock code (sku) or, when the hotel keeps none, by product name. */
+function findProduct<P extends { sku: string; name: string }>(products: P[], r: Record<string, string | undefined>): { prod?: P; label: string } {
+  const sku = (r.sku ?? "").trim();
+  const name = (r.product ?? r.name ?? "").trim().toLowerCase();
+  const prod = sku ? products.find((p) => p.sku === sku) : name ? products.find((p) => p.name.trim().toLowerCase() === name) : undefined;
+  return { prod, label: sku ? `Unknown SKU "${sku}"` : name ? `Unknown product "${(r.product ?? r.name ?? "").trim()}"` : "sku or product is required" };
+}
 
 // ── Product master ──
 export async function previewProducts(db: Db, actor: Actor, hotelId: string, rows: Array<Record<string, string>>) {
@@ -32,15 +39,17 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
   const [cats, sups, existing] = await Promise.all([
     db.productCategory.findMany({ where: { hotelId } }),
     db.supplier.findMany({ where: { hotelId } }),
-    db.product.findMany({ where: { hotelId, sku: { in: rows.map((r) => (r.sku ?? "").trim()) } }, select: { sku: true } }),
+    db.product.findMany({ where: { hotelId }, select: { sku: true, name: true } }),
   ]);
-  const ex = new Set(existing.map((p) => p.sku));
+  // hotels rarely keep stock codes (Micros lists products by name): the sku column is optional and a product
+  // without one is recognised by its name; reorder point / safety stock live on the automatic-ordering rules
+  const exSku = new Set(existing.map((p) => p.sku));
+  const exName = new Set(existing.map((p) => p.name.trim().toLowerCase()));
   const seen = new Set<string>();
-  const out: PreviewRow<{ sku: string; name: string; categoryId: string; supplierId: string | null; stockUnit: string; purchaseUnit: string; recipeUnit: string; caseSize: string | null; standardCost: string | null; reorderPoint: string | null; safetyStock: string | null; barcode: string | null; yieldPct: string }>[] = rows.map((r, i) => {
+  const out: PreviewRow<{ sku: string | null; name: string; categoryId: string; supplierId: string | null; stockUnit: string; purchaseUnit: string; recipeUnit: string; caseSize: string | null; standardCost: string | null }>[] = rows.map((r, i) => {
     const msgs: string[] = [];
-    const sku = (r.sku ?? "").trim();
+    const sku = (r.sku ?? "").trim() || null;
     const name = (r.name ?? "").trim();
-    if (!sku) msgs.push("sku is required");
     if (!name) msgs.push("name is required");
     const catName = (r.category ?? "").trim().toLowerCase();
     const cat = cats.find((c) => c.name.toLowerCase() === catName || c.code.toLowerCase() === catName);
@@ -57,15 +66,14 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
     const conv = caseSize && purchaseUnit !== stockUnit ? [{ fromUnit: purchaseUnit, toUnit: stockUnit, factor: caseSize }] : [];
     if (defaultConverter.has(stockUnit) && !defaultConverter.canConvert(purchaseUnit, stockUnit, conv) && !caseSize) msgs.push(`No conversion from ${purchaseUnit} to ${stockUnit}`);
     const standardCost = num(r.standard_cost);
-    const reorderPoint = num(r.reorder_point);
-    const safetyStock = num(r.safety_stock);
-    // products carry no yield any more (a recipe quantity is the raw quantity used): an old yield_pct column is ignored
-    const yieldPct = "100";
-    for (const [k, v] of [["standard_cost", standardCost], ["reorder_point", reorderPoint], ["safety_stock", safetyStock], ["case_size", caseSize]] as const) if (!isNum(v)) msgs.push(`${k} must be a number`);
+    // old barcode / yield_pct / costing / reorder_point / safety_stock columns are ignored (removed from the product card)
+    for (const [k, v] of [["standard_cost", standardCost], ["case_size", caseSize]] as const) if (!isNum(v)) msgs.push(`${k} must be a number`);
     if (msgs.length) return { row: i + 1, status: "INVALID", messages: msgs };
-    if (ex.has(sku) || seen.has(sku)) return { row: i + 1, status: "DUPLICATE", messages: [`SKU ${sku} already exists — the product master is never overwritten by an import`] };
-    seen.add(sku);
-    return { row: i + 1, status: "VALID", messages: [], data: { sku, name, categoryId: cat!.id, supplierId: sup?.id ?? null, stockUnit, purchaseUnit, recipeUnit, caseSize, standardCost, reorderPoint, safetyStock, barcode: (r.barcode ?? "").trim() || null, yieldPct } };
+    const key = sku ? `sku:${sku}` : `name:${name.toLowerCase()}`;
+    if ((sku && exSku.has(sku)) || exName.has(name.toLowerCase()) || seen.has(key) || seen.has(`name:${name.toLowerCase()}`)) return { row: i + 1, status: "DUPLICATE", messages: [sku && exSku.has(sku) ? `SKU ${sku} already exists — the product master is never overwritten by an import` : `Product "${name}" already exists — the product master is never overwritten by an import`] };
+    seen.add(key);
+    seen.add(`name:${name.toLowerCase()}`);
+    return { row: i + 1, status: "VALID", messages: [], data: { sku, name, categoryId: cat!.id, supplierId: sup?.id ?? null, stockUnit, purchaseUnit, recipeUnit, caseSize, standardCost } };
   });
   return { rows: out, counts: counts(out) };
 }
@@ -79,7 +87,8 @@ export async function commitProducts(db: Db, actor: Actor, hotelId: string, file
     for (const r of p.rows) {
       if (!r.data) continue;
       const d = r.data;
-      await tx.product.create({ data: { hotelId, sku: d.sku, name: d.name, categoryId: d.categoryId, defaultSupplierId: d.supplierId, stockUnit: d.stockUnit, purchaseUnit: d.purchaseUnit, recipeUnit: d.recipeUnit, standardCost: d.standardCost, reorderPoint: d.reorderPoint, safetyStock: d.safetyStock, barcode: d.barcode, yieldPct: d.yieldPct, importId: batch.id, conversions: d.caseSize && d.purchaseUnit !== d.stockUnit ? { create: [{ fromUnit: d.purchaseUnit, toUnit: d.stockUnit, factor: d.caseSize }] } : undefined } });
+      const sku = d.sku ?? (await nextSku(tx, hotelId));
+      await tx.product.create({ data: { hotelId, sku, name: d.name, categoryId: d.categoryId, defaultSupplierId: d.supplierId, stockUnit: d.stockUnit, purchaseUnit: d.purchaseUnit, recipeUnit: d.recipeUnit, standardCost: d.standardCost, importId: batch.id, conversions: d.caseSize && d.purchaseUnit !== d.stockUnit ? { create: [{ fromUnit: d.purchaseUnit, toUnit: d.stockUnit, factor: d.caseSize }] } : undefined } });
       n++;
     }
     const b = await finishBatch(tx, batch.id, n, p.counts);
@@ -103,8 +112,8 @@ export async function previewSupplierPrices(db: Db, actor: Actor, hotelId: strin
     const msgs: string[] = [];
     const sup = sups.find((s) => s.code.toLowerCase() === (r.supplier ?? "").trim().toLowerCase());
     if (!sup) msgs.push(`Unknown supplier "${r.supplier ?? ""}"`);
-    const prod = products.find((p) => p.sku === (r.sku ?? "").trim());
-    if (!prod) msgs.push(`Unknown SKU "${r.sku ?? ""}"`);
+    const { prod, label } = findProduct(products, r);
+    if (!prod) msgs.push(label);
     const date = new Date(`${(r.price_date ?? r.date ?? "").trim()}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) msgs.push("price_date must be YYYY-MM-DD");
     const unit = (r.purchase_unit ?? r.unit ?? "").trim() || prod?.purchaseUnit || "";
@@ -149,7 +158,7 @@ export async function commitSupplierPrices(db: Db, actor: Actor, hotelId: string
 }
 
 // ── Opening stock (go-live) ──
-const openingRow = z.object({ warehouse: z.string().trim().min(1), sku: z.string().trim().min(1), quantity: z.string().trim().min(1), unit_cost: z.string().trim().min(1) });
+const openingRow = z.object({ warehouse: z.string().trim().min(1), sku: z.string().trim().optional(), product: z.string().trim().optional(), quantity: z.string().trim().min(1), unit_cost: z.string().trim().min(1) });
 
 export async function previewOpeningStock(db: Db, actor: Actor, hotelId: string, rows: Array<Record<string, string>>) {
   authorize(actor, "inventory:adjust", { hotelId });
@@ -162,8 +171,8 @@ export async function previewOpeningStock(db: Db, actor: Actor, hotelId: string,
     const msgs: string[] = [];
     const wh = whs.find((w) => w.code.toLowerCase() === v.warehouse.toLowerCase());
     if (!wh) msgs.push(`Unknown warehouse "${v.warehouse}"`);
-    const prod = products.find((p) => p.sku === v.sku);
-    if (!prod) msgs.push(`Unknown SKU "${v.sku}"`);
+    const { prod, label } = findProduct(products, v);
+    if (!prod) msgs.push(label);
     const q = num(v.quantity);
     const c = num(v.unit_cost);
     if (!q || !isNum(q) || Number(q) <= 0) msgs.push("quantity must be positive (stock unit)");

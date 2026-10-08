@@ -563,7 +563,7 @@ export const ops: Record<string, string> = {
   "Expenses (accounting / payroll / utilities)": "Giderler (muhasebe / bordro / enerji)",
   "PMS daily occupancy": "PMS günlük doluluk",
   "PMS reservations / stays": "PMS rezervasyonlar / konaklamalar",
-  "Product master (new SKUs)": "Ürün kartları (yeni SKU)",
+  "Product master (new products)": "Ürün kartları (yeni ürünler; stok kodu isteğe bağlı)",
   "Supplier price list / contract": "Tedarikçi fiyat listesi / sözleşme",
   "Opening stock (go-live)": "Açılış stoku (canlıya geçiş)",
   "Imported {n} row(s)": "{n} satır aktarıldı",
