@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { pageContext, guarded } from "@/server/page";
-import { explodeSalesRows, ledgerEntries, type DetailLine } from "@/server/services/inventory";
+import { explodeSalesRows, ledgerEntries, summarizeSalesRows, type DetailLine } from "@/server/services/inventory";
 import { LEDGER_TYPES, ledgerRange, parseLedgerQuery, sourceText } from "@/server/table-export/reports/ledger";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -22,7 +22,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const res = await guarded(() => ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), take: PAGE, skip: (page - 1) * PAGE }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const { rows, total } = res.data;
-  const lines: DetailLine[] = f.view === "detail" ? await explodeSalesRows(prisma, rows) : rows.map((r) => ({ row: r, quantity: r.quantity, total: r.totalCost }) as unknown as DetailLine);
+  const lines: DetailLine[] = f.view === "detail" ? await explodeSalesRows(prisma, rows) : await summarizeSalesRows(prisma, rows);
   const [warehouses, product] = await Promise.all([
     prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
     f.productId ? prisma.product.findFirst({ where: { id: f.productId, hotelId } }) : null,
@@ -36,9 +36,9 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   );
   return (
     <>
-      <PageHeader exportKey="ledger" title={t("Stock movements")} subtitle={t("Append-only. Posted entries are never edited or deleted — corrections are reversals approved by a manager.")} />
+      <PageHeader title={t("Stock movements")} subtitle={t("Append-only. Posted entries are never edited or deleted — corrections are reversals approved by a manager.")} />
       <Card className="mb-4">
-        <LedgerFilters view={f.view} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} types={LEDGER_TYPES} value={f} product={product ? { id: product.id, name: product.name, sku: product.sku, stockUnit: product.stockUnit, purchaseUnit: product.purchaseUnit, recipeUnit: product.recipeUnit } : null} />
+        <LedgerFilters exportKey="ledger" view={f.view} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} types={LEDGER_TYPES} value={f} product={product ? { id: product.id, name: product.name, sku: product.sku, stockUnit: product.stockUnit, purchaseUnit: product.purchaseUnit, recipeUnit: product.recipeUnit } : null} />
       </Card>
       <div className="mb-2 flex gap-1 border-b border-ink-200">
         {tab("summary", t("Stock movements"))}
@@ -61,7 +61,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                   <Td align="right">{money(r.unitCost.toString(), cur, 4)}</Td>
                   <Td align="right">{money(d.total.toString(), cur)}</Td>
                   <Td className="max-w-md whitespace-normal"><span className={cn("text-xs", r.type === "WASTE" ? "text-red-700" : "text-ink-500")}>{sourceText(d, t)}</span>{r.reversedBy && <Badge tone="violet">{t("reversed")}</Badge>}</Td>
-                  <Td>{first && !r.reversedBy && r.type !== "REVERSAL" && !r.transferGroup && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
+                  <Td>{first && !d.merged && !r.reversedBy && r.type !== "REVERSAL" && !r.transferGroup && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
                 </tr>
               );
             })}

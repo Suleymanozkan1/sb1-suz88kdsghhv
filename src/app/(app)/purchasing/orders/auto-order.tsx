@@ -6,6 +6,7 @@ import { filterRules } from "./filter-rules";
 import { Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Label, Select, Table, Td, Th, cn } from "@/components/ui";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
+import { ExportButtons } from "@/components/export-buttons";
 import { call } from "@/lib/client";
 import { dateTime, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
@@ -179,6 +180,8 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-64"><Label htmlFor="ao-q">{t("Search")}</Label><Input id="ao-q" value={filter} placeholder={t("Product, category or supplier")} onChange={(e) => setFilter(e.target.value)} /></div>
         <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} />{t("Only at reorder point")} <Badge tone={due ? "amber" : "gray"}>{due}</Badge></label>
+        {/* right of the filters: the export takes them from the URL (synced above) */}
+        <div className="flex flex-wrap"><ExportButtons report="orders" params={{ tab: "auto" }} /></div>
         <div className="ml-auto flex gap-2">
           {canManage && <Button variant="secondary" disabled={busy} onClick={fill}>{t("Fill from recommendations")}</Button>}
           {canManage && <Button disabled={busy} onClick={check}>{t("Check now")}</Button>}

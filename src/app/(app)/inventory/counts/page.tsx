@@ -5,7 +5,8 @@ import Link from "next/link";
 import { BarChart3 } from "lucide-react";
 import { Badge, Card, Empty, PageHeader } from "@/components/ui";
 import { ExportButtons } from "@/components/export-buttons";
-import { date, localDay } from "@/lib/format";
+import { date } from "@/lib/format";
+import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { CountEditor, NewCount } from "./count-editor";
 
@@ -22,7 +23,7 @@ export default async function CountsPage() {
   return (
     <>
       <PageHeader exportKey="counts" title={t("Physical stock counts")} subtitle={t("System vs physical. Variances above the approval threshold require a manager before posting.")} />
-      <Card title={t("Start a count")} className="mb-4"><NewCount warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={localDay(hotel.timezone)} /></Card>
+      <Card title={t("Start a count")} className="mb-4"><NewCount warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} /></Card>
       {counts.length === 0 && <Empty title={t("No counts yet")} />}
       <div className="space-y-4">
         {counts.map((c) => (

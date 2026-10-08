@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { call } from "@/lib/client";
-import { localDay } from "@/lib/format";
 import { useT } from "@/i18n/client";
 import { BOARD_BASIS } from "@/lib/board-basis";
 
@@ -19,12 +18,12 @@ const wholeIn = (v: string) => {
   return /^\d+$/.test(s) || /^\d{1,3}(\.\d{3})+$/.test(s) ? Number(s.replace(/\./g, "")) : Number.NaN;
 };
 
-export function NewSession({ departments, warehouses, timeZone }: { departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[]; timeZone: string }) {
+export function NewSession({ departments, warehouses, today }: { departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[]; today: string }) {
   const t = useT();
   const router = useRouter();
   const [dept, setDept] = useState(departments.find((d) => /breakfast|kahvaltı/i.test(d.name))?.id ?? departments[0]?.id ?? "");
   const [type, setType] = useState("BREAKFAST");
-  const [day, setDay] = useState(() => localDay(timeZone)); // the hotel's today, not the UTC day
+  const [day, setDay] = useState(today); // the hotel's business day (night audit cut-off), not the UTC or calendar day
   const [covers, setCovers] = useState("");
   const [rooms, setRooms] = useState("");
   const [guests, setGuests] = useState("");

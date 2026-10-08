@@ -160,6 +160,54 @@ export interface DetailLine {
   dish?: string;
   sold?: Decimal;
   saleDate?: Date;
+  /** summary view: number of sales movements combined into this line (only the single ones can be reversed here) */
+  merged?: number;
+}
+
+/**
+ * Summary view of ledger rows: sales are posted per import and the POS sends a day in several chunks, so the sales
+ * consumption of one business day, store and product is shown as one line ("30 × Hamburger → 4.5 kg patty"), its
+ * dishes counted from the sale lines; every other row (and a reversed sales row) stays as it is.
+ */
+export async function summarizeSalesRows(db: Db, rows: LedgerRow[]): Promise<DetailLine[]> {
+  const isSale = (r: LedgerRow) => r.sourceType === "SALE" && !!r.sourceId && r.type === "CONSUMPTION" && !r.reversedBy;
+  const groups = new Map<string, LedgerRow[]>();
+  for (const r of rows.filter(isSale)) {
+    const k = `${r.txDate.toISOString().slice(0, 10)}|${r.warehouseId}|${r.productId}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const multi = [...groups.values()].filter((g) => g.length > 1);
+  const imports = [...new Set(multi.flat().map((r) => r.sourceId!))];
+  const lines = imports.length ? await db.saleLine.findMany({ where: { importId: { in: imports }, consumptionPosted: true }, select: { importId: true, departmentId: true, saleDate: true, quantity: true, posCode: true, recipe: { select: { name: true } }, recipeVersion: { select: { costSnapshot: true } } } }) : [];
+  const hotels = new Map((await db.hotel.findMany({ where: { id: { in: [...new Set(multi.map((g) => g[0]!.hotelId))] } }, select: { id: true, timezone: true, businessDayCutoff: true } })).map((h) => [h.id, h]));
+  const out: DetailLine[] = [];
+  const done = new Set<string>();
+  for (const r of rows) {
+    const k = `${r.txDate.toISOString().slice(0, 10)}|${r.warehouseId}|${r.productId}`;
+    const g = isSale(r) ? groups.get(k)! : null;
+    if (!g || g.length < 2) {
+      out.push({ row: r, quantity: D(r.quantity.toString()), total: D(r.totalCost.toString()) });
+      continue;
+    }
+    if (done.has(k)) continue;
+    done.add(k);
+    const h = hotels.get(r.hotelId)!;
+    const day = k.slice(0, 10);
+    const keys = new Set(g.map((x) => `${x.sourceId}|${x.departmentId}`));
+    const dishes = new Map<string, Decimal>();
+    for (const l of lines) {
+      const snap = l.recipeVersion?.costSnapshot as { requirements?: Record<string, string> } | null;
+      if (!snap?.requirements?.[r.productId] || !keys.has(`${l.importId}|${l.departmentId}`) || businessDay(l.saleDate, h.timezone, h.businessDayCutoff) !== day) continue;
+      const dish = l.recipe?.name ?? l.posCode;
+      dishes.set(dish, (dishes.get(dish) ?? ZERO).plus(D(l.quantity.toString())));
+    }
+    const list = [...dishes].sort((a, b) => b[1].comparedTo(a[1])).map(([name, n]) => `${n.toString()} × ${name}`);
+    const quantity = g.reduce((a, x) => a.plus(D(x.quantity.toString())), ZERO);
+    const total = g.reduce((a, x) => a.plus(D(x.totalCost.toString())), ZERO);
+    const reason = list.length ? `Sales: ${list.slice(0, 6).join(", ")}${list.length > 6 ? ", …" : ""}` : g.map((x) => x.reason).join(" · ");
+    out.push({ row: { ...r, reason, unitCost: (quantity.isZero() ? D(r.unitCost.toString()) : total.div(quantity)) as never }, quantity, total, merged: g.length });
+  }
+  return out;
 }
 
 /**

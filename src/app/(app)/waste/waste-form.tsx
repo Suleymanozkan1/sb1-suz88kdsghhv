@@ -6,7 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { localDay, money, parseNum } from "@/lib/format";
+import { money, parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 interface Line { key: string; product: PickedProduct | null; quantity: string; unit: string; wasteType: string; reason: string }
@@ -17,13 +17,13 @@ const blank = (key: string = crypto.randomUUID()): Line => ({ key, product: null
  * Waste entry as a list: during the day staff write waste down ("5 of 50 eggs"); at the end of the day the chef
  * enters every line here and saves them together. One line works the same way.
  */
-export function WasteForm({ types, departments, warehouses, currency, timeZone }: { currency: string; timeZone: string; types: string[]; departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[] }) {
+export function WasteForm({ types, departments, warehouses, currency, today }: { currency: string; /** business day (night audit), not the calendar day */ today: string; types: string[]; departments: { id: string; name: string }[]; warehouses: { id: string; name: string; departmentId: string | null }[] }) {
   const router = useRouter();
   const t = useT();
   const [dept, setDept] = useState(departments[0]?.id ?? "");
   const whs = warehouses.filter((w) => !w.departmentId || w.departmentId === dept);
   const [wh, setWh] = useState(whs[0]?.id ?? "");
-  const [day, setDay] = useState(() => localDay(timeZone));
+  const [day, setDay] = useState(today);
   const [lines, setLines] = useState<Line[]>([blank("w-0")]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "red" | "green" | "amber"; text: string } | null>(null);

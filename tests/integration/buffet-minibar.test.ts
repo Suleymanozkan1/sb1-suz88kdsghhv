@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day, ledgerInvariant } from "./fixtures";
 import { postMovement } from "@/server/services/ledger";
 import { createRecipe, approveVersion } from "@/server/services/recipes";
-import { createSession, addLine, closeSession, sessionReport, periodReport, forecast, updateSession } from "@/server/services/buffet";
+import { createSession, addLine, closeSession, sessionReport, periodReport, forecast, updateSession, sessionDefaults } from "@/server/services/buffet";
 import { setPar, recordMovement, countRoom, minibarReport, minibarInvariant, restockToParLevels, roomGrid, MINIBAR_STORE } from "@/server/services/minibar";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { buildFullCostExport } from "@/server/services/export";
@@ -207,5 +207,16 @@ describe("minibar E2E (spec 282 / 334: Room 215)", () => {
       expect(e.checks.find((c) => c.check === name)?.status, name).toBe("PASS");
     }
     expect(e.checks.filter((c) => c.status === "FAIL")).toEqual([]);
+  });
+});
+
+describe("buffet session defaults", () => {
+  it("breakfast takes the occupancy of the night before (its guests slept D-1); other meals that day's", async () => {
+    for (const [d, occ] of [["2026-07-10", 80], ["2026-07-11", 120]] as const) await prisma.occupancyImport.create({ data: { hotelId: h.hotel.id, businessDate: day(d), availableRooms: 150, occupiedRooms: occ, guests: occ * 2, roomRevenue: 0, source: "OPERA" } });
+    await prisma.coverCount.create({ data: { hotelId: h.hotel.id, businessDate: day("2026-07-11"), departmentId: breakfast, meal: "BREAKFAST", covers: 170, source: "MICROS" } });
+    const b = await sessionDefaults(prisma, cc, h.hotel.id, { date: "2026-07-11", departmentId: breakfast, type: "BREAKFAST" });
+    expect([b.covers, b.occupiedRooms, b.guests]).toEqual([170, 80, 160]);
+    const dn = await sessionDefaults(prisma, cc, h.hotel.id, { date: "2026-07-11", departmentId: breakfast, type: "DINNER" });
+    expect([dn.covers, dn.occupiedRooms, dn.guests]).toEqual([null, 120, 240]);
   });
 });

@@ -26,7 +26,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   );
   const head = (subtitle: string, plan?: keyof typeof PLAN_LABEL) => (
     <>
-      <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={plan === "PREMIUM" ? "green" : "gray"}>{t(PLAN_LABEL[plan])}</Badge>} />
+      <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} canExport={tab !== "auto" /* the auto tab shows them next to its filters */} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={plan === "PREMIUM" ? "green" : "gray"}>{t(PLAN_LABEL[plan])}</Badge>} />
       <div className="mb-4 flex gap-1 border-b border-ink-200">
         {link("recommendations", t("Order recommendations"))}
         {link("auto", t("Automatic ordering"), <Badge tone="blue">{t("Premium")}</Badge>)}

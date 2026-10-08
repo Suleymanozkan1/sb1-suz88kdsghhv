@@ -1,9 +1,9 @@
 import { prisma } from "../../db";
-import { explodeSalesRows, ledgerEntries, type DetailLine } from "../../services/inventory";
+import { explodeSalesRows, ledgerEntries, summarizeSalesRows, type DetailLine } from "../../services/inventory";
 import type { ReportDef, XValue } from "../types";
 import type { T } from "@/i18n/core";
 
-/** Stock-movement types offered in the filter: the two used every day first. */
+/** Stock-movement types offered in the filter: the two used every day (Tüketim, Fire) first, the rest grouped under "Other". */
 export const LEDGER_TYPES = ["CONSUMPTION", "WASTE", "PURCHASE", "TRANSFER_IN", "TRANSFER_OUT", "STAFF_MEAL", "COMPLIMENTARY", "COUNT_ADJUSTMENT", "ADJUSTMENT", "OPENING", "REVERSAL"];
 
 export interface LedgerQuery {
@@ -42,7 +42,7 @@ export const ledger: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const f = parseLedgerQuery(q);
     const { rows, total } = await ledgerEntries(prisma, actor, hotelId, { warehouseId: f.warehouseId, productId: f.productId, type: f.type, ...ledgerRange(f), take: 5000 });
-    const lines = f.view === "detail" ? await explodeSalesRows(prisma, rows) : rows.map((r) => ({ row: r, quantity: r.quantity, total: r.totalCost }) as unknown as DetailLine);
+    const lines = f.view === "detail" ? await explodeSalesRows(prisma, rows) : await summarizeSalesRows(prisma, rows);
     const [wh, product] = await Promise.all([f.warehouseId ? prisma.warehouse.findFirst({ where: { id: f.warehouseId, hotelId } }) : null, f.productId ? prisma.product.findFirst({ where: { id: f.productId, hotelId } }) : null]);
     const data: Array<Record<string, XValue>> = lines.map((d) => ({
       date: d.row.txDate, type: t(d.row.type), product: d.row.product.name, warehouse: d.row.warehouse.name, qty: d.quantity.toString(), unit: d.row.product.stockUnit,

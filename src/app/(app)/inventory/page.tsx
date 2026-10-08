@@ -4,7 +4,8 @@ import { can, departmentScope } from "@/server/auth/actor";
 import { warehouseScope } from "@/server/auth/scope";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Label, PageHeader, Select, Stat, Table, Td, Th, Button, levelTone } from "@/components/ui";
-import { localDay, money, qty } from "@/lib/format";
+import { money, qty } from "@/lib/format";
+import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { MovementForm } from "./movement-form";
 
@@ -31,7 +32,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       </div>
       {can(actor, "inventory:post") && (
         <Card title={t("Record stock movement")} className="mt-4">
-          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={localDay(hotel.timezone)} />
+          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
         </Card>
       )}
       <Card className="mt-4" padded={false} title={t("Stock by product")} actions={
