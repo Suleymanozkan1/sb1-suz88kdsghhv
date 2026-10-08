@@ -87,4 +87,7 @@ export const exports: Record<string, string> = {
   "Approved by": "Onaylayan",
   // ── auto order & plans ──
   // ── integrations ──
+  // recipe detail: batch recipes
+  "Cost / {unit}": "Maliyet / {unit}",
+  "{n} {unit} made": "{n} {unit} üretilen",
 };

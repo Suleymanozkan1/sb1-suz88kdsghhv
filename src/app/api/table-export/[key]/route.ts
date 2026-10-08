@@ -12,7 +12,9 @@ export const dynamic = "force-dynamic";
 
 /** PDF / Excel of a page, with the filters the page shows (its query string). */
 export const GET = api(async ({ actor, hotelId, params, query, req }) => {
-  const def = REPORTS[params.key ?? ""];
+  const key = params.key ?? "";
+  // own keys only: "constructor" and friends are not reports
+  const def = Object.hasOwn(REPORTS, key) ? REPORTS[key] : undefined;
   if (!def) throw new DomainError("NOT_FOUND", "Unknown report");
   if (def.perm && !actor.permissions.has(def.perm)) throw new DomainError("FORBIDDEN", `Missing permission: ${def.perm}`);
   requireHotel(actor, hotelId);
