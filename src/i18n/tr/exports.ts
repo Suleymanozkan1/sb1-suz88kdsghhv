@@ -188,4 +188,7 @@ export const exports: Record<string, string> = {
   "ingest:covers": "Kuver",
   "ingest:minibar": "Minibar",
   "ingest:occupancy": "Doluluk",
+  // recipe detail: batch recipes
+  "Cost / {unit}": "Maliyet / {unit}",
+  "{n} {unit} made": "{n} {unit} üretilen",
 };
