@@ -163,7 +163,7 @@ const CSV_DECIMALS: Partial<Record<XType, number>> = { money: 2, unitcost: 4, qt
 /**
  * CSV for Turkish Excel: `;` between fields, decimal comma, dd.mm.yyyy dates, UTF-8 with BOM. Numbers stay
  * plain (no currency sign or grouping, rounded like the screens) so they sum; text is guarded against formula
- * injection. Several tables follow each other, each under its title line.
+ * injection and digit codes keep their leading zeros. Several tables follow each other, each under its title line.
  */
 export function renderCsv(r: XReport, m: RenderMeta): Buffer {
   const cell = (v: XValue, type: XType | undefined): string => {
@@ -173,7 +173,11 @@ export function renderCsv(r: XReport, m: RenderMeta): Buffer {
       const n = num(v);
       if (n !== null) return new Intl.NumberFormat("tr-TR", { useGrouping: false, maximumFractionDigits: CSV_DECIMALS[type] ?? 3 }).format(n);
     }
-    return csvSafe(v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+    const text = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+    // a code like 00123 (or a digit string too long for a number) would lose its zeros / digits in Excel:
+    // ="00123" keeps it as text. Digits only, so the constant formula cannot carry anything else.
+    if (/^(0\d+|\d{16,})$/.test(text)) return `"=""${text}"""`;
+    return csvSafe(text);
   };
   const lines: string[] = [];
   const many = r.tables.length > 1;

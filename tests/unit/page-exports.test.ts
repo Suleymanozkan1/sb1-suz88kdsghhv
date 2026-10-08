@@ -56,6 +56,9 @@ describe("page exports", () => {
     const csv = renderCsv(report, meta).toString("utf8");
     expect(csv.startsWith("\uFEFF")).toBe(true);
     expect(csv.slice(1).split("\r\n")).toEqual(["Ürün;Miktar;Değer;Oran;Tarih", "Şeker;12,5;1234,5;25;01.10.2026", "'=cmd;;;;", "Toplam;;1234,5;;", ""]);
+    // a text code with leading zeros stays text in Excel; plain text and numbers are untouched
+    const codes = renderCsv({ title: "Kod", tables: [{ columns: [{ key: "c", header: "Kod" }, { key: "q", header: "Miktar", type: "qty" as const }], rows: [{ c: "00123", q: 7 }, { c: "123", q: null }, { c: "1234567890123456789", q: null }] }] }, meta).toString("utf8");
+    expect(codes.slice(1).split("\r\n")).toEqual(["Kod;Miktar", '"=""00123""";7', "123;", '"=""1234567890123456789""";', ""]);
     const pdf = await renderPdf(report, meta);
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
   });
