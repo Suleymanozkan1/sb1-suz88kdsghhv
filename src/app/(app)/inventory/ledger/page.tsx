@@ -61,7 +61,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                   <Td align="right">{money(r.unitCost.toString(), cur, 4)}</Td>
                   <Td align="right">{money(d.total.toString(), cur)}</Td>
                   <Td className="max-w-md whitespace-normal"><span className={cn("text-xs", r.type === "WASTE" ? "text-red-700" : "text-ink-500")}>{sourceText(d, t)}</span>{r.reversedBy && <Badge tone="violet">{t("reversed")}</Badge>}</Td>
-                  <Td>{first && !r.reversedBy && r.type !== "REVERSAL" && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
+                  <Td>{first && !r.reversedBy && r.type !== "REVERSAL" && !r.transferGroup && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
                 </tr>
               );
             })}

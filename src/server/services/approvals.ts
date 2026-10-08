@@ -31,6 +31,8 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
     if (stx.departmentId) requireDepartment(actor, stx.departmentId);
     if (stx.reversedBy) throw new DomainError("CONFLICT", "Already reversed");
     if (stx.type === "REVERSAL") throw new DomainError("VALIDATION", "Reversals cannot be deleted");
+    // a transfer leg can never be reversed alone (reverseMovement refuses it), so the request could never be approved
+    if (stx.transferGroup && (await tx.stockTransaction.count({ where: { hotelId, transferGroup: stx.transferGroup } })) > 1) throw new DomainError("VALIDATION", "Reverse transfers by posting the opposite transfer, not a single leg");
     const pending = await tx.approval.findFirst({ where: { hotelId, entityType: "StockTransaction", entityId: stx.id, status: "PENDING" } });
     if (pending) throw new DomainError("CONFLICT", "A delete request is already pending for this entry");
     const a = await tx.approval.create({
