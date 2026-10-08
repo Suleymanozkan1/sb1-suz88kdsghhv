@@ -244,6 +244,14 @@ describe("end-to-end against the mock Micros / Opera", () => {
     assert.equal(await daemon.pollOnce(), null);
   });
 
+  test("daemon: follows the night-audit cut-off set in HotelCost", async () => {
+    hc.state.settings = { businessDayCutoff: "04:00", timezone: "Europe/Istanbul" };
+    const c = cfg({ NIGHT_AUDIT_CUTOFF: "03:30" });
+    await new Daemon(c).pollOnce();
+    assert.equal(c.nightAuditCutoff, "04:00");
+    hc.state.settings = undefined;
+  });
+
   test("daemon: nightly schedule is due after RUN_AT once per local day", () => {
     const daemon = new Daemon(cfg({ RUN_AT: "04:15", TIMEZONE: "Europe/Istanbul" }));
     assert.equal(daemon.isNightlyDue(new Date("2026-10-07T04:00:00+03:00")).due, false);

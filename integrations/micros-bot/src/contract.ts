@@ -92,7 +92,9 @@ export interface IngestResult {
 }
 
 export interface RunRequest { id: string; source: RunSource; businessDay: string | null }
-export interface NextRunResponse { request: RunRequest | null }
+/** The hotel's own settings (Admin → business day ends at); the daemon follows them instead of its .env defaults. */
+export interface HotelSettings { businessDayCutoff?: string | null; timezone?: string | null }
+export interface NextRunResponse { request: RunRequest | null; settings?: HotelSettings | null }
 
 /** Validate items locally. Returns valid items and messages for the dropped ones (index = position in input). */
 export function validateItems<K extends Kind>(kind: K, items: ItemsByKind[K][]): { valid: ItemsByKind[K][]; invalid: Array<{ item: number; message: string }> } {

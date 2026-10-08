@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct } from "./fixtures";
 import { createIntegrationKey, ingest, integrationActor, integrationHealth, nextRequest, reportRun, requestRun, revokeIntegrationKey } from "@/server/integrations/ingest";
 import type { Actor } from "@/server/auth/actor";
+import { checkNumber } from "@/domain/check-number";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
 let admin: Actor;
@@ -52,10 +53,15 @@ describe("checks → sales (idempotent per check no. + business day)", () => {
     expect(r.errors).toEqual([{ item: 2, message: "Check 1003: unknown outlet 'Pool Bar'" }]);
     const lines = await prisma.saleLine.findMany({ where: { hotelId: h.hotel.id }, include: { recipe: true }, orderBy: { externalId: "asc" } });
     expect(lines.map((l) => [l.externalId, l.quantity.toString(), l.recipe?.name ?? null])).toEqual([
-      [`MICROS:${DAY}:1001:Ayran`, "2", null],
-      [`MICROS:${DAY}:1001:Izgara Köfte`, "2", "Izgara Köfte"],
-      [`MICROS:${DAY}:1002:K1`, "1", "Izgara Köfte"],
+      [`MICROS:${DAY}:REST:1001:Ayran`, "2", null],
+      [`MICROS:${DAY}:REST:1001:Izgara Köfte`, "2", "Izgara Köfte"],
+      [`MICROS:${DAY}:REST:1002:K1`, "1", "Izgara Köfte"],
     ]);
+  });
+  it("the check number is read back from the key; the outlet keeps equal numbers apart", () => {
+    expect(checkNumber(`MICROS:${DAY}:REST:1001:Ayran`)).toBe("1001");
+    expect(checkNumber(`MICROS:${DAY}:1001:Ayran`)).toBe("1001"); // older keys without the outlet
+    expect(checkNumber("POS-77")).toBe("POS-77");
   });
   it("sending the same day again writes nothing", async () => {
     const r = await ingest(prisma, bot, h.hotel.id, { ...payload, runId: "run-2" });

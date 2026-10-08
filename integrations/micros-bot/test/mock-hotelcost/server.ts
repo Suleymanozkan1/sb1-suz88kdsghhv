@@ -22,6 +22,8 @@ export interface MockHotelCostState {
   /** answer the next N ingest calls with 503 (retry test) */
   failNextIngest: number;
   queue: Array<{ id: string; source: string; businessDay: string | null }>;
+  /** what HotelCost answers as the hotel's settings (Admin → business day ends at) */
+  settings?: { businessDayCutoff: string; timezone: string };
   seen: Set<string>;
 }
 export interface MockHotelCost {
@@ -113,7 +115,7 @@ export async function startMockHotelCost(apiKey = "hc_test_key_123456"): Promise
         return json(200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/integrations/runs/next") {
-        return json(200, { request: state.queue.shift() ?? null });
+        return json(200, { request: state.queue.shift() ?? null, settings: state.settings ?? null });
       }
       return json(404, { error: "not found" });
     });
