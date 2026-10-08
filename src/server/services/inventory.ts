@@ -108,7 +108,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
     const rows = await db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, txDate: { gte: from, lt: to }, type: { in: [...usageTypes] } }, _sum: { quantity: true } });
     return new Map(rows.map((r) => [r.productId, D(r._sum.quantity?.toString() ?? 0).neg()]));
   };
-  const [last, last3, lyMonth, ly3, stock, openPo, products] = await Promise.all([
+  const [last, last3, lyMonth, ly3, stock, openPo, products, rules] = await Promise.all([
     usage(m(1), monthStart),
     usage(m(3), monthStart),
     usage(new Date(Date.UTC(monthStart.getUTCFullYear() - 1, monthStart.getUTCMonth(), 1)), new Date(Date.UTC(monthStart.getUTCFullYear() - 1, monthStart.getUTCMonth() + 1, 1))),
@@ -116,7 +116,10 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
     db.stockBalance.groupBy({ by: ["productId"], where: { hotelId }, _sum: { quantity: true } }),
     openPoQuantities(db, hotelId),
     db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, include: { conversions: true, defaultSupplier: true } }),
+    db.autoOrderRule.findMany({ where: { hotelId }, select: { productId: true, safetyStock: true } }),
   ]);
+  // safety stock lives on the auto-order rule now; the old product field is the fallback
+  const ruleSafety = new Map(rules.filter((r) => r.safetyStock !== null).map((r) => [r.productId, r.safetyStock!.toString()]));
   const stockMap = new Map(stock.map((s) => [s.productId, D(s._sum.quantity?.toString() ?? 0)]));
   return products
     .map((p) => {
@@ -132,7 +135,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
       const leadDays = p.leadTimeDays ?? p.defaultSupplier?.leadTimeDays ?? 0;
       const rec = recommendOrder({
         expectedConsumption: exp.value,
-        safetyStock: p.safetyStock?.toString() ?? 0,
+        safetyStock: ruleSafety.get(p.id) ?? p.safetyStock?.toString() ?? 0,
         currentStock: stockMap.get(p.id) ?? ZERO,
         openPoQty: openPo.get(p.id) ?? ZERO,
         purchaseUnitSize: packSize,

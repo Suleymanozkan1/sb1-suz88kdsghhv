@@ -20,7 +20,7 @@ export default async function PlatformPage() {
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader title={t("HotelCost platform")} subtitle={<span>{t("Signed in as {email}", { email: actor.email })} <Badge tone="blue">{t("Super administrator")}</Badge> - {t("tenant data (costs, stock, revenue) is not visible here by design.")}</span>} actions={<SignOutButton />} />
-      <PlatformConsole tenants={tenants.map((x) => ({ id: x.id, name: x.name, active: x.active, isDemo: x.isDemo, createdAt: x.createdAt.toISOString(), users: x._count.users, hotels: x.hotels }))} />
+      <PlatformConsole tenants={tenants.map((x) => ({ id: x.id, name: x.name, active: x.active, isDemo: x.isDemo, plan: x.plan, createdAt: x.createdAt.toISOString(), users: x._count.users, hotels: x.hotels }))} />
     </main>
   );
 }

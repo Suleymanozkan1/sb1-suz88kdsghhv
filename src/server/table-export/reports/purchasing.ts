@@ -1,6 +1,7 @@
 import { prisma } from "../../db";
 import { can, requirePermission } from "../../auth/actor";
 import { orderRecommendations } from "../../services/inventory";
+import { autoOrderOverview } from "../../services/auto-order";
 import type { ReportDef } from "../types";
 
 /** /purchasing — goods receipts (one line per invoice line) and supplier price changes. */
@@ -42,10 +43,37 @@ export const purchasing: ReportDef = {
   },
 };
 
-/** /purchasing/orders — order recommendations with their explanation. */
+/** /purchasing/orders — order recommendations with their explanation; `tab=auto` the auto-order rules, `tab=suppliers` the suppliers. */
 export const orders: ReportDef = {
-  async load({ actor, hotelId, t }) {
+  async load({ actor, hotelId, t, q }) {
     requirePermission(actor, "purchase:view");
+    if (q.get("tab") === "auto") {
+      const o = await autoOrderOverview(prisma, actor, hotelId);
+      return {
+        title: t("Automatic ordering"),
+        fileName: "otomatik-siparis",
+        tables: [{
+          columns: [
+            { key: "supplier", header: t("Supplier") }, { key: "product", header: t("Product") }, { key: "category", header: t("Category") }, { key: "stock", header: t("Stock"), type: "qty" },
+            { key: "rp", header: t("Reorder point"), type: "qty" }, { key: "ss", header: t("Safety stock"), type: "qty" }, { key: "oq", header: t("Order qty"), type: "qty" }, { key: "unit", header: t("Unit") },
+            { key: "email", header: t("E-mail") }, { key: "state", header: t("Active / Passive") }, { key: "due", header: t("At reorder point") },
+          ],
+          rows: o.rules.map((r) => ({ supplier: r.supplier, product: r.product, category: r.category, stock: r.stock, rp: r.reorderPoint, ss: r.safetyStock, oq: r.orderQty, unit: r.unit, email: r.email, state: r.active ? t("Active") : t("Passive"), due: r.due ? t("Yes") : "" })),
+        }],
+      };
+    }
+    if (q.get("tab") === "suppliers") {
+      requirePermission(actor, "supplier:view");
+      const rows = await prisma.supplier.findMany({ where: { hotelId }, orderBy: [{ active: "desc" }, { name: "asc" }] });
+      return {
+        title: t("Suppliers"),
+        fileName: "tedarikciler",
+        tables: [{
+          columns: [{ key: "code", header: t("Code") }, { key: "name", header: t("Company name") }, { key: "address", header: t("Address") }, { key: "email", header: t("E-mail") }, { key: "phone", header: t("Phone") }, { key: "lead", header: t("Lead time (days)"), type: "int" }, { key: "active", header: t("Status") }],
+          rows: rows.map((s) => ({ code: s.code, name: s.name, address: s.address, email: s.email, phone: s.phone, lead: s.leadTimeDays, active: s.active ? t("Active") : t("Passive") })),
+        }],
+      };
+    }
     const rows = await orderRecommendations(prisma, actor, hotelId);
     return {
       title: t("Order recommendations"),

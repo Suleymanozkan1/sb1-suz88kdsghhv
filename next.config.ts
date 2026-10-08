@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   // the PDF management pack reads its fonts from disk at runtime (serverless bundles must include them)
   outputFileTracingIncludes: { "/**/*": ["./assets/fonts/**/*"] },
-  serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit"],
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit", "nodemailer"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
