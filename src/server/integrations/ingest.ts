@@ -161,11 +161,6 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
         duplicates++;
         continue;
       }
-      // a line missed on a paged screen or misread would post a wrong invoice: the printed total must match
-      if (inv.total !== null && inv.total !== undefined) {
-        const lines = inv.lines.reduce((a, l) => a + l.qty * l.unitPrice * (1 + (l.taxRatePct ?? 0) / 100), 0);
-        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT) — check that every line was read`);
-      }
       const wh = inv.warehouse ? warehouses.find((w) => low(w.code) === low(inv.warehouse!) || low(w.name) === low(inv.warehouse!)) : main;
       if (!wh) throw new DomainError("VALIDATION", `Unknown warehouse '${inv.warehouse}'`);
       const items = [];
@@ -179,6 +174,12 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
           prod = await createProduct(db, actor, hotelId, { name: l.itemName.trim(), categoryId: cat.id, defaultSupplierId: s.id, purchaseUnit: unit, stockUnit: unit, recipeUnit: unit === "kg" ? "g" : unit === "l" ? "ml" : unit, taxRatePct: l.taxRatePct ?? undefined });
         }
         items.push({ productId: prod.id, quantity: l.qty, unit: unit ?? l.unit, unitPrice: l.unitPrice, taxRatePct: l.taxRatePct ?? Number(prod.taxRatePct) });
+      }
+      // a line missed on a paged screen or misread would post a wrong invoice: the printed total must match the
+      // lines as they will be posted (a line without a VAT rate takes its product's rate, as the receipt does)
+      if (inv.total !== null && inv.total !== undefined) {
+        const lines = items.reduce((a, l) => a + l.quantity * l.unitPrice * (1 + l.taxRatePct / 100), 0);
+        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT) — check that every line was read`);
       }
       await postGoodsReceipt(db, actor, hotelId, { supplierId: s.id, warehouseId: wh.id, receiptDate: dayDate(inv.invoiceDate), invoiceNo: inv.invoiceNo, idempotencyKey: key, source: p.source === "MICROS" ? "MICROS" : "IMPORT", items });
       accepted++;

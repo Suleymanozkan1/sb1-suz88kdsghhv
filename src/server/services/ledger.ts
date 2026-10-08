@@ -158,9 +158,19 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
           WHERE "warehouseId" = ${input.warehouseId} AND "productId" = ${input.productId} AND "remainingQty" > 0
           ORDER BY "receivedAt" ASC, "id" ASC FOR UPDATE`;
         const ls: Layer[] = layers.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
-        const r = fifoIssue(ls, outQty);
-        fifoDraws = r.draws;
-        total = pos.quantity.minus(outQty).isZero() ? pos.value.neg() : toStorage(r.totalCost).neg();
+        const available = ls.reduce((a, l) => a.plus(l.remainingQty), ZERO);
+        if (input.allowNegative && available.lt(outQty)) {
+          // more out than the layers hold (e.g. sales deducted before a late receipt is booked): the layers are used
+          // up and the shortfall is valued at the latest known cost; the next receipt settles it (see below)
+          const drawn = available.gt(0) ? fifoIssue(ls, available) : { draws: [], totalCost: ZERO };
+          const latest = ls.at(-1)?.unitCost ?? (pos.avgCost.gt(0) ? pos.avgCost : ((await fallbackCost(tx, input.hotelId, input.productId)) ?? ZERO));
+          fifoDraws = drawn.draws;
+          total = toStorage(drawn.totalCost.plus(outQty.minus(available).times(latest))).neg();
+        } else {
+          const r = fifoIssue(ls, outQty);
+          fifoDraws = r.draws;
+          total = pos.quantity.minus(outQty).isZero() ? pos.value.neg() : toStorage(r.totalCost).neg();
+        }
         unitCost = total.neg().div(outQty);
       } else {
         const r = wacIssue(pos, outQty, { allowNegative: input.allowNegative });
@@ -181,6 +191,12 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
         total = newValue.minus(pos.value);
       }
     } else {
+      if (fifo && qty.gt(0) && input.exactTotal === undefined && pos.quantity.lt(0)) {
+        // receipt into negative FIFO stock: the shortfall issued earlier is settled at this receipt's cost, and
+        // only what is left after it becomes a layer (layers always add up to the balance)
+        newValue = toStorage(newQty.times(unitCost));
+        total = newValue.minus(pos.value);
+      }
       newAvg = newQty.gt(0) ? newValue.div(newQty) : qty.gt(0) ? unitCost : pos.avgCost;
     }
 
@@ -217,9 +233,10 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       data: { quantity: toStorage(newQty).toString(), value: toStorage(newValue).toString(), avgCost: toStorage(newAvg).toString(), lastTxAt: input.txDate, version: { increment: 1 } },
     });
 
-    if (createLayer) {
+    const layerQty = pos.quantity.lt(0) ? qty.plus(pos.quantity) : qty;
+    if (createLayer && layerQty.gt(0)) {
       await tx.fifoLayer.create({
-        data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: input.txDate, originalQty: toStorage(qty).toString(), remainingQty: toStorage(qty).toString(), unitCost: toStorage(unitCost).toString() },
+        data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: input.txDate, originalQty: toStorage(layerQty).toString(), remainingQty: toStorage(layerQty).toString(), unitCost: toStorage(unitCost).toString() },
       });
     }
     for (const d of fifoDraws) {

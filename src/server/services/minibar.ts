@@ -226,7 +226,8 @@ export async function minibarReport(db: Db, actor: Actor, hotelId: string, f: { 
   const totals = { cost: sum(roomsOut.map((r) => r.cost)), revenue: sum(roomsOut.map((r) => r.revenue)), consumedCost: sum(roomsOut.map((r) => r.consumedCost)), shrinkageCost: sum(roomsOut.map((r) => r.shrinkageCost)), wasteCost: sum(roomsOut.map((r) => r.wasteCost)) };
   const activeRooms = roomsOut.filter((r) => r.cost.gt(0) || r.revenue.gt(0)).length;
   const occupiedRoomNights = occupancy.reduce((a, o) => a + o.occupiedRooms, 0);
-  const perOccupied = (v: Decimal) => (occupiedRoomNights > 0 ? v.div(occupiedRoomNights) : null);
+  // hotel-wide room nights: a single-room statement has no "per occupied room" figure
+  const perOccupied = (v: Decimal) => (occupiedRoomNights > 0 && !f.roomId ? v.div(occupiedRoomNights) : null);
   return {
     lines,
     rooms: roomsOut,

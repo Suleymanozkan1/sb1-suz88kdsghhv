@@ -29,8 +29,12 @@ const isNum = (v: string | null) => v === null || Number.isFinite(Number(v));
 function findProduct<P extends { sku: string; name: string }>(products: P[], r: Record<string, string | undefined>): { prod?: P; label: string } {
   const sku = (r.sku ?? "").trim();
   const name = (r.product ?? r.name ?? "").trim().toLowerCase();
-  const prod = sku ? products.find((p) => p.sku === sku) : name ? products.find((p) => p.name.trim().toLowerCase() === name) : undefined;
-  return { prod, label: sku ? `Unknown SKU "${sku}"` : name ? `Unknown product "${(r.product ?? r.name ?? "").trim()}"` : "sku or product is required" };
+  // a name shared by two products is ambiguous: never guess which one gets the price / stock
+  const byName = !sku && name ? products.filter((p) => p.name.trim().toLowerCase() === name) : [];
+  const prod = sku ? products.find((p) => p.sku === sku) : byName.length === 1 ? byName[0] : undefined;
+  const shown = (r.product ?? r.name ?? "").trim();
+  const label = sku ? `Unknown SKU "${sku}"` : byName.length > 1 ? `Product "${shown}" is ambiguous (${byName.length} products have this name) — use its stock code` : name ? `Unknown product "${shown}"` : "sku or product is required";
+  return { prod, label };
 }
 
 // ── Product master ──
@@ -84,10 +88,17 @@ export async function commitProducts(db: Db, actor: Actor, hotelId: string, file
   return inTx(db, async (tx) => {
     const batch = await openBatch(tx, actor, hotelId, "PRODUCTS", fileName, rows, meta);
     let n = 0;
+    // stock codes given in the file are reserved first, so a generated code never takes one of them
+    const reserved = new Set(p.rows.flatMap((r) => (r.data?.sku ? [r.data.sku] : [])));
+    let generated = p.rows.some((r) => r.data && !r.data.sku) ? Number((await nextSku(tx, hotelId)).slice(4)) : 0;
+    const freshSku = () => {
+      while (reserved.has(`STK-${String(generated).padStart(5, "0")}`)) generated++;
+      return `STK-${String(generated++).padStart(5, "0")}`;
+    };
     for (const r of p.rows) {
       if (!r.data) continue;
       const d = r.data;
-      const sku = d.sku ?? (await nextSku(tx, hotelId));
+      const sku = d.sku ?? freshSku();
       await tx.product.create({ data: { hotelId, sku, name: d.name, categoryId: d.categoryId, defaultSupplierId: d.supplierId, stockUnit: d.stockUnit, purchaseUnit: d.purchaseUnit, recipeUnit: d.recipeUnit, standardCost: d.standardCost, importId: batch.id, conversions: d.caseSize && d.purchaseUnit !== d.stockUnit ? { create: [{ fromUnit: d.purchaseUnit, toUnit: d.stockUnit, factor: d.caseSize }] } : undefined } });
       n++;
     }

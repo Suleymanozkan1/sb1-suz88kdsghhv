@@ -119,7 +119,8 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
     else u.delete("q");
     if (d) u.set("due", "1");
     else u.delete("due");
-    window.history.replaceState(null, "", `?${u}`);
+    const qs = u.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   };
   const setFilter = (v: string) => {
     setFilterState(v);

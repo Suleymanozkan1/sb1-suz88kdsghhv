@@ -126,7 +126,9 @@ async function main() {
 
   const org = await prisma.organization.create({ data: { name: ORG } });
   for (const c of ["TRY", "EUR", "USD"]) await prisma.currency.upsert({ where: { code: c }, create: { code: c, organizationId: org.id, name: c }, update: {} });
-  const hotel = await prisma.hotel.create({ data: { organizationId: org.id, code: "GAR", name: "Grand Anatolia Resort", totalRooms: 320, priceAlertPct: 10, wasteApprovalValue: 400, adjustmentApprovalValue: 5000, marginTargetPct: 65 } });
+  // the seed books the kitchens' daily issues itself (actual usage, so theoretical vs actual has a variance to show):
+  // automatic recipe deduction of the imported sales would take the same stock out a second time
+  const hotel = await prisma.hotel.create({ data: { organizationId: org.id, code: "GAR", name: "Grand Anatolia Resort", totalRooms: 320, priceAlertPct: 10, wasteApprovalValue: 400, adjustmentApprovalValue: 5000, marginTargetPct: 65, autoDeductSales: false } });
   const hotel2 = await prisma.hotel.create({ data: { organizationId: org.id, code: "BCH", name: "Bosphorus City Hotel", totalRooms: 140 } });
   const H = hotel.id;
 
@@ -511,9 +513,11 @@ async function main() {
   // housekeeping store (amenities issued per occupied room) and linen room
   const hkProducts: Array<[string, string, string, string, number]> = [["HK-SOAP", "Guest Soap 25g", "Amenities", "pc", 4.2], ["HK-SLIPPER", "Guest Slippers", "Guest supplies", "pc", 18], ["HK-CHEM", "Multi-surface Cleaner", "Chemicals", "l", 85], ["LIN-SHEET", "Bed Sheet", "Bed linen", "pc", 420], ["LIN-TOWEL", "Bath Towel", "Towels", "pc", 260], ["LIN-ROBE", "Bathrobe", "Bathrobes", "pc", 780]];
   for (const [sku, name, catName, unit] of hkProducts) pid[sku] = (await prisma.product.create({ data: { hotelId: H, sku, name, categoryId: cat[catName]!, defaultSupplierId: suppliers[3], purchaseUnit: unit, stockUnit: unit, recipeUnit: unit === "l" ? "ml" : unit, taxRatePct: "20" } })).id;
+  // the opening stock covers about four weeks of issues: a longer seeded period (late in a month) gets more
+  const hkScale = Math.max(1, days.length / 28);
   const hkStore = (await prisma.warehouse.create({ data: { hotelId: H, code: "HK", name: "Housekeeping Store", departmentId: dept.HK } })).id;
   const linenRoom = (await prisma.warehouse.create({ data: { hotelId: H, code: "LINEN", name: "Linen Room", departmentId: dept.LAUN } })).id;
-  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: hkStore, receiptDate: at(days[0]!, 6), invoiceNo: "HK-OPEN", items: [["HK-SHAMPOO", 6000, 6.5], ["HK-SOAP", 6000, 4.2], ["HK-SLIPPER", 2500, 18], ["HK-CHEM", 300, 85]].map(([sku, q, pr]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: sku === "HK-CHEM" ? "l" : "pc", unitPrice: String(pr) })) });
+  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: hkStore, receiptDate: at(days[0]!, 6), invoiceNo: "HK-OPEN", items: [["HK-SHAMPOO", 6000, 6.5], ["HK-SOAP", 6000, 4.2], ["HK-SLIPPER", 2500, 18], ["HK-CHEM", 300, 85]].map(([sku, q, pr]) => ({ productId: pid[sku as string]!, quantity: String(Math.ceil(Number(q) * hkScale)), unit: sku === "HK-CHEM" ? "l" : "pc", unitPrice: String(pr) })) });
   await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: linenRoom, receiptDate: at(days[0]!, 6), invoiceNo: "LINEN-OPEN", items: [["LIN-SHEET", 540, 420], ["LIN-TOWEL", 720, 260], ["LIN-ROBE", 200, 780]].map(([sku, q, pr]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: "pc", unitPrice: String(pr) })) });
   for (const d of days) {
     const occ = nightly.get(d.toISOString().slice(0, 10))?.occ ?? 0;

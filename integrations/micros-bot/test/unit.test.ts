@@ -159,6 +159,10 @@ describe("invoice files", () => {
     const r = rowsToInvoices([["Tedarikçi", "Fatura No", "Fatura Tarihi", "Ürün", "Miktar", "Birim", "Birim Fiyat", "KDV", "Fatura Toplamı"], ["Ege", "E-1", "06.10.2026", "Un", "2", "çuval", "100,00", "1", "252,50"], ["Ege", "E-1", "06.10.2026", "Yağ", "1", "teneke", "50,00", "1", "252,50"]], "t.csv");
     assert.equal(r.items.length, 1);
     assert.equal(r.items[0]!.total, 252.5); // 2 × 100 + 50, plus 1 % VAT
+    // an empty total on the first row is filled from a later row; rows that disagree are reported
+    const later = rowsToInvoices([["Tedarikçi", "Fatura No", "Fatura Tarihi", "Ürün", "Miktar", "Birim", "Birim Fiyat", "Fatura Toplamı"], ["Ege", "E-2", "06.10.2026", "Un", "1", "çuval", "100,00", ""], ["Ege", "E-2", "06.10.2026", "Yağ", "1", "teneke", "50,00", "150,00"], ["Ege", "E-2", "06.10.2026", "Tuz", "1", "kg", "0,00", "160,00"]], "t2.csv");
+    assert.equal(later.items[0]!.total, 150);
+    assert.match(later.warnings.join(" "), /different total \(160\)/);
     assert.equal(r.items[0]!.lines.length, 2);
   });
   test("XLSX with English headers, Excel dates and number cells", async () => {

@@ -49,6 +49,9 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
       const avgDaily = used30.div(30);
       const last = lastOutBy.get(p.id) ?? null;
       const daysIdle = last ? Math.trunc((Date.now() - last.getTime()) / 86400000) : null;
+      // a rule's thresholds win as a whole (a blank safety stock stays blank); the product card only without a rule
+      const rule = ruleBy.get(p.id);
+      const thresholds = rule ? { reorderPoint: rule.reorderPoint.toString(), safetyStock: rule.safetyStock?.toString() ?? null } : { reorderPoint: p.reorderPoint?.toString() ?? null, safetyStock: p.safetyStock?.toString() ?? null };
       return {
         productId: p.id,
         sku: p.sku,
@@ -59,9 +62,9 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
         quantity: qty,
         value,
         unitCost: qty.gt(0) ? value.div(qty) : null,
-        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: (ruleBy.get(p.id)?.reorderPoint ?? p.reorderPoint)?.toString(), maxStock: p.maxStock?.toString(), safetyStock: (ruleBy.get(p.id)?.safetyStock ?? p.safetyStock)?.toString() }),
-        reorderPoint: (ruleBy.get(p.id)?.reorderPoint ?? p.reorderPoint)?.toString() ?? null,
-        safetyStock: (ruleBy.get(p.id)?.safetyStock ?? p.safetyStock)?.toString() ?? null,
+        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: thresholds.reorderPoint ?? undefined, maxStock: p.maxStock?.toString(), safetyStock: thresholds.safetyStock ?? undefined }),
+        reorderPoint: thresholds.reorderPoint,
+        safetyStock: thresholds.safetyStock,
         openPo: openPo.get(p.id) ?? ZERO,
         avgDailyUsage: avgDaily,
         daysOfStock: daysOfStock(qty, avgDaily),

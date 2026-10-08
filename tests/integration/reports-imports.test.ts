@@ -58,6 +58,18 @@ describe("import engine (spec 245–249)", () => {
     expect(prices.rows[0]!.status).toBe("VALID");
   });
 
+  it("a name two products share is ambiguous; codes given in the file are never generated for another row", async () => {
+    await prisma.product.create({ data: { hotelId: h.hotel.id, sku: "PAT-2", name: "Patlıcan", categoryId: h.cats.food.id, stockUnit: "kg", purchaseUnit: "kg", recipeUnit: "g" } });
+    const amb = await previewSupplierPrices(prisma, cc, h.hotel.id, [{ supplier: h.supplier.code, product: "Patlıcan", price_date: "2026-09-02", price: "31" }]);
+    expect(amb.rows[0]!.messages[0]).toMatch(/ambiguous/);
+    const next = Number((await prisma.product.findMany({ where: { hotelId: h.hotel.id, sku: { startsWith: "STK-" } } })).map((p) => p.sku.slice(4)).sort().at(-1) ?? 0) + 1;
+    const taken = `STK-${String(next).padStart(5, "0")}`;
+    const r = await commitProducts(prisma, cc, h.hotel.id, "reserve.csv", [{ name: "Bamya", category: "Food", stock_unit: "kg" }, { sku: taken, name: "Börülce", category: "Food", stock_unit: "kg" }]);
+    expect(r.posted).toBe(2);
+    const bamya = await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, name: "Bamya" } });
+    expect(bamya.sku).not.toBe(taken);
+  });
+
   it("Excel (.xlsx) rows map to the same objects as CSV", async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Prices");

@@ -1,6 +1,6 @@
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { theoreticalVsActual } from "@/server/services/variance";
-import { departmentScope } from "@/server/auth/actor";
+import { can, departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
@@ -27,6 +27,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
         title={tr("Theoretical vs actual")}
         subtitle={tr("What should have happened, what actually happened, and why they differ.")}
         exportKey="variance"
+        canExport={can(actor, "report:export")}
       />
       <Card className="mb-4">
         <PeriodFilter

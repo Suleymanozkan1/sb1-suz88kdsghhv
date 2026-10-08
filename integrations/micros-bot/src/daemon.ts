@@ -81,7 +81,9 @@ export class Daemon {
     if (!cutoff || !/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff) || cutoff === this.config.nightAuditCutoff) return;
     log.info(`night audit cut-off from HotelCost: ${cutoff} (was ${this.config.nightAuditCutoff})`);
     this.config.nightAuditCutoff = cutoff;
-    if (this.config.runAt <= cutoff) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);
+    const run = parseHHMM(this.config.runAt);
+    const cut = parseHHMM(cutoff);
+    if (run.hour * 60 + run.minute <= cut.hour * 60 + cut.minute) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);
   }
 
   /** Ask HotelCost for a "run now" request; run it if there is one. */

@@ -209,6 +209,11 @@ export function rowsToInvoices(rows: Cell[][], fileLabel: string): DetailResult<
     } else if (inv.invoiceDate !== invoiceDate) {
       warnings.push(`${where}: invoice ${invoiceNo} has a different date (${invoiceDate}) than its first row (${inv.invoiceDate}); first one kept`);
     }
+    // the total repeats on every row of an invoice: take the first one given, warn when rows disagree
+    if (total !== null) {
+      if (inv.total === null || inv.total === undefined) inv.total = total;
+      else if (Math.abs(inv.total - total) > 0.005) warnings.push(`${where}: invoice ${invoiceNo} has a different total (${total}) than an earlier row (${inv.total}); first one kept`);
+    }
     inv.lines.push({ itemCode: text(get(r, "itemCode")) || null, itemName, qty, unit: text(get(r, "unit")), unitPrice, taxRatePct });
   });
   return { items: [...byKey.values()], warnings };
