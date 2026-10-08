@@ -67,6 +67,7 @@ test("purchase receipt (warehouse) posts stock and shows in the ledger", async (
   await signIn(page, "warehouse@test.local");
   await page.goto("/purchasing");
   const inv = `DEMO-E2E-${uniq()}`;
+  await page.getByText("Receive goods by hand").click(); // the manual form is the backup: invoices normally come from Micros
   await page.getByLabel("Invoice no").fill(inv);
   await pickProduct(page, "Product 1", "Tomato", /^Tomato/);
   await page.getByLabel("Qty").fill("12");

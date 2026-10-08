@@ -160,6 +160,11 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
         duplicates++;
         continue;
       }
+      // a line missed on a paged screen or misread would post a wrong invoice: the printed total must match
+      if (inv.total !== null && inv.total !== undefined) {
+        const lines = inv.lines.reduce((a, l) => a + l.qty * l.unitPrice * (1 + (l.taxRatePct ?? 0) / 100), 0);
+        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT) — check that every line was read`);
+      }
       const wh = inv.warehouse ? warehouses.find((w) => low(w.code) === low(inv.warehouse!) || low(w.name) === low(inv.warehouse!)) : main;
       if (!wh) throw new DomainError("VALIDATION", `Unknown warehouse '${inv.warehouse}'`);
       const items = [];

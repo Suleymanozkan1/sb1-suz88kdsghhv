@@ -26,6 +26,8 @@ export const invoiceSchema = z.object({
   invoiceNo: z.string().trim().min(1).max(64),
   invoiceDate: day,
   warehouse: z.string().trim().max(100).optional().nullable(),
+  /** grand total incl. VAT as printed on the invoice (optional): HotelCost checks the lines add up to it */
+  total: num.optional().nullable(),
   lines: z.array(z.object({
     itemCode: z.string().trim().max(64).optional().nullable(),
     itemName: z.string().trim().min(1).max(200),
@@ -64,7 +66,7 @@ export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, 
 export interface CheckLine { itemCode?: string | null; itemName: string; qty: number; amount: number }
 export interface Check { checkNo: string; outlet: string; closedAt?: string; lines: CheckLine[] }
 export interface InvoiceLine { itemCode?: string | null; itemName: string; qty: number; unit: string; unitPrice: number; taxRatePct?: number | null }
-export interface Invoice { supplierName: string; invoiceNo: string; invoiceDate: string; warehouse?: string | null; lines: InvoiceLine[] }
+export interface Invoice { supplierName: string; invoiceNo: string; invoiceDate: string; warehouse?: string | null; total?: number | null; lines: InvoiceLine[] }
 export interface Covers { outlet: string; meal: string; covers: number }
 export interface Occupancy {
   availableRooms: number; occupiedRooms: number; guests: number;

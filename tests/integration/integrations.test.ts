@@ -76,6 +76,14 @@ describe("invoices → goods receipts", () => {
     expect(grn.items.find((i) => i.product.name === "Maydanoz")!.product.category.code).toBe("MICROS-NEW");
     expect(await ingest(prisma, bot, h.hotel.id, inv)).toMatchObject({ accepted: 0, duplicates: 1 });
   });
+  it("an invoice whose lines do not add up to its printed total is rejected, not posted", async () => {
+    const lines = [{ itemName: "Domates", qty: 10, unit: "kg", unitPrice: 25, taxRatePct: 1 }]; // 250 + 1 % VAT = 252.50
+    const bad = await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-90", total: 500, lines }] });
+    expect(bad.accepted).toBe(0);
+    expect(bad.errors[0]!.message).toContain("does not match its lines 252.50");
+    expect(await prisma.goodsReceipt.count({ where: { hotelId: h.hotel.id, invoiceNo: "A-90" } })).toBe(0);
+    expect(await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-91", total: 252.5, lines }] })).toMatchObject({ accepted: 1, errors: [] });
+  });
   it("an unknown unit on a new product is an error for that invoice only", async () => {
     const r = await ingest(prisma, bot, h.hotel.id, { ...inv, items: [{ ...inv.items[0]!, invoiceNo: "A-78", lines: [{ itemName: "Peynir", qty: 1, unit: "teneke", unitPrice: 900 }] }] });
     expect(r.accepted).toBe(0);

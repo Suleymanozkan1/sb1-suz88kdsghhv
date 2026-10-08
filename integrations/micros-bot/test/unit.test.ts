@@ -155,6 +155,12 @@ describe("invoice files", () => {
   test("missing required column is a clear error", () => {
     assert.throws(() => rowsToInvoices([["Supplier", "Invoice No"], ["A", "1"]], "x.csv"), /missing column\(s\) invoiceDate, itemName, qty, unit, unitPrice/);
   });
+  test("an optional invoice total column travels with the invoice", () => {
+    const r = rowsToInvoices([["Tedarikçi", "Fatura No", "Fatura Tarihi", "Ürün", "Miktar", "Birim", "Birim Fiyat", "KDV", "Fatura Toplamı"], ["Ege", "E-1", "06.10.2026", "Un", "2", "çuval", "100,00", "1", "252,50"], ["Ege", "E-1", "06.10.2026", "Yağ", "1", "teneke", "50,00", "1", "252,50"]], "t.csv");
+    assert.equal(r.items.length, 1);
+    assert.equal(r.items[0]!.total, 252.5); // 2 × 100 + 50, plus 1 % VAT
+    assert.equal(r.items[0]!.lines.length, 2);
+  });
   test("XLSX with English headers, Excel dates and number cells", async () => {
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();

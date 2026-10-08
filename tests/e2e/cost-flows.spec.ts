@@ -20,6 +20,7 @@ test("purchase flow: receipt posts stock and appears in the ledger (spec §284)"
   await login(page, "warehouse");
   await page.goto("/purchasing");
   const inv = `E2E-${uniq()}`;
+  await page.getByText("Receive goods by hand").click(); // the manual form is the backup: invoices normally come from Micros
   await page.getByLabel("Invoice no").fill(inv);
   await pickProduct(page, "Product 1", "Tomato", /Tomato/);
   await page.getByLabel("Qty").fill("12");

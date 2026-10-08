@@ -60,11 +60,17 @@ export function ReceiptForm({ suppliers, warehouses }: { suppliers: { id: string
         <div><Label htmlFor="rc-wh">{t("Warehouse")}</Label><Select id="rc-wh" name="warehouseId">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
         <div><Label htmlFor="rc-date">{t("Receipt date")}</Label><Input id="rc-date" name="receiptDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
         <div><Label htmlFor="rc-inv">{t("Invoice no")}</Label><Input id="rc-inv" name="invoiceNo" /></div>
-        <div><Label htmlFor="rc-fr">{t("Freight")}</Label><Input id="rc-fr" name="freight" inputMode="decimal" placeholder="0" /></div>
-        <div><Label htmlFor="rc-hd">{t("Handling")}</Label><Input id="rc-hd" name="handling" inputMode="decimal" placeholder="0" /></div>
-        <div><Label htmlFor="rc-ot">{t("Other landed cost")}</Label><Input id="rc-ot" name="otherCost" inputMode="decimal" placeholder="0" /></div>
-        <div><Label htmlFor="rc-al">{t("Allocate charges by")}</Label><Select id="rc-al" name="allocationMethod"><option value="BY_VALUE">{t("Value")}</option><option value="BY_QUANTITY">{t("Quantity")}</option></Select></div>
       </div>
+      {/* rarely used: kept out of the way, still sent with the form when filled in */}
+      <details className="rounded-lg border border-ink-100">
+        <summary className="cursor-pointer px-3 py-2 text-sm text-ink-600">{t("Freight and other charges (optional)")}</summary>
+        <div className="grid gap-3 p-3 md:grid-cols-4">
+          <div><Label htmlFor="rc-fr">{t("Freight")}</Label><Input id="rc-fr" name="freight" inputMode="decimal" placeholder="0" /></div>
+          <div><Label htmlFor="rc-hd">{t("Handling")}</Label><Input id="rc-hd" name="handling" inputMode="decimal" placeholder="0" /></div>
+          <div><Label htmlFor="rc-ot">{t("Other landed cost")}</Label><Input id="rc-ot" name="otherCost" inputMode="decimal" placeholder="0" /></div>
+          <div><Label htmlFor="rc-al">{t("Allocate charges by")}</Label><Select id="rc-al" name="allocationMethod"><option value="BY_VALUE">{t("Value")}</option><option value="BY_QUANTITY">{t("Quantity")}</option></Select></div>
+        </div>
+      </details>
       <div className="space-y-2">
         {lines.map((l, i) => (
           <div key={l.key} className="grid items-end gap-2 rounded-lg border border-ink-100 p-2 md:grid-cols-12">

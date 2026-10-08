@@ -55,6 +55,7 @@
       "invoiceDate": "#invoiceDate",
       "invoiceDateFormat": "DD.MM.YYYY",
       "warehouse": "#store",
+      "total": "#invoiceTotal",
       "lineRow": "#invoiceLines tbody tr",
       "line": {
         "itemCode": "td:nth-child(1)",

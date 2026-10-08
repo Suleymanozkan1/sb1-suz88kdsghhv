@@ -99,6 +99,8 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const expEge = invoicesFor(DAY)[0]!;
     assert.deepEqual(ege, {
       supplierName: expEge.supplier, invoiceNo: expEge.invoiceNo, invoiceDate: DAY, warehouse: "Ana Depo",
+      // the printed grand total (incl. VAT) travels with the invoice so HotelCost can check the lines add up
+      total: Number(expEge.lines.reduce((a, l) => a + l.qty * l.price * (1 + l.vat / 100), 0).toFixed(2)),
       lines: expEge.lines.map((l) => ({ itemCode: l.code, itemName: l.name, qty: l.qty, unit: l.unit, unitPrice: l.price, taxRatePct: l.vat })),
     });
     const ak = inv[0]!.items.find((i: any) => i.supplierName === "Akdeniz Et Ltd.");

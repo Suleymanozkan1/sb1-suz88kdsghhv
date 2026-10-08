@@ -177,7 +177,7 @@ yaptığını izleyebilir, sonucu ekranda JSON olarak görebilirsiniz (HotelCost
 |---|---|
 | `login` | `username`, `password`, `submit`, `loggedIn` (yalnız girişten sonra görünen öğe), `error` (hatalı şifre mesajı) |
 | `checks` | liste: `list`, `row`, `rowLink`, `noData`, `nextPage`; çek: `checkNo`, `outlet` (revenue center), `closedAt`; satırlar: `lineRow` + `itemCode`, `itemName`, `qty`, `amount` (indirim sonrası net, KDV hariç) |
-| `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`; kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
+| `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`, `total` (KDV dahil genel toplam, isteğe bağlı — kalemler tutmazsa HotelCost faturayı reddeder); kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
 | `covers` | `table`, `row`, `columns.outlet`, `columns.meal` (yoksa `defaultMeal`), `columns.covers` |
 | `statistics` (Opera) | `fields.availableRooms`, `occupiedRooms`, `guests`, `roomRevenue`, `outOfOrder`; `rooms` (dolu oda listesi, isteğe bağlı) |
 | `minibar` (Opera) | `table`, `row`, `columns.room`, `itemCode`, `itemName`, `qty`, `reference` (folyo/hareket no), `postedAt` |
