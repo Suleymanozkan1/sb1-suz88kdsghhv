@@ -151,7 +151,7 @@ const productListSelect = {
   shelfLifeDays: true,
   isStockItem: true,
   active: true,
-  category: { select: { id: true, name: true, code: true, group: true } },
+  category: { select: { id: true, name: true, code: true, group: true, accountCode: true } },
   conversions: { select: { fromUnit: true, toUnit: true, factor: true } },
   defaultSupplier: { select: { name: true } },
 } satisfies Prisma.ProductSelect;
@@ -201,4 +201,20 @@ export async function productCostTable(db: Db, hotelId: string): Promise<Map<str
 
 export function toConversions(rows: Array<{ fromUnit: string; toUnit: string; factor: { toString(): string } }>): ProductConversion[] {
   return rows.map((r) => ({ fromUnit: r.fromUnit, toUnit: r.toUnit, factor: r.factor.toString() }));
+}
+
+/** Chart-of-accounts code of a product category (hesap planı, e.g. "150.01"): optional, for matching with accounting later. */
+export async function setCategoryAccountCode(db: Db, actor: Actor, hotelId: string, categoryId: string, raw: unknown) {
+  authorize(actor, "product:manage", { hotelId });
+  const { accountCode } = z
+    .object({ accountCode: z.string().trim().max(32).regex(/^[0-9A-Za-z.\-/ ]*$/, "Use digits, letters, dots or dashes (e.g. 150.01)").nullish() })
+    .parse(raw ?? {});
+  const before = await db.productCategory.findFirst({ where: { id: categoryId, hotelId } });
+  if (!before) throw new DomainError("NOT_FOUND", "Category not found");
+  const value = accountCode?.trim() || null;
+  return inTx(db, async (tx) => {
+    const c = await tx.productCategory.update({ where: { id: categoryId }, data: { accountCode: value } });
+    await audit(tx, actor, { hotelId, action: "CATEGORY_ACCOUNT_CODE", entityType: "ProductCategory", entityId: categoryId, before: { accountCode: before.accountCode }, after: { accountCode: value } });
+    return c;
+  });
 }

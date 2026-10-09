@@ -14,7 +14,7 @@ export default async function NewRecipePage() {
   requirePageAccess(actor, "recipe:manage", hotelId);
   const [departments, subs] = await Promise.all([
     prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }),
-    prisma.recipe.findMany({ where: { hotelId, versions: { some: { status: "APPROVED" } } }, select: { id: true, name: true, versions: { where: { status: "APPROVED" }, select: { yieldUnit: true } } }, orderBy: { name: "asc" } }),
+    prisma.recipe.findMany({ where: { hotelId, deletedAt: null, versions: { some: { status: "APPROVED" } } }, select: { id: true, name: true, versions: { where: { status: "APPROVED" }, select: { yieldUnit: true } } }, orderBy: { name: "asc" } }),
   ]);
   return (
     <>

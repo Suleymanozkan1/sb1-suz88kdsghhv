@@ -8,15 +8,42 @@ const lastMonth = () => {
   return `from=${from}&to=${to}`;
 };
 
-test("room cost: occupancy, full room cost, channels and per-room lines (spec 281)", async ({ page }) => {
+test("room cost: occupancy, ADR / RevPAR, full room cost, per-room lines (spec 281, feedback r2 §10)", async ({ page }) => {
   await login(page, "controller");
   await page.goto(`/rooms?${lastMonth()}`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost");
   await expect(page.getByText("Cost / occupied night")).toBeVisible();
-  await expect(page.getByRole("cell", { name: "OTA" })).toBeVisible();
+  await expect(page.getByText("Full room cost (selected period)")).toBeVisible();
+  await expect(page.getByText("Cost of unsold rooms")).toBeVisible();
+  await expect(page.getByText("Room revenue per guest")).toBeVisible();
+  await expect(page.getByText("Laundry revenue")).toBeVisible();
+  await expect(page.getByText("By channel (net room contribution)")).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "Villa" }).first()).toBeVisible();
   await page.getByRole("link", { name: "Floor", exact: true }).click();
   await expect(page.getByRole("columnheader", { name: "Floor" }).first()).toBeVisible();
+});
+
+test("room cost expenses: enter a month, add an item, update it later", async ({ page }) => {
+  await login(page, "rooms");
+  await page.goto("/rooms");
+  await page.getByRole("link", { name: "Room cost expenses" }).first().click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost expenses");
+  await page.goto("/rooms/expenses?month=2020-01");
+  await expect(page.getByLabel("Item 1 name")).toHaveValue("Housekeeping salaries (total incl. SGK)");
+  await page.getByLabel("Item 1 amount").fill("45000");
+  await page.getByRole("button", { name: "Add item" }).click();
+  await page.getByLabel("Item 5 name").fill("Minibar water");
+  await page.getByLabel("Item 5 amount").fill("1200,50");
+  await page.getByRole("button", { name: "Save month" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Item 5 name")).toHaveValue("Minibar water");
+  await page.getByRole("button", { name: "Remove item 5" }).click();
+  await page.getByRole("button", { name: "Save month" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Item 5 name")).toHaveCount(0);
+  await expect(page.getByLabel("Item 1 amount")).toHaveValue("45000");
 });
 
 test("operating costs: post an expense, see it in the list, reverse it (immutable ledger)", async ({ page }) => {

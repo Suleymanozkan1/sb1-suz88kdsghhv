@@ -16,12 +16,12 @@ export const products: ReportDef = {
       filters: [[t("Search"), term || "—"]],
       tables: [{
         columns: [
-          { key: "name", header: t("Name") }, { key: "sku", header: t("Stock code") }, { key: "brand", header: t("Brand") }, { key: "category", header: t("Category") }, { key: "group", header: t("Group") },
+          { key: "name", header: t("Name") }, { key: "sku", header: t("Stock code") }, { key: "brand", header: t("Brand") }, { key: "category", header: t("Category") }, { key: "account", header: t("Account code") }, { key: "group", header: t("Group") },
           { key: "pu", header: t("Purchase unit") }, { key: "conv", header: t("Conversion") }, { key: "su", header: t("Stock unit") }, { key: "ru", header: t("Recipe unit") },
           { key: "supplier", header: t("Default supplier") }, { key: "vat", header: t("VAT %"), type: "pct" }, { key: "cost", header: t("Current cost"), type: "unitcost" }, { key: "status", header: t("Status") },
         ],
         rows: rows.map((p) => ({
-          name: p.name, sku: p.sku, brand: p.brand, category: p.category.name, group: t(p.category.group), pu: p.purchaseUnit,
+          name: p.name, sku: p.sku, brand: p.brand, category: p.category.name, account: p.category.accountCode, group: t(p.category.group), pu: p.purchaseUnit,
           conv: p.conversions.map((x) => `1 ${x.fromUnit} = ${Number(x.factor)} ${x.toUnit}`).join("; "), su: p.stockUnit, ru: p.recipeUnit,
           supplier: p.defaultSupplier?.name ?? null, vat: p.taxRatePct.toString(), cost: costs.get(p.id)?.unitCost?.toString() ?? null, status: p.active ? t("active") : t("inactive"),
         })),

@@ -22,6 +22,7 @@ import { requestStockDelete } from "../src/server/services/approvals";
 import { createSession, addLine, closeSession } from "../src/server/services/buffet";
 import { minibarSetup, setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../src/server/services/minibar";
 import { createAsset, createMeter, recordReading, recordLaundry, commitExpenseImport, createExpense } from "../src/server/services/opex";
+import { saveRoomCostItems } from "../src/server/services/room-costs";
 import { commitOccupancy, commitReservations } from "../src/server/services/pms";
 import { createRule, postAllocation } from "../src/server/services/allocation";
 import { periodFor } from "../src/server/services/period";
@@ -513,6 +514,11 @@ async function main() {
   await commitReservations(prisma, admin, H, "pms-reservations.csv", resRows);
   const occRows = days.map((d) => { const k = d.toISOString().slice(0, 10); const v = nightly.get(k) ?? { occ: 0, guests: 0, rev: 0 }; return { business_date: k, available_rooms: String(allRooms.length), occupied_rooms: String(v.occ), out_of_order: "0", guests: String(v.guests), room_revenue: v.rev.toFixed(2) }; });
   await commitOccupancy(prisma, pmsUser, H, "pms-daily-statistics.csv", occRows);
+  // monthly room cost expenses (Room cost → Room cost expenses): HK payroll is posted as expenses below, so only meals, uniforms and supplies here
+  for (const month of [...new Set(days.map((d) => d.toISOString().slice(0, 7)))]) {
+    const g = days.filter((d) => d.toISOString().startsWith(month)).reduce((a, d) => a + (nightly.get(d.toISOString().slice(0, 10))?.guests ?? 0), 0);
+    await saveRoomCostItems(prisma, pmsUser, H, { month, items: [{ name: "Housekeeping staff meals", amount: "61600" }, { name: "Staff uniforms / laundry (estimate)", amount: "9900" }, { name: "Room supplies (estimate: paper products, water, detergent…)", amount: String(g * 22) }] });
+  }
 
   // housekeeping store (amenities issued per occupied room) and linen room
   const hkProducts: Array<[string, string, string, string, number]> = [["HK-SOAP", "Guest Soap 25g", "Amenities", "pc", 4.2], ["HK-SLIPPER", "Guest Slippers", "Guest supplies", "pc", 18], ["HK-CHEM", "Multi-surface Cleaner", "Chemicals", "l", 85], ["LIN-SHEET", "Bed Sheet", "Bed linen", "pc", 420], ["LIN-TOWEL", "Bath Towel", "Towels", "pc", 260], ["LIN-ROBE", "Bathrobe", "Bathrobes", "pc", 780]];

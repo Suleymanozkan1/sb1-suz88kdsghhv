@@ -22,7 +22,7 @@ export const DEFAULT_ROOM_COST_ITEMS = [
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const monthInput = z.string().regex(MONTH, "Month must be YYYY-MM");
-const amount = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim() || "0").refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, "Amount must be a non-negative number");
+const amount = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".").trim() || "0").refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
 export const roomCostItemsInput = z.object({
   month: monthInput,
   items: z.array(z.object({ name: z.string().trim().min(1).max(120), amount })).max(40),

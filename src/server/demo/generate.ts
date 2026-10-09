@@ -1151,6 +1151,7 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   // operating expenses (spec 76-78): payroll from employees, utilities with a spike, contracts, repairs, daily small costs
   lap("minibar");
   await operatingCosts(ctx, pms);
+  await roomCostItemsPhase(ctx, pms);
   lap("operating costs");
 
   // allocation (spec 145) for every full month
@@ -1238,6 +1239,23 @@ async function minibarPhase(ctx: Ctx, sim: SimResult) {
   }
   scenario(ctx, "S09_MINIBAR_DISCREPANCY", "Minibar counts short against the room sub-ledger", "EDGE_CASE", "Minibar shrinkage per room", "Room", [...new Set(discrepancy)]);
   return mbRooms;
+}
+
+/**
+ * Monthly room cost expenses as entered on the Room cost expenses screen (not in the ledger): HK staff meals,
+ * uniforms / laundry and room supplies (water: 2 bottles per guest night). HK salaries are already in the
+ * payroll postings, so the demo does not enter them again.
+ */
+async function roomCostItemsPhase(ctx: Ctx, pms: Pms) {
+  const { db, hotelId: H, n: N } = ctx;
+  const hk = await db.employee.count({ where: { hotelId: H, departmentId: ctx.dept.HK } });
+  const names = N.locale === "tr"
+    ? ["Kat hizmetleri personel yemek gideri", "Personel kıyafet / yıkama gideri (tahmini)", "Oda giderleri (tahmini: kâğıt ürünleri, su, deterjan vb.)"]
+    : ["Housekeeping staff meals", "Staff uniforms / laundry (estimate)", "Room supplies (estimate: paper products, water, detergent…)"];
+  const guests = new Map<string, number>();
+  for (const d of ctx.days) guests.set(ymd(d).slice(0, 7), (guests.get(ymd(d).slice(0, 7)) ?? 0) + (pms.nightly.get(ymd(d))?.guests ?? 0));
+  const data = [...guests].flatMap(([month, g]) => [hk * 26 * 140, hk * 450, g * (2 * 8 + 6)].map((amount, i) => ({ hotelId: H, month, name: names[i]!, amount: amount.toFixed(2), sortOrder: i })));
+  if (data.length) await db.roomCostItem.createMany({ data });
 }
 
 async function operatingCosts(ctx: Ctx, pms: Pms) {

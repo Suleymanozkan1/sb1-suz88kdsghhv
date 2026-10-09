@@ -1,7 +1,7 @@
 /**
  * What the automation (Micros / Opera bot) sends is written here: checks → sales (and, through the recipes, stock
  * consumption), invoices → goods receipts, covers → buffet covers, minibar charges → minibar consumption,
- * occupancy → night-audit statistics. Every kind is idempotent (see contract.ts): sending a business day again
+ * occupancy → night-audit statistics, products → product cards ("Ürünleri çek"). Every kind is idempotent (see contract.ts): sending a business day again
  * reports the known records as duplicates and writes nothing twice. One bad item never stops the others; it is
  * listed in the result and in the run log.
  */
@@ -233,6 +233,59 @@ async function ingestMinibar(db: Db, actor: Actor, hotelId: string, p: Extract<I
   return { received: p.items.length, accepted, duplicates, errors };
 }
 
+/** Packaging units as purchasing screens print them → HotelCost packaging units (sized per product by a conversion). */
+const PACK_ALIASES: Record<string, string> = { koli: "case", kasa: "case", case: "case", kutu: "box", box: "box", paket: "pack", pk: "pack", pack: "pack", "şişe": "bottle", sise: "bottle", bottle: "bottle", teneke: "can", can: "can", tepsi: "tray", tray: "tray", torba: "bag", "çuval": "bag", cuval: "bag", bag: "bag" };
+/** a pack's content is stocked in kg / l / pc: grams and millilitres are scaled */
+const CONTENT: Record<string, [string, number]> = { kg: ["kg", 1], g: ["kg", 0.001], l: ["l", 1], ml: ["l", 0.001], cl: ["l", 0.01], pc: ["pc", 1] };
+const recipeUnitOf = (stock: string) => (stock === "kg" ? "g" : stock === "l" ? "ml" : stock);
+
+/**
+ * Units of a product card from Micros: the unit it is bought in and, when given, what one unit holds (kilo /
+ * gramaj). A case of 12 pcs → bought per case, stocked per pc; a 0.7 l bottle → per bottle, stocked in l; an 830 g
+ * tin sold per piece → stocked per pc with 1 pc = 0.83 kg, so recipes can use grams.
+ */
+export function productUnits(unit: string, packSize?: number | null, packUnit?: string | null) {
+  const base = normalizeUnit(unit);
+  const pack = PACK_ALIASES[low(unit).replace(/\.$/, "")] ?? null;
+  const content = packSize && packUnit ? CONTENT[normalizeUnit(packUnit) ?? ""] : undefined;
+  const factor = content ? String(Number((packSize! * content[1]).toFixed(6))) : null;
+  if (base && content && content[0] !== base && base === "pc") return { purchaseUnit: "pc", stockUnit: "pc", recipeUnit: recipeUnitOf(content[0]), conversions: [{ fromUnit: "pc", toUnit: content[0], factor: factor! }] };
+  if (base) return { purchaseUnit: base, stockUnit: base, recipeUnit: recipeUnitOf(base), conversions: [] };
+  if (pack && content) return { purchaseUnit: pack, stockUnit: content[0], recipeUnit: recipeUnitOf(content[0]), conversions: [{ fromUnit: pack, toUnit: content[0], factor: factor! }] };
+  if (pack) return { purchaseUnit: pack, stockUnit: pack, recipeUnit: pack, conversions: [] };
+  return null;
+}
+
+async function ingestProducts(db: Db, actor: Actor, hotelId: string, p: Extract<IngestInput, { kind: "products" }>): Promise<Out> {
+  const errors: Out["errors"] = [];
+  let accepted = 0;
+  let duplicates = 0;
+  const [products, categories] = await Promise.all([db.product.findMany({ where: { hotelId }, select: { name: true, sku: true } }), db.productCategory.findMany({ where: { hotelId }, select: { id: true, code: true, name: true, accountCode: true } })]);
+  // Turkish case-insensitive (İ/i, I/ı): the database's insensitive match does not know the Turkish letters
+  const names = new Set(products.map((x) => low(x.name)));
+  const skus = new Set(products.map((x) => low(x.sku)));
+  const category = (text?: string | null) => (text ? categories.find((c) => [c.name, c.code, c.accountCode].some((v) => v && low(v) === low(text))) : undefined);
+  for (const [i, item] of p.items.entries()) {
+    try {
+      const name = item.name.trim();
+      if (names.has(low(name)) || (item.code && skus.has(low(item.code)))) {
+        duplicates++;
+        continue;
+      }
+      const units = productUnits(item.unit, item.packSize, item.packUnit);
+      if (!units) throw new DomainError("VALIDATION", `unknown unit '${item.unit}'`);
+      const cat = category(item.category) ?? (await unsortedCategory(db, hotelId));
+      const created = await createProduct(db, actor, hotelId, { name, sku: item.code && !skus.has(low(item.code)) ? item.code : null, categoryId: cat.id, ...units, taxRatePct: item.taxRatePct ?? undefined });
+      names.add(low(created.name));
+      skus.add(low(created.sku));
+      accepted++;
+    } catch (e) {
+      errors.push({ item: i, message: `${item.name}: ${msg(e)}` });
+    }
+  }
+  return { received: p.items.length, accepted, duplicates, errors };
+}
+
 async function ingestOccupancy(db: Db, hotelId: string, p: Extract<IngestInput, { kind: "occupancy" }>): Promise<Out> {
   const o = p.items[0]!;
   const businessDate = new Date(`${p.businessDay}T00:00:00Z`);
@@ -245,12 +298,13 @@ async function ingestOccupancy(db: Db, hotelId: string, p: Extract<IngestInput, 
 /** Writes one delivery and adds its numbers to the run's log entry. */
 export async function ingest(db: Db, actor: Actor, hotelId: string, raw: unknown): Promise<IngestResult> {
   const p = ingestSchema.parse(raw);
-  const runId = p.runId ?? `${p.source.toLowerCase()}-${p.businessDay}-${Date.now().toString(36)}`;
+  const runId = p.runId ?? `${p.source.toLowerCase()}-${p.businessDay ?? p.kind}-${Date.now().toString(36)}`;
   const out =
     p.kind === "checks" ? await ingestChecks(db, actor, hotelId, p, runId)
     : p.kind === "invoices" ? await ingestInvoices(db, actor, hotelId, p)
     : p.kind === "covers" ? await ingestCovers(db, hotelId, p)
     : p.kind === "minibar" ? await ingestMinibar(db, actor, hotelId, p)
+    : p.kind === "products" ? await ingestProducts(db, actor, hotelId, p)
     : await ingestOccupancy(db, hotelId, p);
   const result: IngestResult = { runId, kind: p.kind, ...out, errors: out.errors.slice(0, 200) };
   const prev = await db.integrationRun.findUnique({ where: { hotelId_runId: { hotelId, runId } } });
@@ -258,9 +312,11 @@ export async function ingest(db: Db, actor: Actor, hotelId: string, raw: unknown
   await db.integrationRun.upsert({
     where: { hotelId_runId: { hotelId, runId } },
     // a delivery without a run report is a run of its own: finished when it is written
-    create: { hotelId, runId, source: p.source, businessDay: p.businessDay, status: result.errors.length ? "FAILED" : "SUCCEEDED", message: result.errors.length ? `${result.errors.length} error(s)` : null, stats: stats as Prisma.InputJsonValue, finishedAt: p.runId ? null : new Date() },
-    update: { stats: stats as Prisma.InputJsonValue, businessDay: prev?.businessDay ?? p.businessDay },
+    create: { hotelId, runId, source: p.source, businessDay: p.businessDay ?? null, status: result.errors.length ? "FAILED" : "SUCCEEDED", message: result.errors.length ? `${result.errors.length} error(s)` : null, stats: stats as Prisma.InputJsonValue, finishedAt: p.runId ? null : new Date() },
+    update: { stats: stats as Prisma.InputJsonValue, businessDay: prev?.businessDay ?? p.businessDay ?? null },
   });
+  // a product pull sent without a run report (no runId) is complete when written
+  if (p.kind === "products" && !p.runId && !result.errors.length) await db.hotel.update({ where: { id: hotelId }, data: { productsPulledAt: new Date() } });
   return result;
 }
 
@@ -274,6 +330,11 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
   const done = r.status !== "STARTED";
   const data = { source: r.source, status: r.status, message: r.message ?? null, businessDay: r.businessDay ?? null, requestId: r.requestId ?? null, finishedAt: done ? new Date() : null };
   const run = await db.integrationRun.upsert({ where: { hotelId_runId: { hotelId, runId: r.runId } }, create: { hotelId, runId: r.runId, ...data }, update: { ...data, businessDay: data.businessDay ?? undefined } });
+  // a product pull that went through: the next one asks only for products added since it was picked up
+  if (r.status === "SUCCEEDED" && r.requestId) {
+    const req = await db.integrationRequest.findFirst({ where: { id: r.requestId, hotelId, kind: "PRODUCTS" } });
+    if (req) await db.hotel.update({ where: { id: hotelId }, data: { productsPulledAt: req.pickedAt ?? new Date() } });
+  }
   if (r.source === "MICROS" && r.status === "SUCCEEDED") {
     try {
       await runAutoOrders(db, hotelId);
@@ -287,28 +348,42 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
 /** The bot asks whether someone pressed "run now"; the oldest open request is handed out once. */
 export async function nextRequest(db: Db, hotelId: string, source?: string) {
   // the hotel's own night-audit cut-off travels with every poll, so the automation follows the admin setting
-  const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { businessDayCutoff: true, timezone: true } });
+  const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { businessDayCutoff: true, timezone: true, productsPulledAt: true } });
   const settings = { businessDayCutoff: hotel.businessDayCutoff, timezone: hotel.timezone };
   const req = await db.integrationRequest.findFirst({ where: { hotelId, pickedAt: null, ...(source ? { source } : {}) }, orderBy: { createdAt: "asc" } });
   if (!req) return { request: null, settings };
   // two polls can see the same open request: only the one that flips pickedAt gets it
   const claimed = await db.integrationRequest.updateMany({ where: { id: req.id, pickedAt: null }, data: { pickedAt: new Date() } });
   if (claimed.count !== 1) return { request: null, settings };
-  return { request: { id: req.id, source: req.source, businessDay: req.businessDay }, settings };
+  // a product pull ("Ürünleri çek") asks for the products added in Micros since the last successful pull
+  return { request: { id: req.id, source: req.source, businessDay: req.businessDay, kind: req.kind, ...(req.kind === "PRODUCTS" ? { since: hotel.productsPulledAt?.toISOString() ?? null } : {}) }, settings };
 }
 
 // ───────── screen ─────────
 
 export async function requestRun(db: Db, actor: Actor, hotelId: string, raw: unknown) {
-  authorize(actor, "sales:import", { hotelId });
-  const b = (raw ?? {}) as { source?: string; businessDay?: string };
-  const source = b.source === "OPERA" ? "OPERA" : "MICROS";
-  const businessDay = typeof b.businessDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.businessDay) ? b.businessDay : null;
-  const open = await db.integrationRequest.findFirst({ where: { hotelId, source, pickedAt: null } });
+  const b = (raw ?? {}) as { source?: string; businessDay?: string; kind?: string };
+  // "Ürünleri çek" (products page): product managers, not only those who import sales
+  const kind = b.kind === "PRODUCTS" ? "PRODUCTS" : "DAY";
+  authorize(actor, kind === "PRODUCTS" ? "product:manage" : "sales:import", { hotelId });
+  const source = kind === "PRODUCTS" || b.source !== "OPERA" ? "MICROS" : "OPERA";
+  const businessDay = kind === "DAY" && typeof b.businessDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.businessDay) ? b.businessDay : null;
+  const open = await db.integrationRequest.findFirst({ where: { hotelId, source, kind, pickedAt: null } });
   if (open) return { id: open.id, alreadyWaiting: true };
-  const r = await db.integrationRequest.create({ data: { hotelId, source, businessDay, requestedById: actor.userId } });
-  await audit(db, actor, { hotelId, action: "INTEGRATION_RUN_REQUEST", entityType: "IntegrationRequest", entityId: r.id, after: { source, businessDay } });
+  const r = await db.integrationRequest.create({ data: { hotelId, source, kind, businessDay, requestedById: actor.userId } });
+  await audit(db, actor, { hotelId, action: kind === "PRODUCTS" ? "INTEGRATION_PRODUCT_PULL_REQUEST" : "INTEGRATION_RUN_REQUEST", entityType: "IntegrationRequest", entityId: r.id, after: { source, kind, businessDay } });
   return { id: r.id, alreadyWaiting: false };
+}
+
+/** Products page: when the products were last pulled from Micros, whether a pull is waiting, and whether there is an automation at all. */
+export async function productPullStatus(db: Db, actor: Actor, hotelId: string) {
+  authorize(actor, "product:view", { hotelId });
+  const [hotel, waiting, keys] = await Promise.all([
+    db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { productsPulledAt: true } }),
+    db.integrationRequest.findFirst({ where: { hotelId, kind: "PRODUCTS", pickedAt: null }, orderBy: { createdAt: "asc" } }),
+    db.integrationKey.count({ where: { hotelId, revokedAt: null } }),
+  ]);
+  return { lastPulledAt: hotel.productsPulledAt, waitingSince: waiting?.createdAt ?? null, automation: keys > 0 };
 }
 
 /** The bot runs ~45 min after the cut-off: the day just closed is expected only after this margin, not at the cut-off. */
@@ -331,13 +406,14 @@ export async function integrationHealth(db: Db, hotelId: string, now = new Date(
   // a source is in use when it delivered recently: a one-off "run now" of a source the hotel does not use (or one that
   // was switched off) must not keep a banner up for ever; with no recent success at all, every recent source counts
   const since = new Date(now.getTime() - SOURCE_ACTIVE_DAYS * DAY_MS);
-  const recent = async (status?: "SUCCEEDED") => (await db.integrationRun.findMany({ where: { hotelId, startedAt: { gte: since }, ...(status ? { status } : {}) }, distinct: ["source"], select: { source: true }, orderBy: { source: "asc" } })).map((r) => r.source);
+  const recent = async (status?: "SUCCEEDED") => (await db.integrationRun.findMany({ where: { hotelId, startedAt: { gte: since }, businessDay: { not: null }, ...(status ? { status } : {}) }, distinct: ["source"], select: { source: true }, orderBy: { source: "asc" } })).map((r) => r.source);
   const delivering = await recent("SUCCEEDED");
   const used = delivering.length ? delivering : await recent();
   const sources = await Promise.all(
     used.map(async (source) => {
       const [lastRun, okForDay] = await Promise.all([
-        db.integrationRun.findFirst({ where: { hotelId, source }, orderBy: { startedAt: "desc" } }),
+        // product pulls carry no business day: they are not part of the nightly delivery
+        db.integrationRun.findFirst({ where: { hotelId, source, businessDay: { not: null } }, orderBy: { startedAt: "desc" } }),
         db.integrationRun.findFirst({ where: { hotelId, source, businessDay: expectedDay, status: "SUCCEEDED" } }),
       ]);
       const rejected = Object.values((lastRun?.stats ?? {}) as Record<string, { errors?: unknown[] }>).reduce((a, v) => a + (v.errors?.length ?? 0), 0);

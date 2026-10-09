@@ -198,7 +198,8 @@ export function prorateMonth(month: string, amount: Numeric, from: Date, to: Dat
   const end = Date.UTC(y, m, 1);
   const overlap = Math.min(end, to.getTime()) - Math.max(start, from.getTime());
   if (overlap <= 0) return ZERO;
-  return D(amount).times(Math.round(overlap / DAY)).div(Math.round((end - start) / DAY));
+  const days = (ms: number) => Math.trunc(ms / DAY + 0.5); // whole days (UTC midnights)
+  return D(amount).times(days(overlap)).div(days(end - start));
 }
 
 /** The months ('YYYY-MM') that [from, to) touches. */

@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { homeDashboard, LEVEL_LABEL, STOCK_LEVELS } from "@/server/services/insights";
 import { BasicDashboard } from "./basic-dashboard";
 import { AlertList, PriceSummary } from "./dashboard-panels";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone, severityTone } from "@/components/ui";
+import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
-import { money, pct, qty, dateTime } from "@/lib/format";
+import { money, pct, qty } from "@/lib/format";
 import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
