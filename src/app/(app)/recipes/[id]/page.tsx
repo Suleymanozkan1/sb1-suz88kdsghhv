@@ -53,7 +53,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
         exportKey="recipe"
         exportParams={{ id }}
         title={recipe.name}
-        subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}<span className="block">{t("Created")}: {day(recipe.createdAt)} · {t("Updated")}: {day(recipe.updatedAt)}</span></span>}
+        subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}<span className="block">{t("Created on")}: {day(recipe.createdAt)} · {t("Updated on")}: {day(recipe.updatedAt)}</span></span>}
         actions={manage ? <><Link href={`/recipes/${id}/edit`}><Button variant="secondary"><Pencil className="h-4 w-4" /> {t("Edit")}</Button></Link><DeleteRecipeButton recipeId={id} name={recipe.name} /></> : null}
       />
       {!c.complete && <div className="mb-4"><Alert tone="amber">{t("Incomplete cost:")} {c.issues.map((i) => `${t(i.issue)} (${i.path})`).join(", ")}</Alert></div>}
@@ -89,7 +89,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
                   <Td><Badge tone={v.status === "APPROVED" ? "green" : v.status === "DRAFT" ? "amber" : "gray"}>{t(v.status)}</Badge></Td>
                   <Td>{day(v.effectiveFrom)}{v.effectiveTo ? ` → ${day(v.effectiveTo)}` : ""}</Td>
                   <Td align="right">{money(v.portionCost?.toString(), cur)}</Td>
-                  <Td><span className="text-xs text-ink-500">{v.reason ?? "—"}</span></Td>
+                  <Td><span className="text-xs text-ink-500">{v.reason ? t(v.reason) : "—"}</span></Td>
                   <Td>{v.status === "DRAFT" && can(actor, "recipe:approve") && <ApproveButton versionId={v.id} />}</Td>
                 </tr>
               ))}

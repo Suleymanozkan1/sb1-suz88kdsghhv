@@ -35,7 +35,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
       } title={t("{n} recipes", { n: res.data.length })}>
         {res.data.length === 0 ? <div className="p-4"><Empty title={t("No recipes")} /></div> : (
           <Table>
-            <thead><tr><Th>{t("Recipe")}</Th><Th>{t("Type")}</Th><Th>{t("Department")}</Th><Th>{t("Version")}</Th><Th align="right">{t("Portion cost")}</Th><Th align="right">{t("Price")}</Th><Th align="right">{t("Food cost %")}</Th><Th align="right">{t("Margin %")}</Th><Th>{t("Status")}</Th><Th>{t("Created")}</Th><Th>{t("Updated")}</Th>{manage && <Th />}</tr></thead>
+            <thead><tr><Th>{t("Recipe")}</Th><Th>{t("Type")}</Th><Th>{t("Department")}</Th><Th>{t("Version")}</Th><Th align="right">{t("Portion cost")}</Th><Th align="right">{t("Price")}</Th><Th align="right">{t("Food cost %")}</Th><Th align="right">{t("Margin %")}</Th><Th>{t("Status")}</Th><Th>{t("Created on")}</Th><Th>{t("Updated on")}</Th>{manage && <Th />}</tr></thead>
             <tbody className="divide-y divide-ink-100">
               {res.data.map((r) => (
                 <tr key={r.id} className="hover:bg-ink-50">

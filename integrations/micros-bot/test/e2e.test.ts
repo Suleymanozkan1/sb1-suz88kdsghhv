@@ -244,6 +244,35 @@ describe("end-to-end against the mock Micros / Opera", () => {
     assert.equal(await daemon.pollOnce(), null);
   });
 
+  test("daemon: a 'Ürünleri çek' request reads the products added since the last pull, without a business day", async () => {
+    // last pull on 02.10 (hotel time): the cards created on 02.10, 05.10 and 06.10 are read, the one from 20.09 is not
+    hc.state.queue.push({ id: "req_p1", source: "MICROS", businessDay: null, kind: "PRODUCTS", since: "2026-10-01T22:30:00.000Z" });
+    const daemon = new Daemon(cfg());
+    const req = await daemon.pollOnce();
+    assert.equal(req?.id, "req_p1");
+    const sent = hc.ingests("products");
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]!.businessDay, undefined);
+    assert.deepEqual(sent[0]!.items, [
+      { name: "Domates Salçası 830 gr", code: "ST-31", unit: "adet", packSize: 830, packUnit: "gr", taxRatePct: 1, category: "Kuru Gıda" },
+      { name: "Maden Suyu 200 ml", code: "B-40", unit: "koli", packSize: 24, packUnit: "adet", taxRatePct: 20, category: "İçecek" },
+      { name: "Dana Antrikot", code: null, unit: "kg", packSize: null, packUnit: null, taxRatePct: 1, category: "Et" },
+    ]);
+    assert.ok(micros.state.hits.some((h) => h === "/purchasing/items?since=02.10.2026"), micros.state.hits.join(" "));
+    // only the products: no checks, invoices or covers in a product pull
+    assert.deepEqual(hc.ingests().map((b) => b.kind), ["products"]);
+    assert.deepEqual(hc.runs().map((r) => `${r.source}:${r.status}:${r.requestId}:${r.businessDay ?? "-"}`), ["MICROS:STARTED:req_p1:-", "MICROS:SUCCEEDED:req_p1:-"]);
+  });
+
+  test("the nightly run never reads the products; a first pull reads every card", async () => {
+    await runBot(cfg(), { day: DAY, source: "MICROS" });
+    assert.ok(!hc.ingests().some((b) => b.kind === "products"));
+    hc.state.requests.length = 0;
+    const r = await runBot(cfg(), { only: ["products"], since: null });
+    assert.equal(r.ok, true);
+    assert.equal(hc.ingests("products")[0]!.items.length, 4);
+  });
+
   test("daemon: follows the night-audit cut-off set in HotelCost", async () => {
     hc.state.settings = { businessDayCutoff: "04:00", timezone: "Europe/Istanbul" };
     const c = cfg({ NIGHT_AUDIT_CUTOFF: "03:30" });

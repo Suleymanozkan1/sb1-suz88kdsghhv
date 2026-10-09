@@ -3,6 +3,8 @@
  *
  * Kinds are grouped by the system they come from; each group is one run reported to HotelCost:
  *   MICROS: checks, invoices, covers   (invoices may come from files instead: INVOICE_SOURCE=file)
+ *           products                   only on request ("Ürünleri çek" in HotelCost / --only products): the product
+ *                                      cards added since the last pull; such a run has no business day
  *   OPERA:  minibar, occupancy         (only when OPERA_URL is set)
  * For each group: report STARTED → sign in → read + post every kind → report SUCCEEDED or FAILED.
  * One kind failing never stops the others; the run is FAILED (with every message) if any kind failed.
@@ -23,6 +25,7 @@ import type { ScreenContext } from "./screens/context";
 import { microsLogin } from "./screens/micros/login";
 import { readChecks } from "./screens/micros/checks";
 import { readCovers } from "./screens/micros/covers";
+import { readProducts } from "./screens/micros/products";
 import { operaLogin, readOccupancy } from "./screens/opera/statistics";
 import { readMinibar } from "./screens/opera/minibar";
 import { createInvoiceReader, type InvoiceReader } from "./invoices/source";
@@ -30,9 +33,11 @@ import { StateStore } from "./state";
 import { defaultBusinessDay } from "./util/time";
 
 export const KINDS_BY_SOURCE: Record<"MICROS" | "OPERA", Kind[]> = {
-  MICROS: ["checks", "invoices", "covers"],
+  MICROS: ["checks", "invoices", "covers", "products"],
   OPERA: ["minibar", "occupancy"],
 };
+/** read only when asked for explicitly (a "Ürünleri çek" request or --only), never in the nightly run */
+export const ON_REQUEST_KINDS: Kind[] = ["products"];
 
 export interface RunOptions {
   /** business day YYYY-MM-DD; default: the last day closed by the night audit */
@@ -41,6 +46,8 @@ export interface RunOptions {
   only?: Kind[];
   /** limit to one system (a "run now" request names its source) */
   source?: RunSource;
+  /** products: ISO time of the last successful pull (only products added since then are read) */
+  since?: string | null;
   dryRun?: boolean;
   requestId?: string;
   now?: Date;
@@ -124,7 +131,7 @@ export async function runBot(config: Config, opts: RunOptions = {}, deps: Deps =
   const state = new StateStore(config.stateDir);
   const print = opts.print ?? ((t: string) => process.stdout.write(t + "\n"));
   const explicit = new Set(opts.only ?? []);
-  const wanted = (k: Kind) => (opts.only ? explicit.has(k) : true);
+  const wanted = (k: Kind) => (opts.only ? explicit.has(k) : !ON_REQUEST_KINDS.includes(k));
 
   pruneRunDirs(config.runsDir, 30);
   const previous = state.get(day);
@@ -159,7 +166,9 @@ async function runSource(
   print: (t: string) => void,
   deps: Deps,
 ): Promise<SourceRunReport> {
-  const runId = makeRunId(source, day);
+  // a product pull is not about a business day: reported without one (HotelCost keeps it out of the nightly health)
+  const dayless = kinds.every((k) => ON_REQUEST_KINDS.includes(k));
+  const runId = makeRunId(source, dayless ? "products" : day);
   const runDir = path.join(config.runsDir, runId);
   fs.mkdirSync(runDir, { recursive: true });
   const removeLog = addLogFile(path.join(runDir, "run.log"));
@@ -167,9 +176,9 @@ async function runSource(
   const evidence: string[] = [];
   let session: BrowserSession | undefined;
   const runReport = (status: "STARTED" | "SUCCEEDED" | "FAILED", message?: string) =>
-    opts.dryRun ? Promise.resolve(true) : client.reportRun({ runId, source, status, businessDay: day, message, ...(opts.requestId ? { requestId: opts.requestId } : {}) });
+    opts.dryRun ? Promise.resolve(true) : client.reportRun({ runId, source, status, ...(dayless ? {} : { businessDay: day }), message, ...(opts.requestId ? { requestId: opts.requestId } : {}) });
 
-  log.info(`run ${runId}: ${source} ${kinds.join(", ")} for business day ${day}${opts.dryRun ? " (dry run)" : ""}${opts.requestId ? ` (request ${opts.requestId})` : ""}`);
+  log.info(`run ${runId}: ${source} ${kinds.join(", ")} ${dayless ? `added since ${opts.since ?? "the start"}` : `for business day ${day}`}${opts.dryRun ? " (dry run)" : ""}${opts.requestId ? ` (request ${opts.requestId})` : ""}`);
   await runReport("STARTED");
 
   const fail = (kind: Kind, error: string) => {
@@ -242,6 +251,7 @@ async function runSource(
         let ingestSource: IngestSource = source;
         if (kind === "checks") ({ items, warnings } = await readChecks(micros!));
         else if (kind === "covers") ({ items, warnings } = await readCovers(micros!));
+        else if (kind === "products") ({ items, warnings } = await readProducts(micros!, opts.since));
         else if (kind === "invoices") {
           ({ items, warnings } = await invoiceReader!.read(day, micros));
           ingestSource = invoiceReader!.ingestSource;
@@ -277,7 +287,7 @@ async function runSource(
     const warnings = [...readWarnings, ...invalid.map((e) => `item #${e.item + 1} invalid: ${e.message}`)];
     for (const w of invalid) log.warn(`[${kind}] item #${w.item + 1} not sent: ${w.message}`);
     if (opts.dryRun) {
-      print(JSON.stringify({ kind, source: ingestSource, businessDay: day, runId, items: valid }, null, 2));
+      print(JSON.stringify({ kind, source: ingestSource, ...(dayless ? {} : { businessDay: day }), runId, items: valid }, null, 2));
       return { kind, ok: true, items: valid.length, warnings };
     }
     if (valid.length === 0) {
@@ -285,7 +295,7 @@ async function runSource(
       return { kind, ok: true, items: 0, warnings };
     }
     const chunk = kind === "checks" ? config.checksChunkSize : kind === "invoices" || kind === "minibar" ? config.invoicesChunkSize : 500;
-    const res = await client.ingest({ kind, source: ingestSource, businessDay: day, runId }, valid, chunk);
+    const res = await client.ingest({ kind, source: ingestSource, ...(kind === "products" ? {} : { businessDay: day }), runId }, valid, chunk);
     for (const e of res.errors.slice(0, 20)) warnings.push(`rejected by HotelCost: item #${e.item + 1}: ${e.message}`);
     log.info(`[${kind}] posted ${valid.length}: accepted ${res.accepted}, duplicates ${res.duplicates}, rejected ${res.errors.length}`);
     state.record(day, kind, { at: new Date().toISOString(), runId, items: valid.length, accepted: res.accepted, duplicates: res.duplicates, rejected: res.errors.length });

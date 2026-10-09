@@ -109,6 +109,7 @@ describe("selectors", () => {
     assert.ok(todos.includes("login.username"));
     assert.ok(todos.includes("checks.steps[0].goto"));
     assert.ok(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.json"))).includes("minibar.columns.reference"));
+    assert.ok(todos.includes("products.columns.name") && todos.includes("products.steps[0].goto"), "the products screen ships as a TODO like the others");
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/micros.mock.json"))), []);
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.mock.json"))), []);
   });
@@ -233,6 +234,17 @@ describe("HotelCost client", () => {
     const client = new HotelCostClient({ baseUrl: "http://127.0.0.1:1", apiKey: "k", retries: 2, retryBaseMs: 1 });
     await assert.rejects(client.nextRequest(), /network error calling HotelCost/);
     assert.equal(await client.reportRun({ runId: "x", source: "MICROS", status: "STARTED" }), false);
+  });
+
+  test("product cards: validated like the server contract", () => {
+    const { valid, invalid } = validateItems("products", [
+      { name: "Domates Salçası 830 gr", code: "ST-31", unit: "adet", packSize: 830, packUnit: "gr", taxRatePct: 1, category: "Kuru Gıda" },
+      { name: "Dana Antrikot", unit: "kg" },
+      { name: "", unit: "kg" },
+      { name: "Bozuk KDV", unit: "kg", taxRatePct: 120 },
+    ]);
+    assert.equal(valid.length, 2);
+    assert.deepEqual(invalid.map((e) => e.item), [2, 3]);
   });
 
   test("local validation drops invalid items with a reason", () => {

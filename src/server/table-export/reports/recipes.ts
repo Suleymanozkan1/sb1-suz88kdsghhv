@@ -22,7 +22,7 @@ export const recipes: ReportDef = {
           { key: "name", header: t("Recipe") }, { key: "code", header: t("Code") }, { key: "pos", header: t("POS code") }, { key: "type", header: t("Type") }, { key: "dept", header: t("Department") },
           { key: "version", header: t("Version") }, { key: "portionCost", header: t("Portion cost"), type: "money" }, { key: "price", header: t("Price"), type: "money" },
           { key: "fc", header: t("Food cost %"), type: "pct" }, { key: "margin", header: t("Margin %"), type: "pct" }, { key: "status", header: t("Status") },
-          { key: "created", header: t("Created"), type: "date" }, { key: "updated", header: t("Updated"), type: "date" },
+          { key: "created", header: t("Created on"), type: "date" }, { key: "updated", header: t("Updated on"), type: "date" },
         ],
         rows: rows.map((r) => ({
           name: r.name, code: r.code, pos: r.posCode, type: t(r.type), dept: r.department, version: r.currentVersion ? `v${r.currentVersion}` : null,
@@ -52,7 +52,7 @@ export const recipe: ReportDef = {
     walk(c.lines, 0);
     return {
       title: r.name,
-      subtitle: `${r.code} · ${t(r.type)} · ${r.department?.name ?? "—"} · v${version.version} (${t(version.status)}) · ${t("Created")} ${localDay(hotel.timezone, r.createdAt).split("-").reverse().join(".")} · ${t("Updated")} ${localDay(hotel.timezone, r.updatedAt).split("-").reverse().join(".")}`,
+      subtitle: `${r.code} · ${t(r.type)} · ${r.department?.name ?? "—"} · v${version.version} (${t(version.status)}) · ${t("Created on")} ${localDay(hotel.timezone, r.createdAt).split("-").reverse().join(".")} · ${t("Updated on")} ${localDay(hotel.timezone, r.updatedAt).split("-").reverse().join(".")}`,
       fileName: `recete-${r.code}`,
       tables: [
         {

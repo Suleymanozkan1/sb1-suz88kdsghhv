@@ -8,8 +8,10 @@
  */
 import { r2bMessages } from "./r2b";
 import { r2eMessages } from "./r2e";
+import { r2cMessages } from "./r2c";
 
 export const TR_MESSAGES: Record<string, string> = {
+  ...r2cMessages,
   ...r2bMessages,
   ...r2eMessages,
   // ── HTTP / generic ──

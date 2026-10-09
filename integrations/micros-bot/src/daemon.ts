@@ -99,6 +99,12 @@ export class Daemon {
     this.applySettings(res?.settings);
     const req = res?.request ?? null;
     if (!req) return null;
+    if (req.kind === "PRODUCTS") {
+      // "Ürünleri çek": only the product cards added in Micros since the last pull
+      log.info(`product pull request ${req.id} received (products added since ${req.since ?? "the start"})`);
+      await this.exclusive(() => this.run(this.config, { requestId: req.id, source: "MICROS", only: ["products"], since: req.since ?? null }), `product pull ${req.id}`);
+      return req;
+    }
     log.info(`run request ${req.id} received (source ${req.source}, day ${req.businessDay ?? "default"})`);
     await this.exclusive(
       () => this.run(this.config, { requestId: req.id, source: req.source, ...(req.businessDay ? { day: req.businessDay } : {}) }),
