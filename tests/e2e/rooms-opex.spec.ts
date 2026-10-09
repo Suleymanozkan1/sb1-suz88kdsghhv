@@ -16,7 +16,7 @@ test("room cost: occupancy, ADR / RevPAR, full room cost, per-room lines (spec 2
   await expect(page.getByText("Full room cost (selected period)")).toBeVisible();
   await expect(page.getByText("Cost of unsold rooms")).toBeVisible();
   await expect(page.getByText("Room revenue per guest")).toBeVisible();
-  await expect(page.getByText("Laundry revenue")).toBeVisible();
+  await expect(page.getByText("Laundry revenue", { exact: true })).toBeVisible();
   await expect(page.getByText("By channel (net room contribution)")).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "Villa" }).first()).toBeVisible();
   await page.getByRole("link", { name: "Floor", exact: true }).click();
