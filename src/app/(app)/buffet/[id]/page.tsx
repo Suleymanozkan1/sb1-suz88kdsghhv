@@ -8,6 +8,7 @@ import { money, pct, qty, date, dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { AddLine, CloseSession } from "./session-actions";
 import { BOARD_BASIS } from "@/lib/board-basis";
+import { Title } from "@/components/title";
 
 export default async function BuffetSessionPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await getT();
@@ -45,7 +46,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
         <Card title={t("Forecast for {n} covers ({confidence})", { n: s.expectedCovers, confidence: t(fc.data.confidence.replace("_", " ").toLowerCase()) })} className="mt-4">
           <p className="mb-2 text-xs text-ink-500">{fc.data.explanation} {t("Basis: {basis}. Expected cost {cost} ({perCover} / cover).", { basis: t(fc.data.basisRule), cost: money(fc.data.expectedCost, cur, 0), perCover: money(fc.data.expectedCostPerCover, cur) })}</p>
           <Table><thead><tr><Th>{t("Item")}</Th><Th align="right">{t("Per cover")}</Th><Th align="right">{t("Expected consumption")}</Th><Th align="right">{t("Suggested production")}</Th></tr></thead>
-            <tbody className="divide-y divide-ink-100">{fc.data.items.map((i) => <tr key={i.key}><Td>{i.name}</Td><Td align="right">{qty(i.perCover, undefined, 4)}</Td><Td align="right">{qty(i.expectedConsumption)}</Td><Td align="right" className="font-medium">{qty(i.production)}</Td></tr>)}</tbody>
+            <tbody className="divide-y divide-ink-100">{fc.data.items.map((i) => <tr key={i.key}><Td><Title>{i.name}</Title></Td><Td align="right">{qty(i.perCover, undefined, 4)}</Td><Td align="right">{qty(i.expectedConsumption)}</Td><Td align="right" className="font-medium">{qty(i.production)}</Td></tr>)}</tbody>
           </Table>
         </Card>
       )}
@@ -55,7 +56,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
           <tbody className="divide-y divide-ink-100">
             {m.items.map((i) => (
               <tr key={i.key}>
-                <Td><span className="font-medium">{i.name}</span> {i.isDish && <Badge tone="violet">{t("dish")}</Badge>}</Td><Td>{i.category}</Td>
+                <Td><span className="font-medium"><Title>{i.name}</Title></span> {i.isDish && <Badge tone="violet">{t("dish")}</Badge>}</Td><Td>{i.category}</Td>
                 <Td align="right">{qty(i.produced, i.unit)}</Td><Td align="right">{qty(i.refilled, i.unit)}{i.refills ? ` (${i.refills}×)` : ""}</Td>
                 <Td align="right">{qty(i.reusable, i.unit)}</Td><Td align="right">{qty(i.waste, i.unit)}</Td><Td align="right">{qty(i.staffMeal, i.unit)}</Td>
                 <Td align="right">{qty(i.consumed, i.unit)}</Td><Td align="right">{i.gramsPerGuest ? qty(i.gramsPerGuest, "g", 1) : "—"}</Td>
@@ -73,7 +74,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
         </Card>
         <Card title={t("Line log")} padded={false}>
           <Table><thead><tr><Th>{t("Time")}</Th><Th>{t("Kind")}</Th><Th>{t("Item")}</Th><Th align="right">{t("Qty")}</Th><Th align="right">{t("Cost")}</Th></tr></thead>
-            <tbody className="divide-y divide-ink-100">{s.lines.map((l) => <tr key={l.id}><Td>{dateTime(l.recordedAt, hotel.timezone)}</Td><Td><Badge tone={l.kind === "LEFTOVER" ? "violet" : l.kind === "REFILL" ? "blue" : "gray"}>{t(l.kind)}{l.refillNo ? ` #${l.refillNo}` : ""}</Badge>{l.leftoverClass && <span className="ml-1 text-xs">{t(l.leftoverClass)}</span>}</Td><Td>{names[(l.productId ?? l.recipeId)!]}</Td><Td align="right">{qty(l.quantity.toString(), l.unit)}</Td><Td align="right">{money(l.totalCost?.toString(), cur)}</Td></tr>)}</tbody>
+            <tbody className="divide-y divide-ink-100">{s.lines.map((l) => <tr key={l.id}><Td>{dateTime(l.recordedAt, hotel.timezone)}</Td><Td><Badge tone={l.kind === "LEFTOVER" ? "violet" : l.kind === "REFILL" ? "blue" : "gray"}>{t(l.kind)}{l.refillNo ? ` #${l.refillNo}` : ""}</Badge>{l.leftoverClass && <span className="ml-1 text-xs">{t(l.leftoverClass)}</span>}</Td><Td><Title>{names[(l.productId ?? l.recipeId)!]}</Title></Td><Td align="right">{qty(l.quantity.toString(), l.unit)}</Td><Td align="right">{money(l.totalCost?.toString(), cur)}</Td></tr>)}</tbody>
           </Table>
         </Card>
       </div>

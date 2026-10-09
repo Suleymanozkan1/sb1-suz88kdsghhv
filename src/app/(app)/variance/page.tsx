@@ -6,6 +6,7 @@ import { Alert, Badge, Card, Empty, Label, PageHeader, Select, Stat, Table, Td, 
 import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Theoretical vs Actual" };
 
@@ -108,7 +109,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
                 const u = Number(p.unexplainedValue);
                 return (
                   <tr key={p.productId} className="hover:bg-ink-50">
-                    <Td><span className="font-medium">{p.name}</span> <Badge>{tr(p.categoryGroup)}</Badge><span className="block text-xs text-ink-400">{p.sku} · {tr("avg")} {money(p.avgCost, cur)}/{p.unit}</span></Td>
+                    <Td><span className="font-medium"><Title>{p.name}</Title></span> <Badge>{tr(p.categoryGroup)}</Badge><span className="block text-xs text-ink-400">{p.sku} · {tr("avg")} {money(p.avgCost, cur)}/{p.unit}</span></Td>
                     <Td align="right">{qty(p.opening.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.purchases.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.closing.qty, p.unit)}</Td>

@@ -11,6 +11,7 @@ import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { MovementForm } from "./movement-form";
 import { AutoSubmitForm } from "./auto-submit-form";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Inventory" };
 
@@ -61,7 +62,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
               const m = r.movement!;
               return (
                 <tr key={r.productId} className="hover:bg-ink-50">
-                  <Td><span className="font-medium">{r.name}</span><span className="block text-xs text-ink-400">{r.sku} · {r.category}</span></Td>
+                  <Td><span className="font-medium"><Title>{r.name}</Title></span><span className="block text-xs text-ink-400">{r.sku} · {r.category}</span></Td>
                   <Td><Badge>{t(r.categoryGroup)}</Badge></Td>
                   <Td align="right">{qv(m.openingQty, m.openingValue, r.unit)}</Td>
                   <Td align="right" className="text-brand-700">{qv(m.inQty, m.inValue, r.unit)}</Td>

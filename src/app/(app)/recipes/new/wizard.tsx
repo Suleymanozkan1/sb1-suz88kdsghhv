@@ -6,9 +6,10 @@ import { Plus, Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { money, pct, qty } from "@/lib/format";
+import { money, pct, qty, titleTr } from "@/lib/format";
 import { useLocale, useT } from "@/i18n/client";
 import { translateMessage } from "@/i18n/core";
+import { Title } from "@/components/title";
 
 export interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string }
 export interface WizardHead { type: string; code: string; name: string; departmentId: string; posCode: string; batchYieldQty: string; yieldUnit: string; portions: string; sellingPrice: string }
@@ -109,7 +110,7 @@ export function RecipeWizard({ types, departments, subRecipes, currency, edit }:
                 <div className="md:col-span-4">
                   <Label htmlFor={`i-${l.key}`}>{l.kind === "product" ? t("Search ingredient") : t("Sub-recipe")}</Label>
                   {l.kind === "product" ? <ProductPicker id={`i-${l.key}`} value={l.product} onChange={(p) => set(l.key, { product: p, unit: p?.recipeUnit ?? "" })} /> : (
-                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">{t("Select…")}</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">{t("Select…")}</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{titleTr(s.name, locale)}</option>)}</Select>
                   )}
                 </div>
                 <div className="md:col-span-3"><Label htmlFor={`q-${l.key}`}>{t("Quantity used")}</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} /></div>
@@ -134,7 +135,7 @@ export function RecipeWizard({ types, departments, subRecipes, currency, edit }:
               </dl>
               <Table>
                 <thead><tr><Th>{t("Line")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Cost")}</Th></tr></thead>
-                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost, currency)}</Td></tr>)}</tbody>
+                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td><Title>{l.name}</Title> {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost, currency)}</Td></tr>)}</tbody>
               </Table>
             </div>
           )}

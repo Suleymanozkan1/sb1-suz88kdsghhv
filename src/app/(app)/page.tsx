@@ -13,6 +13,7 @@ import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
 import { homeHref } from "@/components/nav";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Dashboard" };
 
@@ -104,7 +105,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <tbody className="divide-y divide-ink-100">
                 {d.topVariance.map((p) => (
                   <tr key={p.productId}>
-                    <Td>{p.name}</Td>
+                    <Td><Title>{p.name}</Title></Td>
                     <Td align="right">{qty(p.theoreticalQty, p.unit)}</Td>
                     <Td align="right">{qty(p.actual.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.waste.qty, p.unit)}</Td>
@@ -130,7 +131,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <ul className="mt-3 divide-y divide-ink-100 text-sm">
                 {d.critical.map((c) => (
                   <li key={c.productId} className="flex items-center justify-between py-1.5">
-                    <span className="truncate">{c.name}</span>
+                    <span className="truncate"><Title>{c.name}</Title></span>
                     <Badge tone={levelTone[c.level]}>{qty(c.quantity, c.unit)}</Badge>
                   </li>
                 ))}
@@ -148,16 +149,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card title={<Link href={`/insights/waste?${qs}`} className="hover:underline">{t("Top waste products")}</Link>} actions={<Link href={`/insights/waste?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("Top 20")} <ArrowRight className="h-3 w-3" /></Link>}>
+        <Card title={<Link href={`/insights/waste?${qs}`} className="hover:underline"><Title>{t("Top waste products")}</Title></Link>} actions={<Link href={`/insights/waste?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("Top 20")} <ArrowRight className="h-3 w-3" /></Link>}>
           {d.topWaste.length === 0 ? <Empty title={t("No waste recorded")} /> : (
             <ul className="divide-y divide-ink-100 text-sm">
               {d.topWaste.map((w) => (
-                <li key={w.productId} className="flex justify-between gap-2 py-1.5"><span>{w.name}<span className="block text-xs text-ink-400">{qty(w.qty, w.unit)}</span></span><span className="tabular-nums">{money(w.cost, cur, 0)}</span></li>
+                <li key={w.productId} className="flex justify-between gap-2 py-1.5"><span><Title>{w.name}</Title><span className="block text-xs text-ink-400">{qty(w.qty, w.unit)}</span></span><span className="tabular-nums">{money(w.cost, cur, 0)}</span></li>
               ))}
             </ul>
           )}
         </Card>
-        <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline">{t("Supplier price increases / decreases")}</Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("All changes")} <ArrowRight className="h-3 w-3" /></Link>}>
+        <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline"><Title>{t("Supplier price increases / decreases")}</Title></Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("All changes")} <ArrowRight className="h-3 w-3" /></Link>}>
           <PriceSummary p={d.prices} cur={cur} />
         </Card>
         <Card title={`${t("Alerts")} (${d.alerts.length})`}>

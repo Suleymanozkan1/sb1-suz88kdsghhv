@@ -21,6 +21,7 @@ selectors.
    | `covers` | covers sold per outlet / meal → buffet form | overwritten per day |
    | `minibar` | minibar consumption | folio reference |
    | `occupancy` | night-audit statistics; the sold room numbers mark the rooms on the minibar board | overwritten per day |
+   | `products` | product cards (name, unit, pack size / weight, VAT, category) — only on a *Products → Pull products* request, no business day | name (Turkish case-insensitive) or stock code |
 
 4. **Run log.** The bot reports `STARTED` / `SUCCEEDED` / `FAILED` to `POST /api/integrations/runs`. *Imports →
    Automation log* shows every run with its counts (received, new, already sent, errors) and its message.
@@ -29,7 +30,9 @@ selectors.
    rejected, or when a source has not delivered the last closed business day. That day is expected from 90 minutes
    after the cut-off (the bot runs at +45 min); before that the day before is checked.
 6. **Run now.** The buttons on the imports page create a request. The bot polls `GET /api/integrations/runs/next`
-   every few minutes and runs it.
+   every few minutes and runs it. *Products → Pull products* creates a request of kind `PRODUCTS`: the bot reads the
+   product cards added in Micros since the last successful pull (`since` in the request) and the pull time is stored
+   when its run reports `SUCCEEDED`. Product pulls are not part of the nightly health check.
 
 ## Matching
 

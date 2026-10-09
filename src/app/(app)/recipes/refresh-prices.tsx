@@ -7,6 +7,7 @@ import { Alert, Button, Card, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { money, pct } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 interface Row { recipeId: string; code: string; name: string; version: number; unit: string; oldPortionCost: string | null; newPortionCost: string | null; change: string | null; changePct: string | null; complete: boolean }
 interface Result { refreshed: number; changed: number; failed: string[]; rows: Row[] }
@@ -52,7 +53,7 @@ export function RecipePriceRefresh({ currency }: { currency: string }) {
                   const tone = n > 0 ? "text-red-700" : n < 0 ? "text-green-700" : "";
                   return (
                     <tr key={r.recipeId}>
-                      <Td><span className="font-medium">{r.name}</span><span className="block text-xs text-ink-400">{r.code} · v{r.version}{r.unit !== "portion" ? ` · ${t("per {unit}", { unit: t(r.unit) })}` : ""}</span></Td>
+                      <Td><span className="font-medium"><Title>{r.name}</Title></span><span className="block text-xs text-ink-400">{r.code} · v{r.version}{r.unit !== "portion" ? ` · ${t("per {unit}", { unit: t(r.unit) })}` : ""}</span></Td>
                       <Td align="right">{money(r.oldPortionCost, currency)}</Td>
                       <Td align="right">{money(r.newPortionCost, currency)}</Td>
                       <Td align="right" className={tone}>{r.change === null ? "—" : `${n > 0 ? "+" : ""}${money(r.change, currency)}`}</Td>

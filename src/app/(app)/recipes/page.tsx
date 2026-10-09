@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Card, Empty, Input, Label, PageHeader, Select, Ta
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RecipePriceRefresh } from "./refresh-prices";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Recipes" };
 
@@ -39,7 +40,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
             <tbody className="divide-y divide-ink-100">
               {res.data.map((r) => (
                 <tr key={r.id} className="hover:bg-ink-50">
-                  <Td><Link href={`/recipes/${r.id}`} className="font-medium text-brand-800 hover:underline">{r.name}</Link><span className="block text-xs text-ink-400">{r.code}{r.posCode ? ` · POS ${r.posCode}` : ""}</span></Td>
+                  <Td><Link href={`/recipes/${r.id}`} className="font-medium text-brand-800 hover:underline"><Title>{r.name}</Title></Link><span className="block text-xs text-ink-400">{r.code}{r.posCode ? ` · POS ${r.posCode}` : ""}</span></Td>
                   <Td><Badge>{t(r.type)}</Badge></Td>
                   <Td>{r.department ?? "—"}</Td>
                   <Td>{r.currentVersion ? `v${r.currentVersion}` : "—"}{r.latestStatus && r.latestStatus !== "APPROVED" && r.latestStatus !== "SUPERSEDED" && <Badge tone="amber">v{r.latestVersion} {t(r.latestStatus)}</Badge>}</Td>

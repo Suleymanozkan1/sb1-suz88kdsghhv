@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { call } from "@/lib/client";
 import { cn } from "./ui";
 import { useT } from "@/i18n/client";
+import { Title } from "./title";
 
 export interface PickedProduct {
   id: string;
@@ -43,7 +44,7 @@ export function ProductPicker({ value, onChange, placeholder, id }: { value: Pic
   if (value) {
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 text-sm">
-        <span className="truncate"><span className="font-medium">{value.name}</span> <span className="text-ink-400">{value.sku} · {value.stockUnit}</span></span>
+        <span className="truncate"><span className="font-medium"><Title>{value.name}</Title></span> <span className="text-ink-400">{value.sku} · {value.stockUnit}</span></span>
         <button type="button" className="text-xs font-medium text-brand-700 hover:underline" onClick={() => onChange(null)}>{t("Change")}</button>
       </div>
     );
@@ -73,7 +74,7 @@ export function ProductPicker({ value, onChange, placeholder, id }: { value: Pic
         <ul id={listId} role="listbox" className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
           {items.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === active} onMouseDown={() => { onChange(p); setQ(""); setOpen(false); }} className={cn("cursor-pointer px-3 py-1.5", i === active ? "bg-brand-50" : "hover:bg-ink-50")}>
-              <span className="font-medium">{p.name}</span> <span className="text-xs text-ink-400">{p.sku} · {p.category?.name} · {p.stockUnit}</span>
+              <span className="font-medium"><Title>{p.name}</Title></span> <span className="text-xs text-ink-400">{p.sku} · {p.category?.name} · {p.stockUnit}</span>
             </li>
           ))}
         </ul>

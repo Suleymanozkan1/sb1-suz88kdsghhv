@@ -13,6 +13,7 @@ import { isDomainError } from "@/domain/errors";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { ApproveButton, DeleteRecipeButton, PriceImpact } from "./actions";
+import { Title } from "@/components/title";
 
 function Lines({ lines, depth = 0, cur, t }: { lines: CostedLine[]; depth?: number; cur: string; t: T }) {
   return (
@@ -20,7 +21,7 @@ function Lines({ lines, depth = 0, cur, t }: { lines: CostedLine[]; depth?: numb
       {lines.map((l, i) => (
         <Fragment key={`${depth}-${i}`}>
           <tr className={depth ? "bg-ink-50/60 text-ink-600" : ""}>
-            <Td style={{ paddingLeft: 12 + depth * 20 }}>{depth > 0 && "↳ "}{l.name} {l.kind === "SUB_RECIPE" && <Badge tone="violet">{t("sub-recipe")}</Badge>}{l.children && <span className="ml-1 text-xs text-ink-400">{t("(breakdown below is per {qty} {unit} batch)", { qty: l.children.usableOutput.toString(), unit: l.children.outputUnit })}</span>} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td>
+            <Td style={{ paddingLeft: 12 + depth * 20 }}>{depth > 0 && "↳ "}<Title>{l.name}</Title> {l.kind === "SUB_RECIPE" && <Badge tone="violet">{t("sub-recipe")}</Badge>}{l.children && <span className="ml-1 text-xs text-ink-400">{t("(breakdown below is per {qty} {unit} batch)", { qty: l.children.usableOutput.toString(), unit: l.children.outputUnit })}</span>} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td>
             <Td align="right">{qty(l.quantity.toString(), l.unit)}</Td>
             <Td align="right">{l.unitCost ? `${money(l.unitCost.toString(), cur, 4)} / ${l.baseUnit}` : "—"}</Td>
             <Td align="right" className="font-medium">{money(l.lineCost.toString(), cur)}</Td>

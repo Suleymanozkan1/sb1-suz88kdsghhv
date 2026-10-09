@@ -8,6 +8,7 @@ import { money, qty, date, pct } from "@/lib/format";
 import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { ReceiptForm } from "./receipt-form";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Purchasing" };
 
@@ -74,7 +75,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                   <Td className="min-w-[22rem] whitespace-normal">
                     {r.items.map((i) => (
                       <span key={i.id} className="block text-xs text-ink-500">
-                        <span className="text-ink-700">{i.product.name}</span> {qty(i.quantity.toString(), i.unit)} × {money(Number(i.quantity) ? Number(i.netAmount) / Number(i.quantity) : null, cur)} = <span className="tabular-nums text-ink-700">{money(i.netAmount.toString(), cur)}</span> · {t("VAT")} {pct(i.taxRatePct.toString(), 0)}
+                        <span className="text-ink-700"><Title>{i.product.name}</Title></span> {qty(i.quantity.toString(), i.unit)} × {money(Number(i.quantity) ? Number(i.netAmount) / Number(i.quantity) : null, cur)} = <span className="tabular-nums text-ink-700">{money(i.netAmount.toString(), cur)}</span> · {t("VAT")} {pct(i.taxRatePct.toString(), 0)}
                       </span>
                     ))}
                   </Td>
@@ -109,7 +110,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                   return (
                     <tr key={p.id}>
                       <Td>{date(p.priceDate)}</Td>
-                      <Td className="font-medium">{p.product.name}</Td>
+                      <Td className="font-medium"><Title>{p.product.name}</Title></Td>
                       <Td>{p.supplier.name}</Td>
                       <Td align="right">{money(p.previousUnitPrice?.toString(), cur)}/{p.product.stockUnit}</Td>
                       <Td align="right">{money(p.unitPrice.toString(), cur)}/{p.product.stockUnit}</Td>

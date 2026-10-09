@@ -9,6 +9,7 @@ import { money, qty, date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { DeleteRequest } from "./delete-request";
 import { LedgerFilters } from "./ledger-filters";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Stock Ledger" };
 const PAGE = 50;
@@ -62,7 +63,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                 <tr key={`${r.id}-${i}`} className={r.reversedBy ? "bg-ink-50 text-ink-400" : ""}>
                   <Td>{date(r.txDate)}</Td>
                   <Td><Badge tone={Number(r.quantity) > 0 ? "green" : r.type === "REVERSAL" ? "violet" : r.type === "WASTE" ? "red" : "amber"}>{t(r.type)}</Badge></Td>
-                  <Td><Link href={q({ productId: r.productId, page: "1" })} className="hover:underline">{r.product.name}</Link></Td>
+                  <Td><Link href={q({ productId: r.productId, page: "1" })} className="hover:underline"><Title>{r.product.name}</Title></Link></Td>
                   <Td>{r.warehouse.name}</Td>
                   <Td align="right">{qty(d.quantity.toString(), r.product.stockUnit)}</Td>
                   <Td align="right">{money(r.unitCost.toString(), cur, 4)}</Td>

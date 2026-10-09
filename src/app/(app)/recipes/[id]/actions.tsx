@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { money, parseNum, pct } from "@/lib/format";
-import { useT } from "@/i18n/client";
+import { money, parseNum, pct, titleTr } from "@/lib/format";
+import { useT, useLocale } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 export function ApproveButton({ versionId }: { versionId: string }) {
   const router = useRouter();
@@ -55,6 +56,7 @@ interface Impact { recipes: { recipeId: string; name: string; oldPortionCost: st
 
 export function PriceImpact({ products, currency }: { products: { id: string; name: string; unitCost: string | null; unit: string }[]; currency: string }) {
   const t = useT();
+  const locale = useLocale();
   const [pid, setPid] = useState(products[0]?.id ?? "");
   const [change, setChange] = useState("20");
   const [res, setRes] = useState<Impact | null>(null);
@@ -71,7 +73,7 @@ export function PriceImpact({ products, currency }: { products: { id: string; na
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
-        <div><Label htmlFor="pi-p">{t("Ingredient")}</Label><Select id="pi-p" value={pid} onChange={(e) => setPid(e.target.value)} className="w-52">{products.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></div>
+        <div><Label htmlFor="pi-p">{t("Ingredient")}</Label><Select id="pi-p" value={pid} onChange={(e) => setPid(e.target.value)} className="w-52">{products.map((x) => <option key={x.id} value={x.id}>{titleTr(x.name, locale)}</option>)}</Select></div>
         <div><Label htmlFor="pi-c">{t("Price change %")}</Label><Input id="pi-c" value={change} onChange={(e) => setChange(e.target.value)} className="w-24" inputMode="decimal" /></div>
         <Button variant="secondary" onClick={run}>{t("Simulate")}</Button>
       </div>
@@ -81,7 +83,7 @@ export function PriceImpact({ products, currency }: { products: { id: string; na
           <thead><tr><Th>{t("Affected recipe")}</Th><Th align="right">{t("Old")}</Th><Th align="right">{t("New")}</Th><Th align="right">Δ%</Th><Th align="right">{t("Margin")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">
             {res.recipes.map((r) => (
-              <tr key={r.recipeId}><Td>{r.name}</Td><Td align="right">{money(r.oldPortionCost, currency)}</Td><Td align="right">{money(r.newPortionCost, currency)}</Td><Td align="right">{pct(r.costChangePct)}</Td><Td align="right" className={r.belowTarget ? "font-semibold text-red-700" : ""}>{pct(r.oldMarginPct)} → {pct(r.newMarginPct)}</Td></tr>
+              <tr key={r.recipeId}><Td><Title>{r.name}</Title></Td><Td align="right">{money(r.oldPortionCost, currency)}</Td><Td align="right">{money(r.newPortionCost, currency)}</Td><Td align="right">{pct(r.costChangePct)}</Td><Td align="right" className={r.belowTarget ? "font-semibold text-red-700" : ""}>{pct(r.oldMarginPct)} → {pct(r.newMarginPct)}</Td></tr>
             ))}
           </tbody>
         </Table>

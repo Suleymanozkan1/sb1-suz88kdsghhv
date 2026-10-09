@@ -7,6 +7,7 @@ import { date, money, pct, qty } from "@/lib/format";
 import { sum } from "@/domain/money";
 import { getT } from "@/i18n/server";
 import { AutoSubmitForm } from "../../inventory/auto-submit-form";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Supplier price increases / decreases" };
 const PAGE = 50;
@@ -53,7 +54,7 @@ export default async function PriceChangesPage({ searchParams }: { searchParams:
               {rows.map((c) => (
                 <tr key={`${c.productId}-${c.receiptNo}`} className="hover:bg-ink-50">
                   <Td>{date(c.date)}<span className="block text-xs text-ink-400">{c.receiptNo}</span></Td>
-                  <Td className="font-medium">{c.product}</Td>
+                  <Td className="font-medium"><Title>{c.product}</Title></Td>
                   <Td>{c.supplier}</Td>
                   <Td align="right">{money(c.previous, cur)} / {c.unit}<span className="block text-xs text-ink-400">{date(c.previousDate)}{c.previousSupplier !== c.supplier ? ` · ${c.previousSupplier}` : ""}</span></Td>
                   <Td align="right">{money(c.current, cur)} / {c.unit}</Td>

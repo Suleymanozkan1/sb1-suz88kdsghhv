@@ -5,6 +5,7 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { AlertList, PriceSummary } from "./dashboard-panels";
+import { Title } from "@/components/title";
 
 type D = Awaited<ReturnType<typeof basicDashboard>>;
 
@@ -24,12 +25,12 @@ export async function BasicDashboard({ hotelName, currency, timezone, range, d }
         {d.stock && (
           <Card title={t("Critical stock")} actions={<Link href="/inventory" className="text-xs font-medium text-brand-700 hover:underline">{t("Inventory")}</Link>}>
             {d.stock.critical.length === 0 ? <Empty title={t("No critical items")} /> : (
-              <ul className="divide-y divide-ink-100 text-sm">{d.stock.critical.map((c) => <li key={c.productId} className="flex justify-between py-1.5"><span className="truncate">{c.name}</span><Badge tone={levelTone[c.level]}>{qty(c.quantity, c.unit)}</Badge></li>)}</ul>
+              <ul className="divide-y divide-ink-100 text-sm">{d.stock.critical.map((c) => <li key={c.productId} className="flex justify-between py-1.5"><span className="truncate"><Title>{c.name}</Title></span><Badge tone={levelTone[c.level]}>{qty(c.quantity, c.unit)}</Badge></li>)}</ul>
             )}
           </Card>
         )}
         {d.prices && (
-          <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline">{t("Supplier price increases / decreases")}</Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="text-xs font-medium text-brand-700 hover:underline">{t("All changes")}</Link>}>
+          <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline"><Title>{t("Supplier price increases / decreases")}</Title></Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="text-xs font-medium text-brand-700 hover:underline">{t("All changes")}</Link>}>
             <PriceSummary p={d.prices} cur={currency} />
           </Card>
         )}

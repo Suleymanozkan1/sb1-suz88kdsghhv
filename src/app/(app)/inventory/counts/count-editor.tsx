@@ -7,6 +7,7 @@ import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components
 import { call } from "@/lib/client";
 import { money, parseNum, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 /** Only the selected warehouse's counts are listed; changing it reloads the page (and the export) for that store. */
 export function WarehousePicker({ warehouses, selected }: { warehouses: { id: string; name: string }[]; selected: string }) {
@@ -122,7 +123,7 @@ export function CountEditor({ countId, lines, editable, currency }: { countId: s
             const saved = counted === Number(l.countedQty);
             return (
               <tr key={l.productId}>
-                <Td>{l.name}</Td>
+                <Td><Title>{l.name}</Title></Td>
                 <Td align="right">{qty(l.systemQty, l.unit)}</Td>
                 <Td align="right">{editable ? <Input aria-label={t("Counted {name}", { name: l.name })} inputMode="decimal" className="w-28 text-right" value={v.countedQty} onChange={(e) => setVals({ ...vals, [l.productId]: { ...v, countedQty: e.target.value } })} /> : qty(l.countedQty, l.unit)}</Td>
                 <Td align="right" className={diff < 0 ? "text-red-700" : diff > 0 ? "text-brand-700" : ""}>{editable ? qty(diff, l.unit) : qty(l.varianceQty, l.unit)}</Td>

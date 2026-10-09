@@ -153,12 +153,14 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       }
       if (input.exactTotal !== undefined) {
         total = toStorage(input.exactTotal); // negative
-        const layer = fifo && input.reverseLayerOfTxId ? await tx.fifoLayer.findFirst({ where: { sourceTxId: input.reverseLayerOfTxId, warehouseId: input.warehouseId, productId: input.productId } }) : null;
-        if (layer) {
-          if (D(layer.remainingQty.toString()).lt(outQty)) {
+        // the receipt's own layer(s) (a transfer-in has one per batch)
+        const own = fifo && input.reverseLayerOfTxId ? await tx.fifoLayer.findMany({ where: { sourceTxId: input.reverseLayerOfTxId, warehouseId: input.warehouseId, productId: input.productId }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] }) : [];
+        if (own.length) {
+          const ls: Layer[] = own.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
+          if (ls.reduce((a, l) => a.plus(l.remainingQty), ZERO).lt(outQty)) {
             throw new DomainError("INSUFFICIENT_STOCK", "Receipt layer has already been consumed; reverse the consumption first or post an adjustment");
           }
-          fifoDraws = [{ layerId: layer.id, quantity: outQty, unitCost: D(layer.unitCost.toString()) }];
+          fifoDraws = fifoIssue(ls, outQty).draws;
         } else if (fifo) {
           // a receipt posted before the product moved to FIFO has no layer of its own (its stock sits in the
           // opening layer): the quantity leaves the oldest layers, so the layers keep adding up to the balance

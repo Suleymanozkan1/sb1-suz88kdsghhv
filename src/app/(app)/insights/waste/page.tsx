@@ -6,6 +6,7 @@ import { Alert, Badge, Card, Empty, Input, Label, PageHeader, Table, Td, Th } fr
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { AutoSubmitForm } from "../../inventory/auto-submit-form";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Top waste products" };
 
@@ -35,7 +36,7 @@ export default async function TopWastePage({ searchParams }: { searchParams: Pro
               {rows.map((r, i) => (
                 <tr key={r.productId} className="hover:bg-ink-50">
                   <Td align="right" className="text-ink-400">{i + 1}</Td>
-                  <Td><span className="font-medium">{r.name}</span><span className="block text-xs text-ink-400">{r.category}</span></Td>
+                  <Td><span className="font-medium"><Title>{r.name}</Title></span><span className="block text-xs text-ink-400">{r.category}</span></Td>
                   <Td>{r.categoryGroup && <Badge>{t(r.categoryGroup)}</Badge>}</Td>
                   <Td align="right">{qty(r.qty, r.unit)}</Td>
                   <Td align="right">{r.records}</Td>
