@@ -23,6 +23,12 @@ describe("allocation (spec 145, 188–191)", () => {
     expect(sum(parts.map((p) => p.amount)).toString()).toBe("-0.01");
   });
 
+  it("an amount with more decimals than the parts (a prorated 1/3) is split instead of looping for ever", () => {
+    const third = D(100).div(3); // 33.333… - a monthly room expense prorated by days
+    const parts = allocate(third, [{ key: "a", driver: 1 }, { key: "b", driver: 2 }]);
+    expect(sum(parts.map((p) => p.amount)).toString()).toBe("33.333333");
+  });
+
   it("rejects a zero or negative driver base", () => {
     expect(() => allocate("10", [{ key: "a", driver: 0 }])).toThrow(/zero/);
     expect(() => allocate("10", [{ key: "a", driver: -1 }, { key: "b", driver: 2 }])).toThrow(/negative/);

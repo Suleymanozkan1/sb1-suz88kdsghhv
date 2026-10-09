@@ -75,10 +75,15 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
   });
 }
 
-export async function decideApproval(db: Db, actor: Actor, hotelId: string, input: { approvalId: string; decision: "APPROVE" | "REJECT"; note?: string }) {
+/** Can this user decide any approval at all? (approval:decide, or a role named as count approver in Admin) — checked before the request is even read. */
+export async function requireMayDecide(db: Db, actor: Actor, hotelId: string) {
   requireHotel(actor, hotelId);
-  // a role named as count approver in Admin may decide those counts without approval:decide
   if (!can(actor, "approval:decide") && !(await db.countApprover.count({ where: { hotelId, roleKey: actor.roleKey } }))) requirePermission(actor, "approval:decide");
+}
+
+export async function decideApproval(db: Db, actor: Actor, hotelId: string, input: { approvalId: string; decision: "APPROVE" | "REJECT"; note?: string }) {
+  // a role named as count approver in Admin may decide those counts without approval:decide
+  await requireMayDecide(db, actor, hotelId);
   return inTx(
     db,
     async (tx) => {

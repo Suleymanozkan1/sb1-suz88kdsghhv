@@ -143,7 +143,7 @@ test("stock count (warehouse): start a sheet, count one line, send for approval;
   await signIn(mgr, "controller@test.local");
   await mgr.goto("/approvals");
   const row = mgr.getByRole("row", { name: new RegExp(number) });
-  await expect(row.getByText("STOCK COUNT")).toBeVisible();
+  await expect(row.getByText("STOCK COUNT", { exact: true })).toBeVisible();
   await row.getByRole("button", { name: "Approve" }).click();
   await expect(mgr.getByRole("row", { name: new RegExp(number) }).getByRole("button", { name: "Approve" })).toHaveCount(0);
   await ctx.close();

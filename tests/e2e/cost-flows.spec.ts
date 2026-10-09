@@ -132,7 +132,7 @@ test("variance page reconciles and export is permission-gated (spec §243)", asy
 test("department isolation in the UI and API (spec §242, §274)", async ({ page }) => {
   await login(page, "pastry");
   await page.goto("/recipes");
-  await expect(page.getByRole("link", { name: "Tiramisu" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Tiramisu", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Classic Burger" })).toHaveCount(0);
   // nav does not offer purchasing; direct API call is refused server-side
   await expect(page.getByRole("link", { name: "Purchasing" })).toHaveCount(0);
