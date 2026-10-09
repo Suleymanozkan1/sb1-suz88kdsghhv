@@ -10,7 +10,7 @@ test.describe("authentication & navigation", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("alert").filter({ hasText: "Invalid" })).toContainText("Invalid email or password");
     await login(page, "controller");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence", { ignoreCase: true }); // headings are shown in title case
     await expect(page.getByText("Actual cost %")).toBeVisible();
     await expect(page.getByText("Unexplained variance")).toBeVisible();
   });
@@ -149,7 +149,7 @@ test("department isolation in the UI and API (spec §242, §274)", async ({ page
 test("Excel export: page offers .xlsm download and one-time API token (spec 2, 102, 123)", async ({ page }) => {
   await login(page, "controller");
   await page.getByRole("link", { name: "Excel Export" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Excel full cost report");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Excel full cost report", { ignoreCase: true }); // headings are shown in title case
   await page.getByLabel("Start date").fill("2026-09-01");
   await page.getByLabel("End date").fill("2026-09-30");
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.getByRole("button", { name: "Download .xlsm" }).click()]);

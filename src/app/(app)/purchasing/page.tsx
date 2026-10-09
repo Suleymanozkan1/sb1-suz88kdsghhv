@@ -92,7 +92,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
       </Card>
       {can(actor, "inventory:receive") && (
         <details className="mt-4 rounded-xl border border-ink-200 bg-white" data-testid="manual-receipt">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800">{t("Receive goods by hand (backup — when an invoice did not come from Micros)")}</summary>
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800"><Title>{t("Receive goods by hand (backup — when an invoice did not come from Micros)")}</Title></summary>
           <div className="border-t border-ink-100 p-4">
             <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
           </div>

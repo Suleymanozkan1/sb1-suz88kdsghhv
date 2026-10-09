@@ -1,16 +1,18 @@
 import { pageContext, requirePageAccess } from "@/server/page";
 import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
-import { dateTime, money, qty } from "@/lib/format";
-import { getT } from "@/i18n/server";
+import { dateTime, money, qty, titleTr } from "@/lib/format";
+import { getT, getLocale } from "@/i18n/server";
 import { approvalsOverview } from "@/server/services/approvals";
 import { actionLabel, approvalDetails } from "@/server/table-export/reports/approvals";
 import { Decide } from "./decide";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Approvals" };
 
 export default async function ApprovalsPage() {
   const t = await getT();
+  const locale = await getLocale();
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "dashboard:view", hotelId);
   // department-scoped approvers see (and can decide) only their departments' requests
@@ -35,13 +37,13 @@ export default async function ApprovalsPage() {
                 <tr key={a.id} className="align-top">
                   <Td>{dateTime(a.requestedAt, hotel.timezone)}</Td><Td><Badge tone="amber">{t(actionLabel(a.action))}</Badge></Td><Td>{users.get(a.requestedById)}</Td>
                   <Td className="whitespace-normal">{a.reason}</Td><Td className="whitespace-normal text-xs text-ink-500">
-                    {approvalDetails(a.payload, t, hotel.baseCurrency)}
+                    {approvalDetails(a.payload, t, hotel.baseCurrency, (s) => titleTr(s, locale))}
                     {countLines.has(a.entityId) && (
                       <details className="mt-1">
                         <summary className="cursor-pointer text-brand-700">{t("{n} products with a difference", { n: countLines.get(a.entityId)!.length })}</summary>
                         <ul className="mt-1 space-y-0.5">
                           {countLines.get(a.entityId)!.map((l) => (
-                            <li key={l.id}>{l.product.name}: {qty(l.systemQty.toString(), l.product.stockUnit)} → {qty(l.countedQty.toString(), l.product.stockUnit)} ({money(l.varianceValue.toString(), hotel.baseCurrency)}){l.reason ? ` · ${l.reason}` : ""}</li>
+                            <li key={l.id}><Title>{l.product.name}</Title>: {qty(l.systemQty.toString(), l.product.stockUnit)} → {qty(l.countedQty.toString(), l.product.stockUnit)} ({money(l.varianceValue.toString(), hotel.baseCurrency)}){l.reason ? ` · ${l.reason}` : ""}</li>
                           ))}
                         </ul>
                       </details>

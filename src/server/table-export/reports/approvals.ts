@@ -9,15 +9,15 @@ const LABELS: Record<string, string> = { product: "Product", type: "Type", quant
 const MONEY = new Set(["totalCost", "estimatedValue", "varianceValue"]);
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
 
-/** Readable approval details: translated labels and enum codes, dd.mm.yyyy dates, money in the hotel currency. */
-export function approvalDetails(payload: unknown, t: T, currency: string): string {
+/** Readable approval details: translated labels and enum codes, dd.mm.yyyy dates, money in the hotel currency; `name` formats the product name for display. */
+export function approvalDetails(payload: unknown, t: T, currency: string, name: (s: string) => string = (s) => s): string {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
   return Object.entries(payload as Record<string, unknown>)
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .map(([k, v]) => {
       const s = String(v);
       const n = parseNum(s);
-      const val = MONEY.has(k) ? money(n, currency) : k === "quantity" && !Number.isNaN(n) ? qty(n) : k === "type" ? t(s) : ISO_DAY.test(s) ? date(s) : s;
+      const val = MONEY.has(k) ? money(n, currency) : k === "quantity" && !Number.isNaN(n) ? qty(n) : k === "type" ? t(s) : k === "product" ? name(s) : ISO_DAY.test(s) ? date(s) : s;
       return `${LABELS[k] ? t(LABELS[k]) : k}: ${val}`;
     })
     .join(" · ");

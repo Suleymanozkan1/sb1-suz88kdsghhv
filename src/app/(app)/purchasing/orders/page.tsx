@@ -11,6 +11,7 @@ import { getT } from "@/i18n/server";
 import { AutoOrder } from "./auto-order";
 import { Suppliers } from "./suppliers";
 import { OrderEmailEditor } from "./order-email-editor";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Order Suggestions" };
 
@@ -88,7 +89,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             <tbody className="divide-y divide-ink-100">
               {res.data.map((r) => (
                 <tr key={r.productId} className="align-top">
-                  <Td className="font-medium">{r.name}<span className="block text-xs text-ink-400">{r.sku}</span></Td>
+                  <Td className="font-medium"><Title>{r.name}</Title><span className="block text-xs text-ink-400">{r.sku}</span></Td>
                   <Td>{r.supplier ?? "—"}</Td>
                   <Td><span className="text-xs">{r.method.split("+").map((m) => t(m)).join("+")}</span></Td>
                   <Td align="right">{qty(r.expected, r.unit, 1)}</Td>

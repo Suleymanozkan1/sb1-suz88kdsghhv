@@ -10,6 +10,7 @@ import { getT } from "@/i18n/server";
 import { ProductForm } from "./product-form";
 import { PullProductsButton } from "./pull-products";
 import { CategoryAccountCodes } from "./category-codes";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Products" };
 
@@ -47,7 +48,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               const c = costs.get(p.id);
               return (
                 <tr key={p.id}>
-                  <Td><span className="font-medium">{p.name}</span><span className="block text-xs text-ink-400">{p.sku}{p.brand ? ` · ${p.brand}` : ""}</span></Td>
+                  <Td><span className="font-medium"><Title>{p.name}</Title></span><span className="block text-xs text-ink-400">{p.sku}{p.brand ? ` · ${p.brand}` : ""}</span></Td>
                   <Td>{p.category.name} <Badge>{t(p.category.group)}</Badge>{p.category.accountCode && <span className="block font-mono text-xs text-ink-400">{p.category.accountCode}</span>}</Td>
                   <Td><span className="text-xs">{p.purchaseUnit} → {p.stockUnit} → {p.recipeUnit}{p.conversions.length ? ` (${p.conversions.map((x) => `1 ${x.fromUnit} = ${Number(x.factor)} ${x.toUnit}`).join("; ")})` : ""}</span></Td>
                   <Td>{p.defaultSupplier?.name ?? "—"}</Td>
@@ -70,7 +71,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         )}
       </Card>
       <details className="mt-4 rounded-xl border border-ink-200 bg-white">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">{t("Categories and account codes")} <span className="font-normal text-ink-500">· {t("chart-of-accounts codes (e.g. 150.01) are optional")}</span></summary>
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium"><Title>{t("Categories and account codes")}</Title> <span className="font-normal text-ink-500">· {t("chart-of-accounts codes (e.g. 150.01) are optional")}</span></summary>
         <CategoryAccountCodes canEdit={manage} categories={tree.map((c) => ({ id: c.id, code: c.code, name: c.name, group: c.group, parent: c.parentId ? (catName.get(c.parentId) ?? null) : null, accountCode: c.accountCode }))} />
       </details>
     </>

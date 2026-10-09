@@ -10,6 +10,7 @@ import { ExportButtons } from "@/components/export-buttons";
 import { call } from "@/lib/client";
 import { dateTime, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 export interface RuleRow {
   id: string;
@@ -74,7 +75,7 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
           </Select>
         </div>
       </Td>
-      <Td className="font-medium" style={{ whiteSpace: "normal" }}>{r.product}<span className="block text-xs font-normal text-ink-400">{r.unit}</span></Td>
+      <Td className="font-medium" style={{ whiteSpace: "normal" }}><Title>{r.product}</Title><span className="block text-xs font-normal text-ink-400">{r.unit}</span></Td>
       <Td style={{ whiteSpace: "normal" }}>{r.category}</Td>
       <Td align="right" className={cn(r.due && "font-semibold text-amber-800")}>{qty(r.stock, r.unit, 2)}{r.due && <span className="block text-xs font-normal" style={{ whiteSpace: "normal" }}>{t("at reorder point")}</span>}</Td>
       <Td align="right">{num("reorderPoint")}</Td>
@@ -198,7 +199,7 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       </div>
       {canManage && (
         <div className="rounded-xl border border-ink-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink-900">{t("Add rule")}</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink-900"><Title>{t("Add rule")}</Title></h2>
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
             <div className="md:col-span-2"><Label htmlFor="ao-p">{t("Product")}</Label><ProductPicker id="ao-p" value={add.product} onChange={(p) => setAdd({ ...add, product: p })} /></div>
             <div><Label htmlFor="ao-s">{t("Supplier")}</Label><Select id="ao-s" value={add.supplierId} onChange={(e) => setAdd({ ...add, supplierId: e.target.value })}>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>

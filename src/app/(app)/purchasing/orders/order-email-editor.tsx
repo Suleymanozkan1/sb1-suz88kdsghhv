@@ -6,6 +6,7 @@ import { Alert, Badge, Button, Input, Label } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
 import { DEFAULT_ORDER_EMAIL, ORDER_EMAIL_PLACEHOLDERS, renderOrderEmail, type OrderLine } from "./order-email";
+import { Title } from "@/components/title";
 
 export interface TemplateProps {
   template: { subject: string; body: string; custom: boolean };
@@ -48,7 +49,7 @@ export function OrderEmailEditor({ template, hotel, today, sample, canManage }: 
   return (
     <details className="rounded-xl border border-ink-200 bg-white" data-testid="order-email-template">
       <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-ink-800">
-        {t("Order e-mail template")}
+        <Title>{t("Order e-mail template")}</Title>
         <Badge tone={template.custom ? "blue" : "gray"}>{template.custom ? t("Edited") : t("Default")}</Badge>
       </summary>
       <div className="grid gap-4 border-t border-ink-100 p-4 lg:grid-cols-2">

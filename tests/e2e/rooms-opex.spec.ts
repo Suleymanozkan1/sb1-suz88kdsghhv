@@ -11,7 +11,7 @@ const lastMonth = () => {
 test("room cost: occupancy, ADR / RevPAR, full room cost, per-room lines (spec 281, feedback r2 §10)", async ({ page }) => {
   await login(page, "controller");
   await page.goto(`/rooms?${lastMonth()}`);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost", { ignoreCase: true }); // headings are shown in title case
   await expect(page.getByText("Cost / occupied night")).toBeVisible();
   await expect(page.getByText("Full room cost (selected period)")).toBeVisible();
   await expect(page.getByText("Cost of unsold rooms")).toBeVisible();
@@ -27,7 +27,7 @@ test("room cost expenses: enter a month, add an item, update it later", async ({
   await login(page, "rooms");
   await page.goto("/rooms");
   await page.getByRole("link", { name: "Room cost expenses" }).first().click();
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost expenses");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Room cost expenses", { ignoreCase: true }); // headings are shown in title case
   await page.goto("/rooms/expenses?month=2020-01");
   await expect(page.getByLabel("Item 1 name")).toHaveValue("Housekeeping salaries (total incl. SGK)");
   await page.getByLabel("Item 1 amount").fill("45000");

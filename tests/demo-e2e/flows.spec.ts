@@ -51,7 +51,7 @@ async function pickProduct(page: Page, label: string | RegExp, search: string, o
 
 test("dashboard and hotel switch: controller sees each of its 3 hotels, no other company", async ({ page }) => {
   await signIn(page, "controller@test.local");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence", { ignoreCase: true }); // headings are shown in title case
   const options = await page.locator("select#hotel option").allTextContents();
   expect(options.sort()).toEqual(["Demo Grand İstanbul", "Demo Kordon İzmir", "Demo Lara Antalya"]);
   for (const name of ["Demo Lara Antalya", "Demo Kordon İzmir"]) {
@@ -212,7 +212,7 @@ test("buffet (F&B manager): open session, issue, leftovers, close → cost per c
       break;
     }
   }
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet", { ignoreCase: true }); // headings are shown in title case
   await pickProduct(page, "Product", "Chicken Wings", /Chicken Wings/);
   await page.getByLabel("Quantity").fill("2");
   await page.getByRole("button", { name: "Issue to buffet" }).click();
