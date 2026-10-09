@@ -51,8 +51,11 @@ Tests: `tests/integration/integrations.test.ts`, plus `npm test` in the bot.
 
 `src/server/plans.ts` switches features on per plan (Basic / Standard / Premium; `Organization.plan`, set in the
 platform console; `PLAN_OVERRIDE` for self-hosted installations):
+- Trial: `TRIAL_ALL_FEATURES` (on unless set to `0`/`false`) gives every tenant the full package; the plans stay
+  stored and apply once it is turned off.
 - The automation and reorder-point alerts are in every plan.
-- Automatic e-mail orders are Premium. They need `SMTP_URL` and `MAIL_FROM`. They are checked when the bot reports
+- Automatic e-mail orders are Premium. Each supplier gets one e-mail written with the hotel's order e-mail template
+  (Order recommendations → Automatic ordering; placeholders `{supplier}` `{hotel}` `{date}` `{lines}`). They need `SMTP_URL` and `MAIL_FROM`. They are checked when the bot reports
   a successful Micros run (the day's consumption is then posted; this also covers self-hosted installs without a
   cron), and by the fallback cron `/api/cron/nightly` at 04:00 UTC, which needs `CRON_SECRET`. An ordered product is
   not ordered again until a goods receipt of it is posted, its stock is back above the reorder point, or the

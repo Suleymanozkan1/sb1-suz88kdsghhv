@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { money, parseNum, pct } from "@/lib/format";
@@ -19,6 +20,32 @@ export function ApproveButton({ versionId }: { versionId: string }) {
         setBusy(true);
         try { await call("POST", `/api/recipe-versions/${versionId}/approve`, {}); router.refresh(); } catch (e) { setErr(e instanceof Error ? e.message : t("Failed")); } finally { setBusy(false); }
       }}>{t("Approve")}</Button>
+      {err && <p className="mt-1 max-w-xs whitespace-normal text-xs text-red-700">{err}</p>}
+    </div>
+  );
+}
+
+/** "Sil": soft delete after a confirmation; the recipe leaves every list (sales history keeps it). */
+export function DeleteRecipeButton({ recipeId, name }: { recipeId: string; name: string }) {
+  const router = useRouter();
+  const t = useT();
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div>
+      <Button variant="danger" disabled={busy} onClick={async () => {
+        if (!window.confirm(t("Delete the recipe {name}? It disappears from the recipe list, the sales matching and the pickers; its sales history is kept.", { name }))) return;
+        setErr(null);
+        setBusy(true);
+        try {
+          await call("DELETE", `/api/recipes/${recipeId}`);
+          router.push("/recipes");
+          router.refresh();
+        } catch (e) {
+          setErr(e instanceof Error ? e.message : t("Failed"));
+          setBusy(false);
+        }
+      }}><Trash2 className="h-4 w-4" /> {t("Delete")}</Button>
       {err && <p className="mt-1 max-w-xs whitespace-normal text-xs text-red-700">{err}</p>}
     </div>
   );

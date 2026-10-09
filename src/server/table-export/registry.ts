@@ -22,6 +22,7 @@ import { integrity } from "./reports/integrity";
 import { sales } from "./reports/sales";
 import { admin } from "./reports/admin";
 import { dashboard } from "./reports/dashboard";
+import { priceChanges, topWaste } from "./reports/insights";
 import { variance } from "./reports/variance";
 import { menuEngineering } from "./reports/menu-engineering";
 import { savings } from "./reports/savings";
@@ -52,6 +53,8 @@ export const REPORTS: Record<string, ReportDef> = {
   sales,
   admin,
   dashboard,
+  "top-waste": topWaste,
+  "price-changes": priceChanges,
   variance,
   "menu-engineering": menuEngineering,
   savings,
