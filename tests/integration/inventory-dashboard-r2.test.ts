@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postGoodsReceipt } from "@/server/services/purchasing";
+import { reverseMovement } from "@/server/services/ledger";
 import { postTransfer, postUserMovement } from "@/server/services/inventory";
 import { recordWaste } from "@/server/services/waste";
 import { dashboard, inventoryStatus, supplierPriceChanges, topWasteProducts } from "@/server/services/insights";
@@ -106,5 +107,27 @@ describe("dashboard: price changes, waste, alerts (r2 §2)", () => {
     expect(w.rows[0]!.pctOfTotal?.toString()).toBe("100");
     expect(w.total.gt(0)).toBe(true);
     expect((await topWasteProducts(prisma, cc, h.hotel.id, { from: day("2026-10-01"), to: day("2026-10-31") })).rows).toHaveLength(0);
+  });
+});
+
+describe("price changes ignore reversed receipts", () => {
+  it("a receipt taken back by a stock correction is neither the last nor the previous price, and raises no alert", async () => {
+    const x = await makeHotel("R2P");
+    const xcc = await x.actor("cost_controller");
+    const tomato = await makeProduct(x.hotel.id, x.cats.food.id, { sku: "TOM", name: "Domates" });
+    const receive = (date: string, unitPrice: number) =>
+      postGoodsReceipt(prisma, xcc, x.hotel.id, { supplierId: x.supplier.id, warehouseId: x.wh.main.id, receiptDate: day(date), items: [{ productId: tomato.id, quantity: 10, unit: "kg", unitPrice }] });
+    await receive("2026-08-20", 100);
+    const wrong = await receive("2026-09-05", 150); // keyed at the wrong price, then taken back
+    const item = await prisma.goodsReceiptItem.findFirstOrThrow({ where: { receiptId: wrong.receipt.id } });
+    const stx = await prisma.stockTransaction.findFirstOrThrow({ where: { sourceType: "GOODS_RECEIPT", sourceId: item.id } });
+    await reverseMovement(prisma, xcc, { hotelId: x.hotel.id, stockTxId: stx.id, reason: "stock correction: wrong price" });
+    await receive("2026-09-10", 105);
+    const pc = await supplierPriceChanges(prisma, xcc, x.hotel.id, SEP);
+    expect(pc.increases.map((c) => [c.previous.toString(), c.current.toString(), c.changePct.toFixed(2)])).toEqual([["100", "105", "5.00"]]);
+    expect(pc.decreases).toEqual([]);
+    const d = await dashboard(prisma, xcc, x.hotel.id, SEP);
+    expect(d.prices.increases.map((c) => c.changePct.toFixed(2))).toEqual(["5.00"]);
+    expect(d.alerts.filter((a) => a.type === "PRICE_INCREASE")).toEqual([]); // +5 % is below the 10 % threshold; the +50 % never happened
   });
 });

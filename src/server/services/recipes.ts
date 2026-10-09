@@ -374,13 +374,24 @@ export async function refreshRecipePrices(db: Db, actor: Actor, hotelId: string)
   authorize(actor, "recipe:manage", { hotelId });
   const recipes = await db.recipe.findMany({ where: { hotelId, deletedAt: null, ...departmentScope(actor) }, include: { versions: { where: { status: "APPROVED" }, include: { lines: true } } }, orderBy: { name: "asc" } });
   const resolver = await buildResolver(db, hotelId);
+  // sub-recipes stay at the versions the snapshot was frozen with (as refreezeSnapshots): only the prices change,
+  // never the frozen structure / quantities
+  const byId = new Map((await db.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } }, include: { recipe: true, lines: true } })).map((x) => [x.id, x]));
   const rows: Array<{ recipeId: string; code: string; name: string; version: number; unit: string; oldPortionCost: string | null; newPortionCost: string | null; change: string | null; changePct: string | null; complete: boolean }> = [];
   const failed: string[] = [];
   for (const r of recipes) {
     const v = r.versions[0];
     if (!v) continue;
     try {
-      const cost = costRecipe(versionToDef(r, v), resolver);
+      const subVersion = frozenSubVersions(v.costSnapshot as SnapTree | null);
+      const frozen: CostResolver = {
+        product: resolver.product,
+        recipe: (id) => {
+          const sv = byId.get(subVersion.get(id) ?? "");
+          return sv ? versionToDef(sv.recipe, sv) : resolver.recipe(id);
+        },
+      };
+      const cost = costRecipe(versionToDef(r, v), frozen);
       await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
       const before = v.portionCost ? D(v.portionCost.toString()) : null;
       const after = cost.portionCost;
@@ -523,6 +534,20 @@ export async function priceImpact(db: Db, actor: Actor, hotelId: string, product
 
 type SnapLine = { kind: string; refId: string; unitCost: string | null; children?: SnapTree };
 type SnapTree = { recipeId: string; versionId?: string; model?: number; lines: SnapLine[] };
+
+/** Sub-recipe id → the version id a frozen snapshot was costed with (at any depth). */
+function frozenSubVersions(snap: SnapTree | null | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (tree: SnapTree) => {
+    for (const l of tree.lines ?? []) {
+      if (!l.children) continue;
+      if (l.children.versionId && !out.has(l.children.recipeId)) out.set(l.children.recipeId, l.children.versionId);
+      walk(l.children);
+    }
+  };
+  if (snap) walk(snap);
+  return out;
+}
 
 /**
  * One-off correction after the costing rule changed (COST_MODEL 2: a recipe quantity is the raw quantity used).

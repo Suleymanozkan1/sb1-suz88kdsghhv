@@ -213,7 +213,7 @@ export type PriceChange = { productId: string; product: string; unit: string; su
  * purchase price per stock unit (net of discount, excl. tax and landed extras - as the price history stores it) against
  * the product's previous receipt, whenever before. Several lines of one product in one receipt (lots) are one price.
  * `latest` marks the product's last receipt before `to`, i.e. "last purchase price vs the one before".
- * Not market prices or imported price lists: only what we actually paid.
+ * Not market prices or imported price lists: only what we actually paid (reversed receipt lines are left out).
  */
 async function priceChangeEvents(db: Db, hotelId: string, q: { from: Date; to: Date }): Promise<PriceChange[]> {
   const rows = await db.$queryRaw<Array<{ productId: string; receiptId: string; number: string; supplierId: string; receiptDate: Date; qty: Prisma.Decimal; price: Prisma.Decimal; prev: Prisma.Decimal; prevDate: Date; prevSupplierId: string; rn: bigint }>>`
@@ -222,6 +222,9 @@ async function priceChangeEvents(db: Db, hotelId: string, q: { from: Date; to: D
       FROM "GoodsReceiptItem" i JOIN "GoodsReceipt" g ON g.id = i."receiptId"
       WHERE g."hotelId" = ${hotelId} AND g."receiptDate" < ${q.to} AND i."productId" IN (
         SELECT i2."productId" FROM "GoodsReceiptItem" i2 JOIN "GoodsReceipt" g2 ON g2.id = i2."receiptId" WHERE g2."hotelId" = ${hotelId} AND g2."receiptDate" >= ${q.from} AND g2."receiptDate" < ${q.to})
+        -- a receipt line taken back by a stock correction (its movement reversed) was never a price we paid
+        AND NOT EXISTS (SELECT 1 FROM "StockTransaction" s JOIN "StockTransaction" rv ON rv."reversesId" = s.id
+          WHERE s."hotelId" = ${hotelId} AND s."sourceType" = 'GOODS_RECEIPT' AND s."sourceId" = i.id)
       GROUP BY i."productId", g.id
       HAVING SUM(i."stockQty") > 0
     ), l AS (

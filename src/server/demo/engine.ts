@@ -184,8 +184,9 @@ export class BulkLedger {
         total = newValue.minus(pos.value);
       }
     } else {
-      if (fifo && qty.gt(0) && m.exactTotal === undefined && pos.quantity.lt(0)) {
-        newValue = toStorage(newQty.times(unitCost));
+      if (fifo && qty.gt(0) && pos.quantity.lt(0)) {
+        // as postMovement: any inbound into negative FIFO stock settles the shortfall; the balance = its open layers
+        newValue = newQty.gt(0) ? toStorage(this.newBatches(m, qty, pos.quantity, unitCost).reduce((a, b) => a.plus(toStorage(b.quantity).times(toStorage(b.unitCost))), ZERO)) : toStorage(newQty.times(unitCost));
         total = newValue.minus(pos.value);
       }
       newAvg = newQty.gt(0) ? newValue.div(newQty) : qty.gt(0) ? unitCost : pos.avgCost;
@@ -256,15 +257,9 @@ export class BulkLedger {
   private postLayers(key: string, m: EngineMovement, txId: string, qty: Decimal, before: Decimal, unitCost: Decimal, draws: Array<{ layerId: string; quantity: Decimal; unitCost: Decimal }>) {
     const all = this.layers.get(key) ?? [];
     this.layers.set(key, all);
-    const layerQty = before.lt(0) ? qty.plus(before) : qty;
-    if (qty.gt(0) && layerQty.gt(0)) {
-      const batches = transferBatches(m.layersFromTxId ? (this.drawsOf.get(m.layersFromTxId) ?? []) : [], qty.minus(layerQty));
-      const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
-      if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: m.txDate });
-      for (const b of batches) {
-        const q = toStorage(b.quantity);
-        all.push({ id: this.layerId(), hotelId: this.hotelId, warehouseId: m.warehouseId, productId: m.productId, sourceTxId: txId, receivedAt: b.receivedAt, originalQty: q, remainingQty: q, unitCost: toStorage(b.unitCost) });
-      }
+    for (const b of this.newBatches(m, qty, before, unitCost)) {
+      const q = toStorage(b.quantity);
+      all.push({ id: this.layerId(), hotelId: this.hotelId, warehouseId: m.warehouseId, productId: m.productId, sourceTxId: txId, receivedAt: b.receivedAt, originalQty: q, remainingQty: q, unitCost: toStorage(b.unitCost) });
     }
     const byId = new Map(all.map((l) => [l.id, l]));
     const taken: Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> = [];
@@ -276,6 +271,16 @@ export class BulkLedger {
       taken.push({ quantity: q, unitCost: toStorage(d.unitCost), receivedAt: l.receivedAt });
     }
     if (taken.length) this.drawsOf.set(txId, taken.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime()));
+  }
+
+  /** The layers an inbound movement opens (a transfer-in: the out leg's batches); into negative stock only what is left. */
+  private newBatches(m: EngineMovement, qty: Decimal, before: Decimal, unitCost: Decimal): Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> {
+    const layerQty = before.lt(0) ? qty.plus(before) : qty;
+    if (!qty.gt(0) || !layerQty.gt(0)) return [];
+    const batches = transferBatches(m.layersFromTxId ? (this.drawsOf.get(m.layersFromTxId) ?? []) : [], qty.minus(layerQty));
+    const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
+    if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: m.txDate });
+    return batches;
   }
 
   /** layer ids sort in creation order (as cuids do), so FIFO ties on the same receipt time break the same way */

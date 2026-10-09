@@ -95,6 +95,10 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
       if (a.requestedById === actor.userId) throw new DomainError("FORBIDDEN", "You cannot approve your own request");
       if (input.decision === "REJECT" && (!input.note || input.note.trim().length < 3)) throw new DomainError("VALIDATION", "A rejection note is required");
 
+      // claim the request first: a concurrent second decision on the same approval finds it no longer PENDING
+      const claimed = await tx.approval.updateMany({ where: { id: a.id, status: "PENDING" }, data: { status: input.decision === "APPROVE" ? "APPROVED" : "REJECTED" } });
+      if (claimed.count !== 1) throw new DomainError("CONFLICT", "Approval already decided");
+
       let resultRef: string | null = null;
       if (input.decision === "APPROVE") {
         switch (a.action) {
@@ -109,6 +113,9 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
             break;
           }
           case "STOCK_ADJUSTMENT": {
+            // only a count that is waiting for this decision is posted (never one rejected back to DRAFT or posted already)
+            const ready = await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED", deletedAt: null }, data: { status: "APPROVED" } });
+            if (ready.count !== 1) throw new DomainError("CONFLICT", "This count is no longer waiting for approval");
             await postCount(tx, actor, hotelId, a.entityId, { approved: true });
             resultRef = a.entityId;
             break;
@@ -120,7 +127,8 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
         await tx.wasteRecord.update({ where: { id: a.entityId }, data: { status: "REJECTED", approvedById: actor.userId, approvedAt: new Date() } });
       } else if (a.action === "STOCK_ADJUSTMENT") {
         // rejected: nothing is posted; the count goes back to DRAFT for a recount, with the approver's note
-        await tx.stockCount.update({ where: { id: a.entityId }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
+        // (only while it is still waiting: a count another approval already posted is never reopened)
+        await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED" }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
       }
 
       const updated = await tx.approval.update({

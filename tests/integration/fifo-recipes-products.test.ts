@@ -24,6 +24,9 @@ let viewer: Actor;
 const layers = async (warehouseId: string, productId: string) =>
   (await prisma.fifoLayer.findMany({ where: { warehouseId, productId, remainingQty: { gt: 0 } }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] })).map((l) => `${Number(l.remainingQty)}@${Number(l.unitCost)}`);
 
+const layerValue = async (warehouseId: string, productId: string) =>
+  (await prisma.fifoLayer.findMany({ where: { warehouseId, productId, remainingQty: { gt: 0 } } })).reduce((a, l) => a + Number(l.remainingQty) * Number(l.unitCost), 0);
+
 beforeAll(async () => {
   h = await makeHotel("R2C");
   cc = await h.actor("cost_controller");
@@ -83,6 +86,44 @@ describe("FIFO for every product", () => {
     expect(await layers(h.wh.main.id, cheese.id)).toEqual(["3@350", "5@500"]);
     const bal = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.main.id, productId: cheese.id } } });
     expect(Number(bal.quantity)).toBe(8);
+    // the reversal releases what the layers held (10 @ 350), so the balance is still worth its layers; the 500 over
+    // the receipt's own cost is a visible revaluation
+    expect(Number(bal.value)).toBe(await layerValue(h.wh.main.id, cheese.id));
+    expect(Number(bal.value)).toBe(3 * 350 + 5 * 500);
+    const rev = await prisma.stockTransaction.findFirstOrThrow({ where: { reversesId: r1.id } });
+    expect(Number(rev.totalCost)).toBe(-3500);
+    expect((await prisma.costTransaction.findMany({ where: { stockTxId: rev.id } })).map((c) => [c.kind, Number(c.amount)])).toEqual([["REVALUATION", 500]]);
+  });
+
+  it("a goods receipt into negative stock settles the shortfall: the balance is worth exactly its open layers", async () => {
+    const lemon = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "LEMON", name: "Lemon", costingMethod: "FIFO" });
+    const receive = (quantity: number, unitPrice: number, d: string, invoiceNo: string) =>
+      postGoodsReceipt(prisma, cc, h.hotel.id, { supplierId: h.supplier.id, warehouseId: h.wh.main.id, receiptDate: day(d), invoiceNo, items: [{ productId: lemon.id, quantity, unit: "kg", unitPrice, taxRatePct: 0 }] });
+    await receive(2, 100, "2026-09-01", "LEM-1");
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: lemon.id, type: "CONSUMPTION", quantity: -5, allowNegative: true, txDate: day("2026-09-02"), sourceType: "MANUAL" });
+    await receive(10, 200, "2026-09-03", "LEM-2");
+    expect(await layers(h.wh.main.id, lemon.id)).toEqual(["7@200"]);
+    const bal = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.main.id, productId: lemon.id } } });
+    expect(Number(bal.quantity)).toBe(7);
+    expect(Number(bal.value)).toBe(1400);
+    expect(Number(bal.value)).toBe(await layerValue(h.wh.main.id, lemon.id));
+
+    // a transfer into a store that is short: its batches settle the shortfall (oldest first), the rest are layers
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.restStore.id, productId: lemon.id, type: "CONSUMPTION", quantity: -2, allowNegative: true, txDate: day("2026-09-04"), sourceType: "MANUAL" });
+    await transferStock(prisma, cc, { hotelId: h.hotel.id, fromWarehouseId: h.wh.main.id, toWarehouseId: h.wh.restStore.id, productId: lemon.id, quantity: 5, txDate: day("2026-09-05") });
+    const rb = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.restStore.id, productId: lemon.id } } });
+    expect(Number(rb.quantity)).toBe(3);
+    expect(Number(rb.value)).toBe(await layerValue(h.wh.restStore.id, lemon.id));
+    expect(Number(rb.value)).toBe(600);
+  });
+
+  it("a receipt that only covered negative stock has no batch: its reversal is refused instead of draining newer batches", async () => {
+    const lime = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "LIME", name: "Lime", costingMethod: "FIFO" });
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: lime.id, type: "CONSUMPTION", quantity: -4, allowNegative: true, txDate: day("2026-09-01"), sourceType: "MANUAL" });
+    const absorbed = await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: lime.id, type: "PURCHASE", quantity: 4, unitCost: 50, txDate: day("2026-09-02"), sourceType: "MANUAL" });
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: lime.id, type: "PURCHASE", quantity: 6, unitCost: 60, txDate: day("2026-09-03"), sourceType: "MANUAL" });
+    await expect(reverseMovement(prisma, cc, { hotelId: h.hotel.id, stockTxId: absorbed.id, reason: "wrong invoice" })).rejects.toMatchObject({ code: "INSUFFICIENT_STOCK" });
+    expect(await layers(h.wh.main.id, lime.id)).toEqual(["6@60"]);
   });
 
   it("the integrity checks agree: FIFO layers = balances for the whole hotel", async () => {
@@ -156,6 +197,24 @@ describe("recipes: dates, edit, delete, price update", () => {
     expect(Number(v.portionCost)).toBe(188);
   });
 
+  it("update recipe prices keeps the frozen structure: the sub-recipe version and quantities it was approved with", async () => {
+    const club = await createRecipe(prisma, chef, h.hotel.id, { name: "Club", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { portions: 1, lines: [{ subRecipeId: sauce, quantity: 50, unit: "g" }, { productId: bun, quantity: 1, unit: "pc" }] } });
+    await approveVersion(prisma, cc, h.hotel.id, club.versions[0]!.id);
+    const snap = async () => (await prisma.recipeVersion.findFirstOrThrow({ where: { recipeId: club.id, status: "APPROVED" } })).costSnapshot as { requirements: Record<string, string>; lines: Array<{ children?: { versionId?: string } }> };
+    const before = await snap();
+    const sauceV1 = before.lines[0]!.children!.versionId;
+    // the sauce gets three times the beef in a new version after the club was approved
+    await editRecipe(prisma, chef, h.hotel.id, sauce, { name: "Burger Sauce", type: "SEMI_FINISHED", departmentId: h.depts.kitchen.id, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "richer", lines: [{ productId: beef, quantity: 300, unit: "g" }] } });
+    const r = await refreshRecipePrices(prisma, chef, h.hotel.id);
+    expect(r.failed).toEqual([]);
+    const after = await snap();
+    expect(after.requirements).toEqual(before.requirements);
+    expect(after.lines[0]!.children!.versionId).toBe(sauceV1);
+    // 50 g of sauce v1 = 5 g beef at the next batch (900/kg) + a bun at 8
+    expect(Number(r.rows.find((x) => x.name === "Club")!.newPortionCost)).toBe(12.5);
+    await prisma.recipe.update({ where: { id: club.id }, data: { deletedAt: new Date(), active: false } }); // out of the way of the delete test
+  });
+
   it("delete: authorised roles only, refused while used as a sub-recipe, then hidden everywhere but kept", async () => {
     // the sauce was dropped from the burger in v2, but the edit kept no reference: deleting it is allowed
     const other = await createRecipe(prisma, chef, h.hotel.id, { name: "Fries", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { portions: 1, lines: [{ subRecipeId: sauce, quantity: 10, unit: "g" }] } });
@@ -220,9 +279,17 @@ describe("products: pull from Micros, account codes", () => {
     const paste = await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, name: "Domates Salçası 830 gr" }, include: { category: true } });
     expect(paste.category.code).toBe("MICROS-NEW");
     expect((await prisma.hotel.findUniqueOrThrow({ where: { id: h.hotel.id } })).productsPulledAt).toBeNull();
-    // the pull went through: the next one asks only for products added since it was picked up
+    // the bot reports SUCCEEDED (with warnings), but one card was rejected: the pull time is not advanced, so the
+    // next pull asks for everything again and the rejected card is not lost
     await reportRun(prisma, h.hotel.id, { runId: "prod-1", source: "MICROS", status: "SUCCEEDED", requestId: r.id });
-    const picked = (await prisma.integrationRequest.findUniqueOrThrow({ where: { id: r.id } })).pickedAt!;
+    expect((await prisma.hotel.findUniqueOrThrow({ where: { id: h.hotel.id } })).productsPulledAt).toBeNull();
+    const retry = await requestRun(prisma, cc, h.hotel.id, { kind: "PRODUCTS" });
+    expect((await nextRequest(prisma, h.hotel.id)).request).toMatchObject({ id: retry.id, since: null });
+    await reportRun(prisma, h.hotel.id, { runId: "prod-2", source: "MICROS", status: "STARTED", requestId: retry.id });
+    expect(await ingest(prisma, bot, h.hotel.id, { kind: "products", runId: "prod-2", items: [{ name: "Gaz", unit: "kg" }] })).toMatchObject({ accepted: 1, errors: [] });
+    // the pull went through: the next one asks only for products added since it was picked up
+    await reportRun(prisma, h.hotel.id, { runId: "prod-2", source: "MICROS", status: "SUCCEEDED", requestId: retry.id });
+    const picked = (await prisma.integrationRequest.findUniqueOrThrow({ where: { id: retry.id } })).pickedAt!;
     expect((await productPullStatus(prisma, cc, h.hotel.id))).toMatchObject({ lastPulledAt: picked, waitingSince: null, automation: true });
     const again = await requestRun(prisma, cc, h.hotel.id, { kind: "PRODUCTS" });
     expect((await nextRequest(prisma, h.hotel.id)).request).toMatchObject({ id: again.id, since: picked.toISOString() });

@@ -90,7 +90,10 @@ export async function submitCount(db: Db, actor: Actor, hotelId: string, countId
     requireWarehouseScope(actor, c.warehouse);
     if (c.status !== "DRAFT") throw new DomainError("VALIDATION", `Count is ${c.status}`);
     const totalAbs = sum(c.lines.map((l) => D(l.varianceValue.toString()).abs()));
-    await tx.stockCount.update({ where: { id: c.id }, data: { status: "SUBMITTED", rejectionNote: null } });
+    // only one submission wins (a double click must not create two pending approvals): the DRAFT → SUBMITTED
+    // transition is conditional, and a concurrent second submit sees 0 rows once the first commits
+    const moved = await tx.stockCount.updateMany({ where: { id: c.id, hotelId, status: "DRAFT", deletedAt: null }, data: { status: "SUBMITTED", rejectionNote: null } });
+    if (moved.count !== 1) throw new DomainError("CONFLICT", "This count has already been sent for approval");
     const a = await tx.approval.create({
       data: { hotelId, action: "STOCK_ADJUSTMENT", entityType: "StockCount", entityId: c.id, requestedById: actor.userId, reason: `Stock count ${c.number} · ${c.warehouse.name}`, payload: { varianceValue: totalAbs.toString() } },
     });
@@ -117,9 +120,10 @@ export async function deleteCount(db: Db, actor: Actor, hotelId: string, countId
   });
 }
 
-/** Warehouses the user may count, and the one selected on the counts page (default: the first). */
+/** Warehouses the user may count (or, read-only, see), and the one selected on the counts page (default: the first). */
 export async function countWarehouses(db: Db, actor: Actor, hotelId: string, selected?: string | null) {
-  authorize(actor, "inventory:count", { hotelId });
+  // reading counts is inventory:view (GET /api/counts for read-only roles); starting / entering / sending stays inventory:count
+  authorize(actor, "inventory:view", { hotelId });
   const warehouses = await db.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" }, select: { id: true, name: true } });
   const current = (selected && warehouses.find((w) => w.id === selected)) || warehouses[0] || null;
   return { warehouses, current };
@@ -127,7 +131,7 @@ export async function countWarehouses(db: Db, actor: Actor, hotelId: string, sel
 
 /** Counts of ONE warehouse (never the deleted ones), newest first — the counts page, its API and its export. */
 export async function listCounts(db: Db, actor: Actor, hotelId: string, q: { warehouseId: string; countId?: string | null; take?: number }) {
-  authorize(actor, "inventory:count", { hotelId });
+  authorize(actor, "inventory:view", { hotelId });
   return db.stockCount.findMany({
     where: { hotelId, warehouseId: q.warehouseId, deletedAt: null, warehouse: warehouseScope(actor), ...(q.countId ? { id: q.countId } : {}) },
     include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } },

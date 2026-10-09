@@ -18,6 +18,7 @@ const TEMPLATES: Array<[RegExp, string, string[]]> = [
   [/^Reservation room nights \((\d+)\) differ from PMS occupied rooms \((\d+)\) by more than 2%\.$/, "Reservation room nights ({res}) differ from PMS occupied rooms ({occ}) by more than 2%.", ["res", "occ"]],
   [/^(-?[\d.]+) could not be assigned to a room \(stays without room number or no occupied nights\)\.$/, "{amount} could not be assigned to a room (stays without room number or no occupied nights).", ["amount"]],
   [/^No room cost expenses entered for (.+)\.$/, "No room cost expenses entered for {months}.", ["months"]],
+  [/^Payroll of (-?[\d.]+) is already posted to the Rooms division and monthly room expenses of (-?[\d.]+) are added on top: if the monthly items include HK salaries, they are counted twice\.$/, "Payroll of {ledger} is already posted to the Rooms division and monthly room expenses of {monthly} are added on top: if the monthly items include HK salaries, they are counted twice.", ["ledger", "monthly"]],
 ];
 function tServer(t: T, s: string): string {
   for (const [re, key, names] of TEMPLATES) {

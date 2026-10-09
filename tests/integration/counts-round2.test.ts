@@ -73,6 +73,26 @@ describe("approval flow", () => {
     expect((await ledgerInvariant(h.wh.main.id, rice.id)).balanceQty).toBe("58");
   });
 
+  it("a double submit creates one approval; a stray second approval can neither reopen nor re-post the count", async () => {
+    const c = await sheet(wh, h.wh.main.id, 57, "2026-09-13");
+    const both = await Promise.allSettled([submitCount(prisma, wh, h.hotel.id, c.id), submitCount(prisma, wh, h.hotel.id, c.id)]);
+    expect(both.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(both.find((r) => r.status === "rejected")).toMatchObject({ reason: { code: expect.stringMatching(/CONFLICT|VALIDATION/) } });
+    const pending = await prisma.approval.findMany({ where: { entityType: "StockCount", entityId: c.id, status: "PENDING" } });
+    expect(pending).toHaveLength(1);
+
+    // a duplicate left by an older build: approving one posts, rejecting the other leaves the posted count alone
+    const dup = await prisma.approval.create({ data: { hotelId: h.hotel.id, action: "STOCK_ADJUSTMENT", entityType: "StockCount", entityId: c.id, requestedById: wh.userId, reason: "dup" } });
+    await decideApproval(prisma, cc, h.hotel.id, { approvalId: pending[0]!.id, decision: "APPROVE" });
+    await decideApproval(prisma, cc, h.hotel.id, { approvalId: dup.id, decision: "REJECT", note: "duplicate" });
+    expect((await prisma.stockCount.findUniqueOrThrow({ where: { id: c.id } })).status).toBe("POSTED");
+    await expect(enterCount(prisma, wh, h.hotel.id, c.id, { lines: [{ productId: rice.id, countedQty: 1 }] })).rejects.toThrow(/POSTED/);
+    const dup2 = await prisma.approval.create({ data: { hotelId: h.hotel.id, action: "STOCK_ADJUSTMENT", entityType: "StockCount", entityId: c.id, requestedById: wh.userId, reason: "dup" } });
+    await expect(decideApproval(prisma, cc, h.hotel.id, { approvalId: dup2.id, decision: "APPROVE" })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect((await ledgerInvariant(h.wh.main.id, rice.id)).balanceQty).toBe("57");
+    await prisma.approval.update({ where: { id: dup2.id }, data: { status: "CANCELLED" } });
+  });
+
   it("approvers per warehouse (Admin): only the configured roles decide and see the request", async () => {
     await expect(setCountApprovers(prisma, cc, h.hotel.id, { warehouseId: h.wh.restStore.id, roleKeys: ["chef"] })).rejects.toThrow(/permission/);
     await expect(setCountApprovers(prisma, admin, h.hotel.id, { warehouseId: h.wh.restStore.id, roleKeys: ["nope"] })).rejects.toThrow(/Unknown role/);
@@ -147,6 +167,17 @@ describe("one warehouse per list", () => {
     const main = await listCounts(prisma, admin, h.hotel.id, { warehouseId: h.wh.main.id });
     expect(main.length).toBeGreaterThan(0);
     expect(main.every((c) => c.warehouseId === h.wh.main.id && c.deletedAt === null)).toBe(true);
+  });
+
+  it("read-only roles may read counts (GET /api/counts: inventory:view) but not start or send one", async () => {
+    const viewer = await h.actor("viewer");
+    const { current } = await countWarehouses(prisma, viewer, h.hotel.id, h.wh.main.id);
+    expect(current?.id).toBe(h.wh.main.id);
+    expect((await listCounts(prisma, viewer, h.hotel.id, { warehouseId: h.wh.main.id })).length).toBeGreaterThan(0);
+    await expect(startCount(prisma, viewer, h.hotel.id, { warehouseId: h.wh.main.id, countDate: day("2026-09-25"), productIds: [rice.id] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const draft = await sheet(wh, h.wh.main.id, 57, "2026-09-25");
+    await expect(submitCount(prisma, viewer, h.hotel.id, draft.id)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await deleteCount(prisma, admin, h.hotel.id, draft.id);
   });
 });
 

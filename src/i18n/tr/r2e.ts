@@ -28,6 +28,7 @@ export const r2e: Record<string, string> = {
   "Cost ({currency}) for the selected period": "Seçilen dönem maliyeti ({currency})",
   "{component} cost charged to this room for the selected period, in {currency}": "Seçilen dönemde bu odaya yüklenen {component} maliyeti ({currency})",
   "No room cost expenses entered for {months}.": "{months} için oda maliyet gideri girilmemiş.",
+  "Payroll of {ledger} is already posted to the Rooms division and monthly room expenses of {monthly} are added on top: if the monthly items include HK salaries, they are counted twice.": "Oda bölümüne zaten {ledger} personel gideri işlenmiş ve üzerine {monthly} aylık oda gideri ekleniyor: aylık kalemler HK maaşlarını içeriyorsa iki kez sayılır.",
   "Occupied rooms exceed sellable rooms (available − out of order − out of service): check that available rooms include out-of-order rooms.": "Dolu oda sayısı satılabilir odayı (müsait − arızalı − satışa kapalı) aşıyor: müsait oda sayısının arızalı odaları içerdiğini kontrol edin.",
   // ── Room cost expenses screen ──
   "Enter the month's room expenses that are not in the cost ledger. They are added to room cost automatically; a period that covers part of a month takes its share by days.": "Maliyet defterinde olmayan aylık oda giderlerini girin. Oda maliyetine otomatik eklenir; ayın bir kısmını kapsayan dönem, gün sayısına göre payını alır.",

@@ -70,6 +70,9 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     else direct = direct.plus(a);
   }
   const roomsDivisionCost = sum(ROOM_COMPONENTS.map((c) => pool[c]));
+  // payroll already posted to the Rooms division (expenses) AND monthly room expenses (which typically hold HK salaries)
+  // for the same period: both are added up, so the salaries may be counted twice - flagged, not silently netted
+  const laborOverlap = !pool.labor.isZero() && !monthly.total.isZero() ? { ledgerLabor: pool.labor, monthlyExpenses: monthly.total } : null;
   pool.monthly = monthly.total; // entered monthly room expenses (HK salaries, meals, uniforms, supplies…) share the pool split
   // room-tagged expenses are direct to the room: take them out of the pool
   const directByRoom = new Map<string, Partial<ComponentCosts>>();
@@ -97,6 +100,7 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
   const revenue = sum(res.lines.map((l) => l.roomRevenue));
   const avgLos = stays.length ? stays.reduce((a, s) => a + s.nights, 0) / stays.length : null;
   const warnings: string[] = [];
+  if (laborOverlap) warnings.push(`Payroll of ${laborOverlap.ledgerLabor.toFixed(2)} is already posted to the Rooms division and monthly room expenses of ${laborOverlap.monthlyExpenses.toFixed(2)} are added on top: if the monthly items include HK salaries, they are counted twice.`);
   if (monthly.missingMonths.length) warnings.push(`No room cost expenses entered for ${monthly.missingMonths.join(", ")}.`);
   if (occ.source === "NONE") warnings.push("No occupancy data: import PMS statistics or reservations.");
   if (occ.source === "PMS_DAILY" && occ.reservationNights && Math.abs(occ.reservationNights - occ.occupiedRooms) > Math.max(1, occ.occupiedRooms * 0.02)) warnings.push(`Reservation room nights (${occ.reservationNights}) differ from PMS occupied rooms (${occ.occupiedRooms}) by more than 2%.`);
@@ -127,6 +131,7 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     },
     basis: allSqm ? "occupied nights × room m²" : "occupied nights",
     allocationPosted: runs > 0,
+    laborOverlap,
     warnings,
   };
 }

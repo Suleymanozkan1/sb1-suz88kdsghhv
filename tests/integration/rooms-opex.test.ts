@@ -147,6 +147,7 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     // nothing entered on the monthly room cost expenses screen yet
     expect(r.totals.monthlyExpenses.toString()).toBe("0");
     expect(r.warnings).toContain("No room cost expenses entered for 2026-09.");
+    expect(r.laborOverlap).toBeNull(); // payroll in the ledger only: nothing counted twice
     // revenue KPIs over sellable room nights (no OOO / OOS here: sellable = available = 4 rooms × 30)
     expect(r.occupancy.sellableRooms).toBe(120);
     expect(r.kpis.adr!.toString()).toBe("2800"); // 140000 / 50 sold
@@ -234,6 +235,11 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     expect(r.totals.fullCost.toString()).toBe("81542.857143");
     expect(sum(r.lines.map((l) => l.fullCost)).plus(sum(Object.values(r.unassigned))).toString()).toBe("81542.857143");
     expect(r.warnings.some((w) => w.startsWith("No room cost expenses"))).toBe(false);
+    // HK payroll is already an expense of the Rooms division AND "HK salaries" are entered monthly: flagged
+    expect(r.laborOverlap).not.toBeNull();
+    expect(r.laborOverlap!.ledgerLabor.gt(0)).toBe(true);
+    expect(r.laborOverlap!.monthlyExpenses.toString()).toBe("33000");
+    expect(r.warnings.some((w) => w.startsWith("Payroll of ") && w.includes("counted twice"))).toBe(true);
     // 16 Sep – 15 Oct: 15/30 of September + 15/31 of October
     const cross = await roomCostReport(prisma, cc, h.hotel.id, { from: new Date("2026-09-16T00:00:00Z"), to: new Date("2026-10-16T00:00:00Z") });
     expect(cross.monthly.items.map((i) => [i.name, i.share.toFixed(2)])).toEqual([["HK salaries", "30000.00"], ["HK meals", "3000.00"]]);

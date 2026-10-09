@@ -330,8 +330,11 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
   const done = r.status !== "STARTED";
   const data = { source: r.source, status: r.status, message: r.message ?? null, businessDay: r.businessDay ?? null, requestId: r.requestId ?? null, finishedAt: done ? new Date() : null };
   const run = await db.integrationRun.upsert({ where: { hotelId_runId: { hotelId, runId: r.runId } }, create: { hotelId, runId: r.runId, ...data }, update: { ...data, businessDay: data.businessDay ?? undefined } });
-  // a product pull that went through: the next one asks only for products added since it was picked up
-  if (r.status === "SUCCEEDED" && r.requestId) {
+  // a product pull that went through: the next one asks only for products added since it was picked up. If HotelCost
+  // rejected any product card (the bot still reports SUCCEEDED, with warnings), the pull time is kept so the next
+  // pull asks for those cards again (accepted ones come back as duplicates)
+  const productErrors = ((run.stats as { products?: { errors?: unknown[] } } | null)?.products?.errors ?? []).length;
+  if (r.status === "SUCCEEDED" && r.requestId && !productErrors) {
     const req = await db.integrationRequest.findFirst({ where: { id: r.requestId, hotelId, kind: "PRODUCTS" } });
     if (req) await db.hotel.update({ where: { id: hotelId }, data: { productsPulledAt: req.pickedAt ?? new Date() } });
   }

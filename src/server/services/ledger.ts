@@ -163,11 +163,19 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
           fifoDraws = fifoIssue(ls, outQty).draws;
         } else if (fifo) {
           // a receipt posted before the product moved to FIFO has no layer of its own (its stock sits in the
-          // opening layer): the quantity leaves the oldest layers, so the layers keep adding up to the balance
+          // opening layer): the quantity leaves the oldest layers at what they hold, so the layers keep adding up to
+          // the balance (reverseMovement posts the difference to the receipt's cost as a revaluation). A receipt that
+          // only covered negative stock never reached a layer: nothing can be released for it.
+          const orig = input.reverseLayerOfTxId ? await tx.stockTransaction.findFirst({ where: { id: input.reverseLayerOfTxId }, select: { quantity: true, balanceQtyAfter: true } }) : null;
+          const landed = orig ? Decimal.min(D(orig.quantity.toString()), Decimal.max(D(orig.balanceQtyAfter.toString()), ZERO)) : outQty;
           const ls = await openLayers(tx, input.warehouseId, input.productId);
           const available = ls.reduce((a, l) => a.plus(l.remainingQty), ZERO);
-          const take = Decimal.min(outQty, available);
-          if (take.gt(0)) fifoDraws = fifoIssue(ls, take).draws;
+          if (landed.lt(outQty) || available.lt(outQty)) {
+            throw new DomainError("INSUFFICIENT_STOCK", "Receipt layer has already been consumed; reverse the consumption first or post an adjustment");
+          }
+          const r = fifoIssue(ls, outQty);
+          fifoDraws = r.draws;
+          total = toStorage(r.totalCost).neg();
         }
         // If this empties the position, release the whole remaining value (no residue).
         if (pos.quantity.minus(outQty).isZero()) total = pos.value.neg();
@@ -195,6 +203,18 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       }
     }
 
+    // FIFO inbound: the layers this movement opens (a transfer-in: the out leg's batches). Into negative stock only what
+    // is left after covering the shortfall becomes a layer.
+    const layerQty = pos.quantity.lt(0) ? qty.plus(pos.quantity) : qty;
+    let batches: Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> = [];
+    if (createLayer && layerQty.gt(0)) {
+      const drawn = input.layersFromTxId ? await tx.fifoConsumption.findMany({ where: { txId: input.layersFromTxId }, include: { layer: { select: { receivedAt: true } } }, orderBy: [{ layer: { receivedAt: "asc" } }, { layerId: "asc" }] }) : [];
+      batches = transferBatches(drawn.map((d) => ({ quantity: D(d.quantity.toString()), unitCost: D(d.unitCost.toString()), receivedAt: d.layer.receivedAt })), qty.minus(layerQty));
+      // whatever the batches do not cover (a plain receipt: all of it) is one layer at this movement's cost and date
+      const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
+      if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: input.txDate });
+    }
+
     const newQty = pos.quantity.plus(qty);
     let newValue = pos.value.plus(total);
     let newAvg: Decimal;
@@ -207,10 +227,11 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
         total = newValue.minus(pos.value);
       }
     } else {
-      if (fifo && qty.gt(0) && input.exactTotal === undefined && pos.quantity.lt(0)) {
-        // receipt into negative FIFO stock: the shortfall issued earlier is settled at this receipt's cost, and
-        // only what is left after it becomes a layer (layers always add up to the balance)
-        newValue = toStorage(newQty.times(unitCost));
+      if (fifo && qty.gt(0) && pos.quantity.lt(0)) {
+        // any inbound into negative FIFO stock (receipt at its landed total, transfer-in, reversal): the shortfall
+        // issued earlier is settled at this movement's cost and only what is left after it becomes a layer, so the
+        // balance value is exactly what the open layers hold (the difference is posted on this movement)
+        newValue = newQty.gt(0) ? toStorage(batches.reduce((a, b) => a.plus(toStorage(b.quantity).times(toStorage(b.unitCost))), ZERO)) : toStorage(newQty.times(unitCost));
         total = newValue.minus(pos.value);
       }
       newAvg = newQty.gt(0) ? newValue.div(newQty) : qty.gt(0) ? unitCost : pos.avgCost;
@@ -249,18 +270,10 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       data: { quantity: toStorage(newQty).toString(), value: toStorage(newValue).toString(), avgCost: toStorage(newAvg).toString(), lastTxAt: input.txDate, version: { increment: 1 } },
     });
 
-    const layerQty = pos.quantity.lt(0) ? qty.plus(pos.quantity) : qty;
-    if (createLayer && layerQty.gt(0)) {
-      const drawn = input.layersFromTxId ? await tx.fifoConsumption.findMany({ where: { txId: input.layersFromTxId }, include: { layer: { select: { receivedAt: true } } }, orderBy: [{ layer: { receivedAt: "asc" } }, { layerId: "asc" }] }) : [];
-      const batches = transferBatches(drawn.map((d) => ({ quantity: D(d.quantity.toString()), unitCost: D(d.unitCost.toString()), receivedAt: d.layer.receivedAt })), qty.minus(layerQty));
-      // whatever the batches do not cover (a plain receipt: all of it) is one layer at this movement's cost and date
-      const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
-      if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: input.txDate });
-      for (const b of batches) {
-        await tx.fifoLayer.create({
-          data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: b.receivedAt, originalQty: toStorage(b.quantity).toString(), remainingQty: toStorage(b.quantity).toString(), unitCost: toStorage(b.unitCost).toString() },
-        });
-      }
+    for (const b of batches) {
+      await tx.fifoLayer.create({
+        data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: b.receivedAt, originalQty: toStorage(b.quantity).toString(), remainingQty: toStorage(b.quantity).toString(), unitCost: toStorage(b.unitCost).toString() },
+      });
     }
     for (const d of fifoDraws) {
       await tx.fifoLayer.update({ where: { id: d.layerId }, data: { remainingQty: { decrement: toStorage(d.quantity).toString() } } });
