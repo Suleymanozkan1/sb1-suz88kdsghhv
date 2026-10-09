@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
+import { parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 export function AddLine({ sessionId, recipes }: { sessionId: string; recipes: { id: string; name: string; unit: string }[] }) {
@@ -53,17 +54,21 @@ const CLASSES = [
   ["staff", "Staff meal", "STAFF_MEAL"],
 ] as const;
 
-export function CloseSession({ sessionId, items, expectedCovers }: { sessionId: string; items: { key: string; name: string; unit: string; input: string; isDish: boolean }[]; expectedCovers: number | null }) {
+export function CloseSession({ sessionId, items, expectedCovers, microsCovers }: { sessionId: string; items: { key: string; name: string; unit: string; input: string; isDish: boolean }[]; expectedCovers: number | null; microsCovers: number | null }) {
   const t = useT();
   const router = useRouter();
   const [vals, setVals] = useState<Record<string, Record<string, string>>>({});
-  const [covers, setCovers] = useState(expectedCovers ? String(expectedCovers) : "");
+  // the covers Micros sold for the day, outlet and meal when imported; else the expected covers typed at opening
+  const [covers, setCovers] = useState(microsCovers !== null ? String(microsCovers) : expectedCovers ? String(expectedCovers) : "");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function close() {
     setErr(null);
     if (!/^\d+$/.test(covers)) return setErr(t("Enter the actual number of covers"));
-    const leftovers = items.flatMap((i) => CLASSES.map(([k, , cls]) => ({ key: i.key, quantity: vals[i.key]?.[k] ?? "", class: cls })).filter((l) => l.quantity && Number(l.quantity) > 0));
+    const typed = items.flatMap((i) => CLASSES.map(([k, , cls]) => ({ key: i.key, quantity: (vals[i.key]?.[k] ?? "").trim(), class: cls })).filter((l) => l.quantity !== ""));
+    // "1,5" is a valid Turkish entry; anything unreadable is reported instead of being left out of the close
+    if (typed.some((l) => !(parseNum(l.quantity) >= 0))) return setErr(t("Must be a number"));
+    const leftovers = typed.filter((l) => parseNum(l.quantity) > 0);
     if (!window.confirm(t("Close the session with {covers} covers and {n} leftover entries? Closed sessions cannot be edited.", { covers, n: leftovers.length }))) return;
     setBusy(true);
     try {
@@ -79,7 +84,7 @@ export function CloseSession({ sessionId, items, expectedCovers }: { sessionId: 
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
-      <div className="w-40"><Label htmlFor="cs-covers">{t("Actual covers")}</Label><Input id="cs-covers" inputMode="numeric" value={covers} onChange={(e) => setCovers(e.target.value)} /></div>
+      <div className="w-40"><Label htmlFor="cs-covers" hint={microsCovers !== null ? t("Micros: {n}", { n: microsCovers }) : undefined}>{t("Actual covers")}</Label><Input id="cs-covers" inputMode="numeric" value={covers} onChange={(e) => setCovers(e.target.value)} /></div>
       <Table>
         <thead><tr><Th>{t("Item")}</Th><Th align="right">{t("Input")}</Th>{CLASSES.map(([k, l]) => <Th key={k} align="right">{t(l)}</Th>)}</tr></thead>
         <tbody className="divide-y divide-ink-100">

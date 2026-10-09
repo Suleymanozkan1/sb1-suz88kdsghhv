@@ -23,8 +23,9 @@ import { postMovement } from "./ledger";
 import { assertPostable } from "./period";
 import { buildResolver, versionToDef } from "./recipes";
 import { toConversions } from "./products";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const pos = dec.refine((v) => Number(v) > 0, "Must be positive");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 
@@ -344,7 +345,7 @@ export async function forecast(db: Db, actor: Actor, hotelId: string, f: { depar
 
 /**
  * Pre-fill of a new session (nothing typed by hand): covers sold for the day, outlet and meal (read from Micros by
- * the automation) and occupied rooms / guests of that night (Opera night audit). Each value says where it came
+ * the automation) and occupied rooms / guests of that night (Opera night audit; for breakfast the night before). Each value says where it came
  * from; the form keeps them editable.
  */
 export async function sessionDefaults(db: Db, actor: Actor, hotelId: string, q: { date: string; departmentId: string; type: string }) {
@@ -353,9 +354,11 @@ export async function sessionDefaults(db: Db, actor: Actor, hotelId: string, q: 
     throw new DomainError("VALIDATION", "Invalid date");
   }
   const day = new Date(`${q.date}T00:00:00Z`);
+  // breakfast on day D is eaten by the guests who slept the night of D-1: that night audit's occupancy, not D's
+  const night = q.type === "BREAKFAST" ? new Date(day.getTime() - 86_400_000) : day;
   const [covers, occ] = await Promise.all([
     db.coverCount.findUnique({ where: { hotelId_businessDate_departmentId_meal: { hotelId, businessDate: day, departmentId: q.departmentId, meal: q.type } } }),
-    db.occupancyImport.findUnique({ where: { hotelId_businessDate: { hotelId, businessDate: day } } }),
+    db.occupancyImport.findUnique({ where: { hotelId_businessDate: { hotelId, businessDate: night } } }),
   ]);
   return {
     covers: covers?.covers ?? null,

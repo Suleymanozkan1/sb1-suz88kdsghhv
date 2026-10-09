@@ -4,6 +4,7 @@ import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, qty, date } from "@/lib/format";
+import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { ReceiptForm } from "./receipt-form";
 
@@ -38,7 +39,8 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                 {receipts.slice(0, SHOWN).map((r) => (
                   <tr key={r.id}>
                     <Td>{date(r.receiptDate)}</Td><Td><Badge tone={SOURCE_TONE[r.source] ?? "gray"}>{t(RECEIPT_SOURCE[r.source] ?? r.source)}</Badge></Td><Td className="font-mono text-xs">{r.number}</Td><Td>{r.supplier.name}</Td><Td>{r.invoiceNo ?? "—"}</Td>
-                    <Td><span className="text-xs text-ink-500">{r.items.map((i) => `${i.product.name} ${qty(i.quantity.toString(), i.unit)}`).join(", ")}</span></Td>
+                    {/* unit price in the hotel currency, net of discount (the document may be in another currency): net ÷ qty */}
+                    <Td className="whitespace-normal">{r.items.map((i) => <span key={i.id} className="block text-xs text-ink-500">{i.product.name} {qty(i.quantity.toString(), i.unit)} × {money(Number(i.quantity) ? Number(i.netAmount) / Number(i.quantity) : null, cur)} = <span className="tabular-nums text-ink-700">{money(i.netAmount.toString(), cur)}</span></span>)}</Td>
                     <Td align="right">{money(r.netTotal.toString(), cur)}</Td><Td align="right">{money(r.taxTotal.toString(), cur)}</Td><Td align="right" className="font-medium">{money(r.landedTotal.toString(), cur)}</Td>
                   </tr>
                 ))}
@@ -66,7 +68,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
         <details className="mt-4 rounded-xl border border-ink-200 bg-white" data-testid="manual-receipt">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800">{t("Receive goods by hand (backup — when an invoice did not come from Micros)")}</summary>
           <div className="border-t border-ink-100 p-4">
-            <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} />
+            <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
           </div>
         </details>
       )}

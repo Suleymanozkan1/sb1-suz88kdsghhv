@@ -53,7 +53,8 @@ export const recipe: ReportDef = {
           columns: [{ key: "k", header: t("Metric") }, { key: "v", header: t("Value"), type: "money" }, { key: "p", header: "%", type: "pct" }],
           rows: [
             { k: t("Food cost"), v: c.foodCost.toString() },
-            { k: t("Cost / portion"), v: c.portionCost?.toString() ?? null },
+            // same label as the page: a batch recipe (sauce, dough) is costed per kg / l / pc it makes, a dish per portion
+            { k: version.yieldUnit && version.yieldUnit !== "portion" ? t("Cost / {unit}", { unit: t(version.yieldUnit) }) : t("Cost / portion"), v: c.portionCost?.toString() ?? null },
             { k: t("Selling price"), v: c.sellingPrice?.toString() ?? null },
             { k: t("Food cost %"), p: c.foodCostPct?.toString() ?? null },
             { k: t("Margin %"), p: c.grossMarginPct?.toString() ?? null },

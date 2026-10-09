@@ -6,6 +6,7 @@ import { BarChart3 } from "lucide-react";
 import { Badge, Card, Empty, PageHeader } from "@/components/ui";
 import { ExportButtons } from "@/components/export-buttons";
 import { date } from "@/lib/format";
+import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { CountEditor, NewCount } from "./count-editor";
 
@@ -13,7 +14,7 @@ export const metadata = { title: "Stock Counts" };
 
 export default async function CountsPage() {
   const t = await getT();
-  const { actor, hotelId } = await pageContext();
+  const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "inventory:count", hotelId);
   const [counts, warehouses] = await Promise.all([
     prisma.stockCount.findMany({ where: { hotelId, warehouse: warehouseScope(actor) }, include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } }, orderBy: { countDate: "desc" }, take: 20 }),
@@ -22,7 +23,7 @@ export default async function CountsPage() {
   return (
     <>
       <PageHeader exportKey="counts" title={t("Physical stock counts")} subtitle={t("System vs physical. Variances above the approval threshold require a manager before posting.")} />
-      <Card title={t("Start a count")} className="mb-4"><NewCount warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} /></Card>
+      <Card title={t("Start a count")} className="mb-4"><NewCount warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} /></Card>
       {counts.length === 0 && <Empty title={t("No counts yet")} />}
       <div className="space-y-4">
         {counts.map((c) => (
@@ -30,6 +31,7 @@ export default async function CountsPage() {
             <CountEditor
               countId={c.id}
               editable={c.status === "DRAFT"}
+              currency={hotel.baseCurrency}
               lines={c.lines.map((l) => ({ productId: l.productId, name: l.product.name, unit: l.product.stockUnit, systemQty: l.systemQty.toString(), countedQty: l.countedQty.toString(), varianceQty: l.varianceQty.toString(), varianceValue: l.varianceValue.toString(), reason: l.reason ?? "" }))}
             />
           </Card>

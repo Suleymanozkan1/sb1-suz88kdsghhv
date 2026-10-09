@@ -3,47 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, Building2, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, LogOut, Menu, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, X, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users,
-} from "lucide-react";
+import { Building2, LogOut, Menu, X } from "lucide-react";
 import { cn } from "./ui";
-import { call } from "@/lib/client";
+import { NAV } from "./nav";
+import { ApiError, call } from "@/lib/client";
 import { setLocaleCookie, useLocale, useT } from "@/i18n/client";
 import type { Locale } from "@/i18n/core";
 
-const NAV = [
-  { href: "/", label: "Dashboard", icon: Gauge, perm: "dashboard:view" },
-  { href: "/variance", label: "Theoretical vs Actual", icon: BarChart3, perm: "variance:view" },
-  { href: "/inventory", label: "Inventory", icon: Boxes, perm: "inventory:view" },
-  { href: "/inventory/ledger", label: "Stock Ledger", icon: ClipboardList, perm: "inventory:view" },
-  { href: "/inventory/counts", label: "Stock Counts", icon: ClipboardCheck, perm: "inventory:count" },
-  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, perm: "purchase:view" },
-  { href: "/purchasing/orders", label: "Order Suggestions", icon: Truck, perm: "purchase:view" },
-  { href: "/products", label: "Products", icon: Package, perm: "product:view" },
-  { href: "/recipes", label: "Recipes", icon: ChefHat, perm: "recipe:view" },
-  { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view" },
-  { href: "/buffet", label: "Buffet", icon: UtensilsCrossed, perm: "buffet:view" },
-  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view" },
-  { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view" },
-  { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
-  { href: "/allocation", label: "Cost Allocation", icon: Split, perm: "opex:view" },
-  { href: "/imports", label: "Imports", icon: FileUp, perm: "report:view" },
-  { href: "/budget", label: "Budget & Targets", icon: Target, perm: "budget:view" },
-  { href: "/forecast", label: "Forecast & What-if", icon: TrendingUp, perm: "budget:view" },
-  { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
-  { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
-  { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
-  { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
-  { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
-  { href: "/review", label: "Weekly Review", icon: ListChecks, perm: "report:view" },
-  { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view" },
-  { href: "/reports", label: "Reports & Pack", icon: FileText, perm: "report:view" },
-  { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },
-  { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
-  { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },
-  { href: "/integrity", label: "Calculation Integrity", icon: ShieldAlert, perm: "audit:view" },
-  { href: "/admin", label: "Administration", icon: Users, perm: "admin:users" },
-];
 
 export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; pendingApprovals: number; children: React.ReactNode }) {
   const path = usePathname();
@@ -54,16 +20,34 @@ export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, ch
   const items = NAV.filter((n) => permissions.includes(n.perm));
   const isActive = (href: string) => (href === "/" ? path === "/" : path === href || (path.startsWith(`${href}/`) && !items.some((i) => i.href !== href && i.href.startsWith(href) && path.startsWith(i.href))));
 
+  const [busy, setBusy] = useState(false);
   async function switchHotel(id: string) {
-    await call("POST", "/api/auth/hotel", { hotelId: id });
-    router.refresh();
+    setBusy(true);
+    try {
+      await call("POST", "/api/auth/hotel", { hotelId: id });
+      router.refresh();
+    } catch (e) {
+      window.alert(`${t("Could not switch hotel")}: ${e instanceof Error ? e.message : t("Failed")}`);
+    } finally {
+      setBusy(false);
+    }
   }
   function switchLanguage(l: Locale) {
     setLocaleCookie(l);
     router.refresh();
   }
   async function signOut() {
-    await call("POST", "/api/auth/logout");
+    setBusy(true);
+    try {
+      await call("POST", "/api/auth/logout");
+    } catch (e) {
+      // the session may already be gone (expired, revoked): go to the sign-in page either way
+      if (!(e instanceof ApiError && e.status === 401)) {
+        window.alert(`${t("Sign-out failed")}: ${e instanceof Error ? e.message : t("Failed")}`);
+        setBusy(false);
+        return;
+      }
+    }
     router.replace("/login");
     router.refresh();
   }
@@ -87,7 +71,7 @@ export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, ch
       </div>
       <div className="px-3">
         <label htmlFor="hotel" className="sr-only">{t("Hotel")}</label>
-        <select id="hotel" value={hotelId} onChange={(e) => switchHotel(e.target.value)} className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+        <select id="hotel" value={hotelId} disabled={busy} onChange={(e) => void switchHotel(e.target.value)} className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
           {hotels.map((h) => (
             <option key={h.id} value={h.id} className="text-ink-900">{h.name}</option>
           ))}
@@ -105,7 +89,7 @@ export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, ch
             <option value="tr" className="text-ink-900">TR</option>
             <option value="en" className="text-ink-900">EN</option>
           </select>
-          <button onClick={signOut} className="rounded-md p-1.5 text-ink-300 hover:bg-white/10 hover:text-white" aria-label={t("Sign out")} title={t("Sign out")}>
+          <button onClick={() => void signOut()} disabled={busy} className="rounded-md p-1.5 text-ink-300 hover:bg-white/10 hover:text-white" aria-label={t("Sign out")} title={t("Sign out")}>
             <LogOut className="h-4 w-4" />
           </button>
         </div>

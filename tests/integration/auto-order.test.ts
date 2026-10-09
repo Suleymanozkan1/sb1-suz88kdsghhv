@@ -3,6 +3,7 @@ import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postGoodsReceipt } from "@/server/services/purchasing";
 import { addSupplier, autoOrderOverview, deleteRule, runAutoOrders, saveRule, setRuleActive, updateSupplier } from "@/server/services/auto-order";
 import { orderRecommendations } from "@/server/services/inventory";
+import { inventoryStatus } from "@/server/services/insights";
 import { sentMail } from "@/server/mail";
 import type { Actor } from "@/server/auth/actor";
 
@@ -21,6 +22,8 @@ beforeAll(async () => {
   oil = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "OIL", name: "Olive Oil", stockUnit: "l", supplierId: h.supplier.id });
   flour = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "FLOUR", name: "Flour", supplierId: h.supplier.id });
   await postGoodsReceipt(prisma, pm, h.hotel.id, { supplierId: h.supplier.id, warehouseId: h.wh.main.id, receiptDate: day("2026-09-02"), invoiceNo: "AO-1", items: [{ productId: oil.id, quantity: 4, unit: "l", unitPrice: 300 }, { productId: flour.id, quantity: 50, unit: "kg", unitPrice: 20 }] });
+  // posted "before" the simulated order nights below: a receipt posted after an order ends that order (it arrived)
+  await prisma.goodsReceipt.updateMany({ where: { hotelId: h.hotel.id, invoiceNo: "AO-1" }, data: { postedAt: day("2026-09-02") } });
 });
 afterAll(() => {
   process.env.MAIL_TRANSPORT = prevTransport;
@@ -39,7 +42,8 @@ describe("suppliers for ordering", () => {
 
 describe("automatic ordering (reorder point → e-mail per supplier)", () => {
   it("only stock at or below the reorder point is due; the basic plan shows it but sends nothing", async () => {
-    await prisma.supplier.update({ where: { id: h.supplier.id }, data: { email: "orders@anadolu.test" } });
+    // next-day delivery: an order counts as on its way for lead time + 1 = 1 day (auto-order-outstanding.test.ts has the rest)
+    await prisma.supplier.update({ where: { id: h.supplier.id }, data: { email: "orders@anadolu.test", leadTimeDays: 0 } });
     await saveRule(prisma, pm, h.hotel.id, { productId: oil.id, supplierId: h.supplier.id, reorderPoint: "5", safetyStock: "2", orderQty: "20" }); // stock 4 ≤ 5 → due
     await saveRule(prisma, pm, h.hotel.id, { productId: flour.id, supplierId: h.supplier.id, reorderPoint: "10", orderQty: "25" }); // stock 50 → not due
     const o = await autoOrderOverview(prisma, pm, h.hotel.id);
@@ -92,6 +96,21 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     const rec = (await orderRecommendations(prisma, pm, h.hotel.id)).find((r) => r.productId === oil.id);
     // no consumption history yet: the product may not be listed; when it is, its safety stock is the rule's 2 l
     if (rec) expect(rec.explanation.find((e) => e.label === "Safety stock")?.value).toBe("2");
+  });
+
+  it("stock status takes reorder point / safety stock from the rules only (paused ones too), never the retired product fields", async () => {
+    const flourRule = (await autoOrderOverview(prisma, pm, h.hotel.id)).rules.find((x) => x.product === "Flour")!;
+    await prisma.product.update({ where: { id: flour.id }, data: { reorderPoint: "5", safetyStock: "1" } }); // hidden legacy values
+    await setRuleActive(prisma, pm, h.hotel.id, flourRule.id, false);
+    const salt = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "SALT", name: "Salt", supplierId: h.supplier.id });
+    await prisma.product.update({ where: { id: salt.id }, data: { reorderPoint: "100", safetyStock: "50" } });
+    await postGoodsReceipt(prisma, pm, h.hotel.id, { supplierId: h.supplier.id, warehouseId: h.wh.main.id, receiptDate: day("2026-09-02"), invoiceNo: "AO-SALT", items: [{ productId: salt.id, quantity: 10, unit: "kg", unitPrice: 10 }] });
+    const rows = (await inventoryStatus(prisma, pm, h.hotel.id)).rows;
+    const f = rows.find((r) => r.productId === flour.id)!;
+    expect([f.level, f.reorderPoint, f.safetyStock]).toEqual(["LOW", "60", null]); // 50 < the paused rule's 60
+    const s = rows.find((r) => r.productId === salt.id)!;
+    expect([s.level, s.reorderPoint, s.safetyStock]).toEqual(["NORMAL", null, null]); // no rule: no thresholds
+    await setRuleActive(prisma, pm, h.hotel.id, flourRule.id, true);
   });
 
   it("only purchasing can change rules; a viewer cannot", async () => {

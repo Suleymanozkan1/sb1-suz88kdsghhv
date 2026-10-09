@@ -2,6 +2,7 @@ import { prisma } from "../../db";
 import { monthRange } from "../../page";
 import { homeDashboard } from "../../services/insights";
 import { date } from "@/lib/format";
+import { translateMessage } from "@/i18n/core";
 import type { ReportDef, XTable } from "../types";
 import { metricTable } from "./metrics";
 
@@ -9,13 +10,13 @@ const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Re
 
 /** / — the home dashboard (full cost intelligence, or the basic overview for roles without variance rights). */
 export const dashboard: ReportDef = {
-  async load({ actor, hotelId, hotel, t, q }) {
+  async load({ actor, hotelId, hotel, locale, t, q }) {
     const range = monthRange({ from: q.get("from") || undefined, to: q.get("to") || undefined });
     const filters: Array<[string, string]> = [[t("From"), date(range.fromStr)], [t("To"), date(range.toStr)]];
     const res = await homeDashboard(prisma, actor, hotelId, range);
     const levelLabel = (l: string) => t(l.replace(/_/g, " "));
     const alertCols = [{ key: "title", header: t("Title") }, { key: "severity", header: t("Severity") }, { key: "message", header: t("Message") }, { key: "createdAt", header: t("Created"), type: "datetime" as const }];
-    const alertRow = (a: { title: string; severity: string; message: string; createdAt: Date }) => ({ title: a.title, severity: t(a.severity), message: a.message, createdAt: a.createdAt });
+    const alertRow = (a: { title: string; severity: string; message: string; createdAt: Date }) => ({ title: translateMessage(locale, a.title), severity: t(a.severity), message: translateMessage(locale, a.message), createdAt: a.createdAt });
     const criticalCols = [{ key: "name", header: t("Product") }, { key: "quantity", header: t("Quantity"), type: "qty" as const }, { key: "unit", header: t("Unit") }, { key: "level", header: t("Status") }];
 
     if (res.kind === "basic") {

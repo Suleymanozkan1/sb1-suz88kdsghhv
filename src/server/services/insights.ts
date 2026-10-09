@@ -30,8 +30,8 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
     }),
     db.autoOrderRule.findMany({ where: { hotelId }, orderBy: [{ active: "desc" }, { createdAt: "asc" }], select: { productId: true, reorderPoint: true, safetyStock: true } }),
   ]);
-  // reorder point / safety stock are set on the automatic-ordering rules (no longer on the product card);
-  // older product-level values still count for a product without a rule
+  // reorder point / safety stock come only from the automatic-ordering rules (active or paused), where they are
+  // edited; the retired product-card columns are never read (migrated into paused rules)
   const ruleBy = new Map<string, (typeof rules)[number]>();
   for (const r of rules) if (!ruleBy.has(r.productId)) ruleBy.set(r.productId, r);
   const lastOut = await db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, quantity: { lt: 0 } }, _max: { txDate: true } });
@@ -49,9 +49,9 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
       const avgDaily = used30.div(30);
       const last = lastOutBy.get(p.id) ?? null;
       const daysIdle = last ? Math.trunc((Date.now() - last.getTime()) / 86400000) : null;
-      // a rule's thresholds win as a whole (a blank safety stock stays blank); the product card only without a rule
+      // a rule's thresholds count as a whole (a blank safety stock stays blank); without a rule there are none
       const rule = ruleBy.get(p.id);
-      const thresholds = rule ? { reorderPoint: rule.reorderPoint.toString(), safetyStock: rule.safetyStock?.toString() ?? null } : { reorderPoint: p.reorderPoint?.toString() ?? null, safetyStock: p.safetyStock?.toString() ?? null };
+      const thresholds = { reorderPoint: rule?.reorderPoint.toString() ?? null, safetyStock: rule?.safetyStock?.toString() ?? null };
       return {
         productId: p.id,
         sku: p.sku,

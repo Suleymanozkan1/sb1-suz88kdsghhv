@@ -58,6 +58,20 @@ describe("import engine (spec 245–249)", () => {
     expect(prices.rows[0]!.status).toBe("VALID");
   });
 
+  it("product master takes brand and VAT % (\"8\" or \"8,5\"); a template without them still imports", async () => {
+    const rows: Array<Record<string, string>> = [
+      { name: "Zeytinyağı Sızma", brand: "Komili", category: "Food", stock_unit: "l", vat: "8,5" },
+      { name: "Bulgur", category: "Food", stock_unit: "kg", vat_: "%8" },
+      { name: "Nohut", category: "Food", stock_unit: "kg" },
+    ];
+    const p = await previewProducts(prisma, cc, h.hotel.id, [...rows, { name: "Mercimek", category: "Food", stock_unit: "kg", vat: "on sekiz" }, { name: "Pirinç", category: "Food", stock_unit: "kg", vat: "120" }]);
+    expect(p.rows.map((r) => r.status)).toEqual(["VALID", "VALID", "VALID", "INVALID", "INVALID"]);
+    expect(p.rows[3]!.messages).toEqual(["vat (0-100) must be a number"]);
+    await commitProducts(prisma, cc, h.hotel.id, "brand-vat.csv", rows);
+    const got = await prisma.product.findMany({ where: { hotelId: h.hotel.id, name: { in: rows.map((r) => r.name!) } }, orderBy: { name: "asc" } });
+    expect(got.map((x) => [x.name, x.brand, x.taxRatePct.toString()])).toEqual([["Bulgur", null, "8"], ["Nohut", null, "0"], ["Zeytinyağı Sızma", "Komili", "8.5"]]);
+  });
+
   it("a name two products share is ambiguous; codes given in the file are never generated for another row", async () => {
     await prisma.product.create({ data: { hotelId: h.hotel.id, sku: "PAT-2", name: "Patlıcan", categoryId: h.cats.food.id, stockUnit: "kg", purchaseUnit: "kg", recipeUnit: "g" } });
     const amb = await previewSupplierPrices(prisma, cc, h.hotel.id, [{ supplier: h.supplier.code, product: "Patlıcan", price_date: "2026-09-02", price: "31" }]);
@@ -102,7 +116,7 @@ describe("import engine (spec 245–249)", () => {
     await rollbackBatch(prisma, cc, h.hotel.id, r.batch.id, "go-live file replaced", reverseExpenseTx);
     expect((await prisma.stockBalance.findFirstOrThrow({ where: { warehouseId: h.wh.main.id, productId: chicken } })).quantity.toString()).toBe("0");
     // products import rollback: VEG-ZUC was used by the ledger → deactivated, not deleted
-    const pb = await prisma.importBatch.findFirstOrThrow({ where: { hotelId: h.hotel.id, kind: "PRODUCTS" } });
+    const pb = await prisma.importBatch.findFirstOrThrow({ where: { hotelId: h.hotel.id, kind: "PRODUCTS", fileName: "products.csv" } });
     await rollbackBatch(prisma, cc, h.hotel.id, pb.id, "test", reverseExpenseTx);
     expect((await prisma.product.findFirstOrThrow({ where: { hotelId: h.hotel.id, sku: "VEG-ZUC" } })).active).toBe(false);
   });

@@ -13,7 +13,6 @@ export interface PickedProduct {
   stockUnit: string;
   purchaseUnit: string;
   recipeUnit: string;
-  barcode?: string | null;
   category?: { name: string; group: string };
   conversions?: { fromUnit: string; toUnit: string; factor: string }[];
 }

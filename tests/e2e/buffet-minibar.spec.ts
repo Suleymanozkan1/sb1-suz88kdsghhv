@@ -43,7 +43,8 @@ test("minibar flow: restock a room to par and charge consumption (spec §282)", 
   await page.getByRole("button", { name: "205", exact: true }).click();
   await expect(page.getByText("Room 205")).toBeVisible();
   await page.getByRole("button", { name: "Restock to par" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Restocked to par" })).toBeVisible();
+  // a room already at par says so instead of claiming a restock
+  await expect(page.getByRole("status").filter({ hasText: /Restocked to par|Already at par/ })).toBeVisible();
   await page.getByLabel("Folio").fill("F-E2E");
   await page.getByRole("textbox", { name: /^CONSUMED .*Cola/ }).fill("1");
   await page.getByRole("button", { name: "Post", exact: true }).click();

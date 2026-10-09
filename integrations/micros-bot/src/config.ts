@@ -17,6 +17,8 @@ export interface Config {
   timezone: string;
   nightAuditCutoff: string;
   runAt: string;
+  /** RUN_AT came from the environment; otherwise runAt follows the cut-off (see runAtAfter) */
+  runAtFixed: boolean;
   pollMinutes: number;
   catchUp: boolean;
   headless: boolean;
@@ -75,6 +77,17 @@ const int = (v: string | undefined, def: number) => {
 const resolveFromPkg = (p: string) => (path.isAbsolute(p) ? p : path.resolve(PACKAGE_DIR, p));
 const resolveFromCwd = (p: string) => path.resolve(p);
 
+/** How long after the night-audit cut-off the nightly run starts (the audit's reports must be final). */
+export const RUN_AFTER_CUTOFF_MINUTES = 45;
+
+/** Cut-off "03:30" → run time "04:15" (wraps past midnight); a malformed cut-off is returned as is for validateConfig. */
+export function runAtAfter(cutoff: string): string {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(cutoff);
+  if (!m) return cutoff;
+  const t = (Number(m[1]) * 60 + Number(m[2]) + RUN_AFTER_CUTOFF_MINUTES) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
 export function buildConfig(vars: Record<string, string | undefined> = loadEnv()): Config {
   const s = (k: string, def = "") => (vars[k] ?? def).trim();
   const operaUrl = s("OPERA_URL");
@@ -103,7 +116,9 @@ export function buildConfig(vars: Record<string, string | undefined> = loadEnv()
     },
     timezone: s("TIMEZONE", "Europe/Istanbul"),
     nightAuditCutoff: s("NIGHT_AUDIT_CUTOFF", "03:30"),
-    runAt: s("RUN_AT", "04:15"),
+    // unset RUN_AT = cut-off + 45 min, so it moves with the cut-off when the admin changes it in HotelCost
+    runAt: s("RUN_AT") || runAtAfter(s("NIGHT_AUDIT_CUTOFF", "03:30")),
+    runAtFixed: !!s("RUN_AT"),
     pollMinutes: int(vars.POLL_MINUTES, 2),
     catchUp: bool(vars.CATCH_UP, true),
     headless: bool(vars.HEADLESS, true),
@@ -169,7 +184,7 @@ export function validateConfig(config: Config): string[] {
 /** Non-fatal hints. */
 export function configWarnings(config: Config): string[] {
   const warnings: string[] = [];
-  if (config.runAt <= config.nightAuditCutoff) warnings.push(`RUN_AT (${config.runAt}) gece kapanışından (${config.nightAuditCutoff}) sonra olmalı`);
+  if (config.runAtFixed && config.runAt <= config.nightAuditCutoff) warnings.push(`RUN_AT (${config.runAt}) gece kapanışından (${config.nightAuditCutoff}) sonra olmalı`);
   if (config.hotelcost.url.startsWith("http://") && !/localhost|127\.0\.0\.1/.test(config.hotelcost.url)) {
     warnings.push("HOTELCOST_URL https değil: API anahtarı şifrelenmeden gönderilir");
   }

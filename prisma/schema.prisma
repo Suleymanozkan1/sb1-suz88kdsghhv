@@ -1795,6 +1795,8 @@ model OccupancyImport {
   guests         Int
   roomRevenue    Decimal      @db.Decimal(20, 6)
   outOfOrder     Int          @default(0)
+  /// room numbers sold that night as Opera lists them (string[]; null = not sent); the minibar board marks them
+  occupiedRoomNumbers Json?
   source         String
   importId       String?
   import         ImportBatch? @relation(fields: [importId], references: [id])

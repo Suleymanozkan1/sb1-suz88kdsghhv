@@ -50,7 +50,7 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
   const exSku = new Set(existing.map((p) => p.sku));
   const exName = new Set(existing.map((p) => p.name.trim().toLowerCase()));
   const seen = new Set<string>();
-  const out: PreviewRow<{ sku: string | null; name: string; categoryId: string; supplierId: string | null; stockUnit: string; purchaseUnit: string; recipeUnit: string; caseSize: string | null; standardCost: string | null }>[] = rows.map((r, i) => {
+  const out: PreviewRow<{ sku: string | null; name: string; categoryId: string; supplierId: string | null; stockUnit: string; purchaseUnit: string; recipeUnit: string; caseSize: string | null; standardCost: string | null; brand: string | null; taxRatePct: string | null }>[] = rows.map((r, i) => {
     const msgs: string[] = [];
     const sku = (r.sku ?? "").trim() || null;
     const name = (r.name ?? "").trim();
@@ -70,14 +70,18 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
     const conv = caseSize && purchaseUnit !== stockUnit ? [{ fromUnit: purchaseUnit, toUnit: stockUnit, factor: caseSize }] : [];
     if (defaultConverter.has(stockUnit) && !defaultConverter.canConvert(purchaseUnit, stockUnit, conv) && !caseSize) msgs.push(`No conversion from ${purchaseUnit} to ${stockUnit}`);
     const standardCost = num(r.standard_cost);
+    const brand = (r.brand ?? r.marka ?? "").trim().slice(0, 100) || null;
+    // VAT % as written on the invoice: "8", "8,5", "%8" or "8 %" (older templates have no vat column: 0 as before)
+    const taxRatePct = num((r.vat ?? r.vat_ ?? r.vat_pct ?? r.tax_rate ?? r.kdv ?? "").replace("%", ""));
     // old barcode / yield_pct / costing / reorder_point / safety_stock columns are ignored (removed from the product card)
     for (const [k, v] of [["standard_cost", standardCost], ["case_size", caseSize]] as const) if (!isNum(v)) msgs.push(`${k} must be a number`);
+    if (!isNum(taxRatePct) || (taxRatePct !== null && (Number(taxRatePct) < 0 || Number(taxRatePct) > 100))) msgs.push(`${"vat (0-100)"} must be a number`);
     if (msgs.length) return { row: i + 1, status: "INVALID", messages: msgs };
     const key = sku ? `sku:${sku}` : `name:${name.toLowerCase()}`;
     if ((sku && exSku.has(sku)) || exName.has(name.toLowerCase()) || seen.has(key) || seen.has(`name:${name.toLowerCase()}`)) return { row: i + 1, status: "DUPLICATE", messages: [sku && exSku.has(sku) ? `SKU ${sku} already exists — the product master is never overwritten by an import` : `Product "${name}" already exists — the product master is never overwritten by an import`] };
     seen.add(key);
     seen.add(`name:${name.toLowerCase()}`);
-    return { row: i + 1, status: "VALID", messages: [], data: { sku, name, categoryId: cat!.id, supplierId: sup?.id ?? null, stockUnit, purchaseUnit, recipeUnit, caseSize, standardCost } };
+    return { row: i + 1, status: "VALID", messages: [], data: { sku, name, categoryId: cat!.id, supplierId: sup?.id ?? null, stockUnit, purchaseUnit, recipeUnit, caseSize, standardCost, brand, taxRatePct } };
   });
   return { rows: out, counts: counts(out) };
 }
@@ -99,7 +103,7 @@ export async function commitProducts(db: Db, actor: Actor, hotelId: string, file
       if (!r.data) continue;
       const d = r.data;
       const sku = d.sku ?? freshSku();
-      await tx.product.create({ data: { hotelId, sku, name: d.name, categoryId: d.categoryId, defaultSupplierId: d.supplierId, stockUnit: d.stockUnit, purchaseUnit: d.purchaseUnit, recipeUnit: d.recipeUnit, standardCost: d.standardCost, importId: batch.id, conversions: d.caseSize && d.purchaseUnit !== d.stockUnit ? { create: [{ fromUnit: d.purchaseUnit, toUnit: d.stockUnit, factor: d.caseSize }] } : undefined } });
+      await tx.product.create({ data: { hotelId, sku, name: d.name, categoryId: d.categoryId, defaultSupplierId: d.supplierId, stockUnit: d.stockUnit, purchaseUnit: d.purchaseUnit, recipeUnit: d.recipeUnit, standardCost: d.standardCost, brand: d.brand, ...(d.taxRatePct !== null ? { taxRatePct: d.taxRatePct } : {}), importId: batch.id, conversions: d.caseSize && d.purchaseUnit !== d.stockUnit ? { create: [{ fromUnit: d.purchaseUnit, toUnit: d.stockUnit, factor: d.caseSize }] } : undefined } });
       n++;
     }
     const b = await finishBatch(tx, batch.id, n, p.counts);

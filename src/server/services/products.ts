@@ -11,11 +11,15 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
 import { currentUnitCosts } from "./ledger";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
-/** Barcode, yield and costing method are not on the product card any more: such keys are dropped (weighted average costing). */
+/**
+ * Barcode, yield, costing method, reorder point and safety stock are not on the product card any more: such keys
+ * are dropped (weighted average costing; reorder point / safety stock live on the automatic-ordering rules).
+ */
 export const productInput = z.object({
   /** optional: hotels rarely keep stock codes (Micros lists products by name); generated when empty */
   sku: z.string().trim().max(64).optional().nullable(),
@@ -30,8 +34,6 @@ export const productInput = z.object({
   standardCost: dec.optional().nullable(),
   minStock: dec.optional().nullable(),
   maxStock: dec.optional().nullable(),
-  reorderPoint: dec.optional().nullable(),
-  safetyStock: dec.optional().nullable(),
   leadTimeDays: z.number().int().min(0).optional().nullable(),
   shelfLifeDays: z.number().int().min(0).optional().nullable(),
   conversions: z.array(z.object({ fromUnit: unitCode, toUnit: unitCode, factor: dec.refine((v) => Number(v) > 0, "Factor must be positive") })).optional(),
@@ -108,11 +110,11 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
   });
 }
 
-/** Ingredient search by name, SKU, category or brand (spec §27). */
-export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: { limit?: number; categoryGroup?: string; activeOnly?: boolean } = {}) {
-  authorize(actor, "product:view", { hotelId });
+type ProductSearchOpts = { limit?: number; categoryGroup?: string; activeOnly?: boolean; skip?: number; max?: number };
+
+function productSearchWhere(hotelId: string, q: string, opts: ProductSearchOpts): Prisma.ProductWhereInput {
   const term = q.trim();
-  const where: Prisma.ProductWhereInput = {
+  return {
     hotelId,
     ...(opts.activeOnly ? { active: true } : {}),
     ...(opts.categoryGroup ? { category: { group: opts.categoryGroup } } : {}),
@@ -127,7 +129,43 @@ export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: s
         }
       : {}),
   };
-  return db.product.findMany({ where, include: { category: true, conversions: true, defaultSupplier: { select: { name: true } } }, orderBy: { name: "asc" }, take: Math.min(opts.limit ?? 25, 200) });
+}
+
+/** What the product master screen, the export and the product picker show: never the retired card fields. */
+const productListSelect = {
+  id: true,
+  sku: true,
+  name: true,
+  brand: true,
+  categoryId: true,
+  defaultSupplierId: true,
+  purchaseUnit: true,
+  stockUnit: true,
+  recipeUnit: true,
+  taxRatePct: true,
+  currency: true,
+  standardCost: true,
+  minStock: true,
+  maxStock: true,
+  leadTimeDays: true,
+  shelfLifeDays: true,
+  isStockItem: true,
+  active: true,
+  category: { select: { id: true, name: true, code: true, group: true } },
+  conversions: { select: { fromUnit: true, toUnit: true, factor: true } },
+  defaultSupplier: { select: { name: true } },
+} satisfies Prisma.ProductSelect;
+
+/** Ingredient search by name, SKU, category or brand (spec §27). `max` raises the 200-row cap for trusted server callers (page paging, export); the API route keeps the default. */
+export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.findMany({ where: productSearchWhere(hotelId, q, opts), select: productListSelect, orderBy: [{ name: "asc" }, { id: "asc" }], skip: opts.skip, take: Math.min(opts.limit ?? 25, opts.max ?? 200) });
+}
+
+/** Number of products matching the same search (for "showing x of N" and paging). */
+export async function countProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.count({ where: productSearchWhere(hotelId, q, opts) });
 }
 
 export type CostSource = "WAC" | "FIFO" | "LAST_PURCHASE" | "STANDARD" | "NONE";

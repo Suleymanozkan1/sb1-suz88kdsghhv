@@ -7,6 +7,7 @@ import { commitSales, postSalesConsumption, previewSales, rollbackSalesImport } 
 import { recordWaste } from "@/server/services/waste";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { dashboard } from "@/server/services/insights";
+import { explodeSalesRows, ledgerEntries, summarizeSalesRows } from "@/server/services/inventory";
 import { D, sum } from "@/domain/money";
 import type { Actor } from "@/server/auth/actor";
 
@@ -226,6 +227,23 @@ describe("sales deduct their recipe ingredients from stock", () => {
     await rollbackSalesImport(prisma, fb, h.hotel.id, res.import.id, "test");
     const back = await prisma.stockBalance.findUniqueOrThrow({ where: { warehouseId_productId: { warehouseId: h.wh.restStore.id, productId: P.bun! } } });
     expect(back.quantity.toString()).toBe(before.quantity.toString());
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: false } });
+  });
+  it("summary view: a day the POS sent in several chunks is one line per product; the detailed view keeps every check", async () => {
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: true } });
+    const a = await commitSales(prisma, fb, h.hotel.id, { rows: [{ externalId: "CHK-951-1", saleDate: "2026-09-22T10:00:00Z", department: "REST", posCode: "BURGER", quantity: 3, netRevenue: 1350 }], source: "API" });
+    const b = await commitSales(prisma, fb, h.hotel.id, { rows: [{ externalId: "CHK-952-1", saleDate: "2026-09-22T22:30:00Z", department: "REST", posCode: "BURGER", quantity: 2, netRevenue: 900 }], source: "API" }); // 01:30 next night: same business day
+    const { rows } = await ledgerEntries(prisma, cc, h.hotel.id, { productId: P.bun, from: day("2026-09-22"), to: day("2026-09-23") });
+    expect(rows).toHaveLength(2);
+    const sum = await summarizeSalesRows(prisma, rows);
+    expect(sum).toHaveLength(1);
+    expect([sum[0]!.quantity.toString(), sum[0]!.merged, sum[0]!.row.reason]).toEqual(["-5", 2, "Sales: 5 × Classic Burger"]);
+    expect(sum[0]!.total.toString()).toBe(D(rows[0]!.totalCost.toString()).plus(D(rows[1]!.totalCost.toString())).toString());
+    expect((await explodeSalesRows(prisma, rows)).map((d) => d.check)).toHaveLength(2);
+    for (const imp of [a, b]) await rollbackSalesImport(prisma, fb, h.hotel.id, imp.import.id, "test");
+    // reversed rows are not merged: each stays reversible on its own
+    const after = await ledgerEntries(prisma, cc, h.hotel.id, { productId: P.bun, from: day("2026-09-22"), to: day("2026-09-23") });
+    expect((await summarizeSalesRows(prisma, after.rows)).length).toBe(after.rows.length);
     await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: false } });
   });
 });

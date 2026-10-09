@@ -10,14 +10,15 @@ import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { recommendOrder, expectedConsumption } from "@/domain/purchasing";
 import type { Db } from "../db";
-import { type Actor, authorize, departmentScope, requirePermission } from "../auth/actor";
+import { type Actor, authorize, departmentScope, requireDepartment, requirePermission } from "../auth/actor";
 import { postMovement, transferStock } from "./ledger";
 import { audit } from "./audit";
 import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 import { toConversions } from "./products";
 import { openPoQuantities } from "./purchasing";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0, "Must be a positive number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0, "Must be a positive number");
 
 export const movementInput = z.object({
   type: z.enum(["CONSUMPTION", "STAFF_MEAL", "COMPLIMENTARY", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "OPENING"]),
@@ -35,7 +36,6 @@ export const movementInput = z.object({
 export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "inventory:post", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = movementInput.parse(raw);
-  authorize(actor, "inventory:post", { hotelId, departmentId: input.departmentId ?? null });
   if (input.type.startsWith("ADJUSTMENT") || input.type === "OPENING") requirePermission(actor, "inventory:adjust");
   if (input.type.startsWith("ADJUSTMENT") && !input.reason) throw new DomainError("VALIDATION", "Adjustments require a reason");
   if (input.type === "OPENING" && !input.unitCost) throw new DomainError("VALIDATION", "Opening balances require a unit cost");
@@ -45,6 +45,8 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
   const wh = await db.warehouse.findFirst({ where: { id: input.warehouseId, hotelId } });
   if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
   requireWarehouseScope(actor, wh);
+  // no department chosen = the warehouse's own department (the ledger books it there), so scope-check that one
+  requireDepartment(actor, input.departmentId ?? wh.departmentId);
   const conv = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions));
   const inbound = input.type === "ADJUSTMENT_IN" || input.type === "OPENING";
   const unitCostPerStock = input.unitCost ? D(input.unitCost).div(conv.factor) : null;
@@ -119,7 +121,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
     db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, include: { conversions: true, defaultSupplier: true } }),
     db.autoOrderRule.findMany({ where: { hotelId }, select: { productId: true, safetyStock: true } }),
   ]);
-  // safety stock lives on the auto-order rule now; the old product field is the fallback
+  // safety stock comes only from the auto-order rules (moved off the product card)
   const ruleSafety = new Map(rules.filter((r) => r.safetyStock !== null).map((r) => [r.productId, r.safetyStock!.toString()]));
   const stockMap = new Map(stock.map((s) => [s.productId, D(s._sum.quantity?.toString() ?? 0)]));
   return products
@@ -136,7 +138,7 @@ export async function orderRecommendations(db: Db, actor: Actor, hotelId: string
       const leadDays = p.leadTimeDays ?? p.defaultSupplier?.leadTimeDays ?? 0;
       const rec = recommendOrder({
         expectedConsumption: exp.value,
-        safetyStock: ruleSafety.get(p.id) ?? p.safetyStock?.toString() ?? 0,
+        safetyStock: ruleSafety.get(p.id) ?? 0,
         currentStock: stockMap.get(p.id) ?? ZERO,
         openPoQty: openPo.get(p.id) ?? ZERO,
         purchaseUnitSize: packSize,
@@ -158,6 +160,54 @@ export interface DetailLine {
   dish?: string;
   sold?: Decimal;
   saleDate?: Date;
+  /** summary view: number of sales movements combined into this line (only the single ones can be reversed here) */
+  merged?: number;
+}
+
+/**
+ * Summary view of ledger rows: sales are posted per import and the POS sends a day in several chunks, so the sales
+ * consumption of one business day, store and product is shown as one line ("30 × Hamburger → 4.5 kg patty"), its
+ * dishes counted from the sale lines; every other row (and a reversed sales row) stays as it is.
+ */
+export async function summarizeSalesRows(db: Db, rows: LedgerRow[]): Promise<DetailLine[]> {
+  const isSale = (r: LedgerRow) => r.sourceType === "SALE" && !!r.sourceId && r.type === "CONSUMPTION" && !r.reversedBy;
+  const groups = new Map<string, LedgerRow[]>();
+  for (const r of rows.filter(isSale)) {
+    const k = `${r.txDate.toISOString().slice(0, 10)}|${r.warehouseId}|${r.productId}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const multi = [...groups.values()].filter((g) => g.length > 1);
+  const imports = [...new Set(multi.flat().map((r) => r.sourceId!))];
+  const lines = imports.length ? await db.saleLine.findMany({ where: { importId: { in: imports }, consumptionPosted: true }, select: { importId: true, departmentId: true, saleDate: true, quantity: true, posCode: true, recipe: { select: { name: true } }, recipeVersion: { select: { costSnapshot: true } } } }) : [];
+  const hotels = new Map((await db.hotel.findMany({ where: { id: { in: [...new Set(multi.map((g) => g[0]!.hotelId))] } }, select: { id: true, timezone: true, businessDayCutoff: true } })).map((h) => [h.id, h]));
+  const out: DetailLine[] = [];
+  const done = new Set<string>();
+  for (const r of rows) {
+    const k = `${r.txDate.toISOString().slice(0, 10)}|${r.warehouseId}|${r.productId}`;
+    const g = isSale(r) ? groups.get(k)! : null;
+    if (!g || g.length < 2) {
+      out.push({ row: r, quantity: D(r.quantity.toString()), total: D(r.totalCost.toString()) });
+      continue;
+    }
+    if (done.has(k)) continue;
+    done.add(k);
+    const h = hotels.get(r.hotelId)!;
+    const day = k.slice(0, 10);
+    const keys = new Set(g.map((x) => `${x.sourceId}|${x.departmentId}`));
+    const dishes = new Map<string, Decimal>();
+    for (const l of lines) {
+      const snap = l.recipeVersion?.costSnapshot as { requirements?: Record<string, string> } | null;
+      if (!snap?.requirements?.[r.productId] || !keys.has(`${l.importId}|${l.departmentId}`) || businessDay(l.saleDate, h.timezone, h.businessDayCutoff) !== day) continue;
+      const dish = l.recipe?.name ?? l.posCode;
+      dishes.set(dish, (dishes.get(dish) ?? ZERO).plus(D(l.quantity.toString())));
+    }
+    const list = [...dishes].sort((a, b) => b[1].comparedTo(a[1])).map(([name, n]) => `${n.toString()} × ${name}`);
+    const quantity = g.reduce((a, x) => a.plus(D(x.quantity.toString())), ZERO);
+    const total = g.reduce((a, x) => a.plus(D(x.totalCost.toString())), ZERO);
+    const reason = list.length ? `Sales: ${list.slice(0, 6).join(", ")}${list.length > 6 ? ", …" : ""}` : g.map((x) => x.reason).join(" · ");
+    out.push({ row: { ...r, reason, unitCost: (quantity.isZero() ? D(r.unitCost.toString()) : total.div(quantity)) as never }, quantity, total, merged: g.length });
+  }
+  return out;
 }
 
 /**

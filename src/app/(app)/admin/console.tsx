@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
 
 interface Role { id: string; key: string; name: string; allDepartments: boolean }
 interface User { id: string; email: string; name: string; active: boolean; roleKey: string; roleName: string; allDepartments: boolean; departmentIds: string[]; hotelIds: string[] }
@@ -34,10 +34,14 @@ const multi = (f: FormData, k: string) => f.getAll(k).map(String);
 export function AdminConsole(p: Props) {
   const router = useRouter();
   const t = useT();
+  const locale = useLocale();
   const [tab, setTab] = useState<Tab>("Users");
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
-  const [edit, setEdit] = useState<User | null>(null);
+  const [edit, setEditUser] = useState<User | null>(null);
+  // role chosen in the edit form: decides whether the department picker is needed
+  const [editRole, setEditRole] = useState("");
+  const setEdit = (u: User | null) => { setEditUser(u); setEditRole(u?.roleKey ?? ""); };
   const [roleKey, setRoleKey] = useState(p.roles.find((r) => r.key === "viewer")?.key ?? p.roles[0]?.key ?? "");
   const deptName = new Map(p.departments.map((d) => [d.id, d.name]));
   const roleOf = (k: string) => p.roles.find((r) => r.key === k);
@@ -70,7 +74,7 @@ export function AdminConsole(p: Props) {
     <fieldset className="md:col-span-4">
       <legend className="mb-1 text-sm font-medium text-ink-700">{t("Hotels")}</legend>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {p.hotels.map((h) => (
+        {p.hotels.filter((h) => h.active).map((h) => (
           <label key={h.id} className="flex items-center gap-1.5 text-sm"><input type="checkbox" name={name} value={h.id} defaultChecked={selected.includes(h.id)} /> {h.name}</label>
         ))}
       </div>
@@ -116,7 +120,7 @@ export function AdminConsole(p: Props) {
             </Table>
           </Card>
           {edit && (
-            <Card title={t("Edit {name}", { name: edit.name })}>
+            <Card key={edit.id} title={t("Edit {name}", { name: edit.name })}>
               <form className="grid gap-3 md:grid-cols-4" onSubmit={async (e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
@@ -127,11 +131,11 @@ export function AdminConsole(p: Props) {
                 if (await run(() => call("PATCH", `/api/admin/users/${edit.id}`, body), "User updated - open sessions were ended where access changed")) setEdit(null);
               }}>
                 <div><Label htmlFor="e-name">{t("Name")}</Label><Input id="e-name" name="name" defaultValue={edit.name} required /></div>
-                <div><Label htmlFor="e-role">{t("Role")}</Label><Select id="e-role" name="roleKey" defaultValue={edit.roleKey} disabled={edit.id === p.me}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{edit.id === p.me && <input type="hidden" name="roleKey" value={edit.roleKey} />}</div>
+                <div><Label htmlFor="e-role">{t("Role")}</Label><Select id="e-role" name="roleKey" value={editRole} onChange={(e) => setEditRole(e.target.value)} disabled={edit.id === p.me}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{edit.id === p.me && <input type="hidden" name="roleKey" value={edit.roleKey} />}</div>
                 <div><Label htmlFor="e-pw" hint={t("leave empty to keep")}>{t("Reset password")}</Label><Input id="e-pw" name="password" type="password" minLength={10} autoComplete="new-password" /></div>
                 <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" name="active" defaultChecked={edit.active} disabled={edit.id === p.me} /> {t("Active")}{edit.id === p.me && <input type="hidden" name="active" value="on" />}</label>
                 {hotelPicker("hotel", edit.hotelIds)}
-                {!edit.allDepartments && deptPicker("dept", edit.departmentIds)}
+                {!roleOf(editRole)?.allDepartments && deptPicker("dept", edit.departmentIds)}
                 <div className="flex gap-2 md:col-span-4"><Button type="submit">{t("Save")}</Button><Button type="button" variant="ghost" onClick={() => setEdit(null)}>{t("Cancel")}</Button></div>
               </form>
             </Card>
@@ -182,7 +186,7 @@ export function AdminConsole(p: Props) {
       {tab === "Hotels" && p.canHotels && (
         <>
           <Card title={t("New hotel in your company")}>
-            <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("POST", "/api/admin/hotels", { code: val(f, "code"), name: val(f, "name"), totalRooms: val(f, "rooms") || 0, baseCurrency: val(f, "cur") || "TRY", withDefaults: f.get("defaults") === "on" }), "Hotel created - switch to it from the hotel selector", e.currentTarget); }}>
+            <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("POST", "/api/admin/hotels", { code: val(f, "code"), name: val(f, "name"), totalRooms: val(f, "rooms") || 0, baseCurrency: val(f, "cur") || "TRY", withDefaults: f.get("defaults") === "on", locale }), "Hotel created - switch to it from the hotel selector", e.currentTarget); }}>
               <div><Label htmlFor="h-code">{t("Code")}</Label><Input id="h-code" name="code" required pattern="[A-Z0-9][A-Z0-9_-]*" placeholder="AYT2" /></div>
               <div><Label htmlFor="h-name">{t("Name")}</Label><Input id="h-name" name="name" required /></div>
               <div><Label htmlFor="h-rooms">{t("Rooms")}</Label><Input id="h-rooms" name="rooms" type="number" min={0} defaultValue={0} /></div>
@@ -215,7 +219,7 @@ export function AdminConsole(p: Props) {
               <div><Label htmlFor="d-code">{t("Code")}</Label><Input id="d-code" name="code" required /></div>
               <div><Label htmlFor="d-name">{t("Name")}</Label><Input id="d-name" name="name" required /></div>
               <div><Label htmlFor="d-parent">{t("Parent")}</Label><Select id="d-parent" name="parent" defaultValue=""><option value="">-</option>{p.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></div>
-              <div><Label htmlFor="d-sqm">{t("Area m²")}</Label><Input id="d-sqm" name="sqm" type="number" min={0} step="any" /></div>
+              <div><Label htmlFor="d-sqm">{t("Area m²")}</Label><Input id="d-sqm" name="sqm" inputMode="decimal" /></div>
               <div><Label htmlFor="d-hc">{t("Headcount")}</Label><Input id="d-hc" name="hc" type="number" min={0} /></div>
               <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" name="outlet" /> {t("Revenue outlet")}</label>
               <div className="md:col-span-6"><Button type="submit">{t("Create department")}</Button></div>
@@ -293,10 +297,10 @@ export function AdminConsole(p: Props) {
             <div><Label htmlFor="s-rooms">{t("Rooms")}</Label><Input id="s-rooms" name="totalRooms" type="number" min={0} defaultValue={String(p.hotel.totalRooms)} /></div>
             <div><Label htmlFor="s-cur">{t("Base currency")}</Label><Input id="s-cur" name="baseCurrency" maxLength={3} defaultValue={String(p.hotel.baseCurrency)} /></div>
             <div><Label htmlFor="s-tz">{t("Timezone")}</Label><Input id="s-tz" name="timezone" defaultValue={String(p.hotel.timezone)} /></div>
-            <div><Label htmlFor="s-pa">{t("Price alert %")}</Label><Input id="s-pa" name="priceAlertPct" type="number" step="any" min={0} defaultValue={String(p.hotel.priceAlertPct)} /></div>
-            <div><Label htmlFor="s-wa">{t("Waste approval above")}</Label><Input id="s-wa" name="wasteApprovalValue" type="number" step="any" min={0} defaultValue={String(p.hotel.wasteApprovalValue)} /></div>
-            <div><Label htmlFor="s-aa">{t("Adjustment approval above")}</Label><Input id="s-aa" name="adjustmentApprovalValue" type="number" step="any" min={0} defaultValue={String(p.hotel.adjustmentApprovalValue)} /></div>
-            <div><Label htmlFor="s-mt">{t("Margin target %")}</Label><Input id="s-mt" name="marginTargetPct" type="number" step="any" min={0} max={100} defaultValue={String(p.hotel.marginTargetPct)} /></div>
+            <div><Label htmlFor="s-pa">{t("Price alert %")}</Label><Input id="s-pa" name="priceAlertPct" inputMode="decimal" defaultValue={String(p.hotel.priceAlertPct)} /></div>
+            <div><Label htmlFor="s-wa">{t("Waste approval above")}</Label><Input id="s-wa" name="wasteApprovalValue" inputMode="decimal" defaultValue={String(p.hotel.wasteApprovalValue)} /></div>
+            <div><Label htmlFor="s-aa">{t("Adjustment approval above")}</Label><Input id="s-aa" name="adjustmentApprovalValue" inputMode="decimal" defaultValue={String(p.hotel.adjustmentApprovalValue)} /></div>
+            <div><Label htmlFor="s-mt">{t("Margin target %")}</Label><Input id="s-mt" name="marginTargetPct" inputMode="decimal" defaultValue={String(p.hotel.marginTargetPct)} /></div>
             <div><Label htmlFor="s-bd" hint={t("night audit")}>{t("Business day ends at")}</Label><Input id="s-bd" name="businessDayCutoff" type="time" defaultValue={String(p.hotel.businessDayCutoff ?? "03:30")} /></div>
             <label className="flex items-center gap-2 text-sm text-ink-700 md:col-span-3"><input type="checkbox" name="autoDeductSales" defaultChecked={Number(p.hotel.autoDeductSales ?? 1) === 1} />{t("Deduct sold dishes' recipe ingredients from stock automatically (Micros sales)")}</label>
             <div className="md:col-span-4"><Button type="submit">{t("Save settings")}</Button></div>

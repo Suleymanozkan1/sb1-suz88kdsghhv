@@ -2,11 +2,14 @@ import { prisma } from "../../db";
 import { productCostTable, searchProducts } from "../../services/products";
 import type { ReportDef } from "../types";
 
+/** whole product master (all pages of the screen), with a sane upper bound for one workbook */
+const EXPORT_MAX = 5000;
+
 /** /products — the product master with the search filter. */
 export const products: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const term = q.get("q") ?? "";
-    const [rows, costs] = await Promise.all([searchProducts(prisma, actor, hotelId, term, { limit: 200 }), productCostTable(prisma, hotelId)]);
+    const [rows, costs] = await Promise.all([searchProducts(prisma, actor, hotelId, term, { limit: EXPORT_MAX, max: EXPORT_MAX }), productCostTable(prisma, hotelId)]);
     return {
       title: t("Product master"),
       fileName: "urunler",

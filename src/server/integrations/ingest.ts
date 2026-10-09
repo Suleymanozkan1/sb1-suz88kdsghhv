@@ -16,7 +16,7 @@ import type { Permission } from "../auth/permissions";
 import { audit } from "../services/audit";
 import { commitSales } from "../services/sales";
 import { postGoodsReceipt } from "../services/purchasing";
-import { addSupplier } from "../services/auto-order";
+import { addSupplier, runAutoOrders } from "../services/auto-order";
 import { createProduct } from "../services/products";
 import { recordMovement } from "../services/minibar";
 import { lastClosedBusinessDay } from "@/domain/business-day";
@@ -236,7 +236,8 @@ async function ingestMinibar(db: Db, actor: Actor, hotelId: string, p: Extract<I
 async function ingestOccupancy(db: Db, hotelId: string, p: Extract<IngestInput, { kind: "occupancy" }>): Promise<Out> {
   const o = p.items[0]!;
   const businessDate = new Date(`${p.businessDay}T00:00:00Z`);
-  const data = { availableRooms: int(o.availableRooms), occupiedRooms: int(o.occupiedRooms), guests: int(o.guests), roomRevenue: String(o.roomRevenue ?? 0), outOfOrder: int(o.outOfOrder ?? 0), source: p.source };
+  // the sold rooms are kept for the minibar board (only those rooms are checked); a delivery without them keeps the stored list
+  const data = { availableRooms: int(o.availableRooms), occupiedRooms: int(o.occupiedRooms), guests: int(o.guests), roomRevenue: String(o.roomRevenue ?? 0), outOfOrder: int(o.outOfOrder ?? 0), source: p.source, ...(o.occupiedRoomNumbers ? { occupiedRoomNumbers: o.occupiedRoomNumbers } : {}) };
   await db.occupancyImport.upsert({ where: { hotelId_businessDate: { hotelId, businessDate } }, create: { hotelId, businessDate, ...data }, update: data });
   return { received: 1, accepted: 1, duplicates: 0, errors: [] };
 }
@@ -263,12 +264,24 @@ export async function ingest(db: Db, actor: Actor, hotelId: string, raw: unknown
   return result;
 }
 
-/** STARTED / SUCCEEDED / FAILED from the bot (login failed, screen changed …). */
+/**
+ * STARTED / SUCCEEDED / FAILED from the bot (login failed, screen changed …). A successful Micros run has posted
+ * the day's consumption, so the automatic orders are checked right then (the cron is only the fallback; self-hosted
+ * installs have no cron at all). An auto-order problem never fails the bot's report.
+ */
 export async function reportRun(db: Db, hotelId: string, raw: unknown) {
   const r = runStatusSchema.parse(raw);
   const done = r.status !== "STARTED";
   const data = { source: r.source, status: r.status, message: r.message ?? null, businessDay: r.businessDay ?? null, requestId: r.requestId ?? null, finishedAt: done ? new Date() : null };
-  return db.integrationRun.upsert({ where: { hotelId_runId: { hotelId, runId: r.runId } }, create: { hotelId, runId: r.runId, ...data }, update: { ...data, businessDay: data.businessDay ?? undefined } });
+  const run = await db.integrationRun.upsert({ where: { hotelId_runId: { hotelId, runId: r.runId } }, create: { hotelId, runId: r.runId, ...data }, update: { ...data, businessDay: data.businessDay ?? undefined } });
+  if (r.source === "MICROS" && r.status === "SUCCEEDED") {
+    try {
+      await runAutoOrders(db, hotelId);
+    } catch (e) {
+      console.error("[integrations] auto-order run after Micros import failed", hotelId, e);
+    }
+  }
+  return run;
 }
 
 /** The bot asks whether someone pressed "run now"; the oldest open request is handed out once. */
@@ -298,21 +311,44 @@ export async function requestRun(db: Db, actor: Actor, hotelId: string, raw: unk
   return { id: r.id, alreadyWaiting: false };
 }
 
+/** The bot runs ~45 min after the cut-off: the day just closed is expected only after this margin, not at the cut-off. */
+const DELIVERY_GRACE_MINUTES = 90;
+/** A source that has not delivered for this long is no longer expected (switched off or never really used). */
+const SOURCE_ACTIVE_DAYS = 14;
+const DAY_MS = 86_400_000;
+const SEVERITY = { OK: 0, PARTIAL: 1, MISSING: 2, FAILED: 3 } as const;
+type HealthStatus = keyof typeof SEVERITY;
+
 /**
- * Is the automation healthy? It is expected to deliver the last closed business day (D-1 after the night audit).
- * Nothing to say when no key was ever created (the hotel does not use the automation).
+ * Is the automation healthy? Every source it uses (Micros, Opera … — any source that ever reported a run) is
+ * expected to deliver the last closed business day (D-1 after the night audit); the worst source is the status, so a
+ * failed Micros run is not hidden by a good Opera run after it. Nothing to say when there is no key (not used).
  */
 export async function integrationHealth(db: Db, hotelId: string, now = new Date()) {
   const [keys, hotel] = await Promise.all([db.integrationKey.count({ where: { hotelId, revokedAt: null } }), db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } })]);
-  if (!keys) return { status: "OFF" as const, expectedDay: null, lastRun: null, rejected: 0 };
-  const expectedDay = lastClosedBusinessDay(now, hotel.timezone, hotel.businessDayCutoff);
-  const [lastRun, okForDay] = await Promise.all([
-    db.integrationRun.findFirst({ where: { hotelId }, orderBy: { startedAt: "desc" } }),
-    db.integrationRun.findFirst({ where: { hotelId, businessDay: expectedDay, status: "SUCCEEDED" } }),
-  ]);
-  const rejected = Object.values((lastRun?.stats ?? {}) as Record<string, { errors?: unknown[] }>).reduce((a, v) => a + (v.errors?.length ?? 0), 0);
-  const status = lastRun?.status === "FAILED" ? ("FAILED" as const) : !okForDay ? ("MISSING" as const) : rejected ? ("PARTIAL" as const) : ("OK" as const);
-  return { status, expectedDay, lastRun, rejected };
+  if (!keys) return { status: "OFF" as const, expectedDay: null, lastRun: null, rejected: 0, sources: [] };
+  const expectedDay = lastClosedBusinessDay(new Date(now.getTime() - DELIVERY_GRACE_MINUTES * 60_000), hotel.timezone, hotel.businessDayCutoff);
+  // a source is in use when it delivered recently: a one-off "run now" of a source the hotel does not use (or one that
+  // was switched off) must not keep a banner up for ever; with no recent success at all, every recent source counts
+  const since = new Date(now.getTime() - SOURCE_ACTIVE_DAYS * DAY_MS);
+  const recent = async (status?: "SUCCEEDED") => (await db.integrationRun.findMany({ where: { hotelId, startedAt: { gte: since }, ...(status ? { status } : {}) }, distinct: ["source"], select: { source: true }, orderBy: { source: "asc" } })).map((r) => r.source);
+  const delivering = await recent("SUCCEEDED");
+  const used = delivering.length ? delivering : await recent();
+  const sources = await Promise.all(
+    used.map(async (source) => {
+      const [lastRun, okForDay] = await Promise.all([
+        db.integrationRun.findFirst({ where: { hotelId, source }, orderBy: { startedAt: "desc" } }),
+        db.integrationRun.findFirst({ where: { hotelId, source, businessDay: expectedDay, status: "SUCCEEDED" } }),
+      ]);
+      const rejected = Object.values((lastRun?.stats ?? {}) as Record<string, { errors?: unknown[] }>).reduce((a, v) => a + (v.errors?.length ?? 0), 0);
+      const status: HealthStatus = lastRun?.status === "FAILED" ? "FAILED" : !okForDay ? "MISSING" : rejected ? "PARTIAL" : "OK";
+      return { source, status, lastRun, rejected };
+    }),
+  );
+  // a key but no run yet: nothing delivered
+  if (!sources.length) return { status: "MISSING" as const, expectedDay, lastRun: null, rejected: 0, sources };
+  const worst = sources.reduce((a, b) => (SEVERITY[b.status] > SEVERITY[a.status] ? b : a));
+  return { status: worst.status, expectedDay, lastRun: worst.lastRun, rejected: sources.reduce((a, x) => a + x.rejected, 0), sources };
 }
 
 export async function integrationOverview(db: Db, actor: Actor, hotelId: string, take = 50) {

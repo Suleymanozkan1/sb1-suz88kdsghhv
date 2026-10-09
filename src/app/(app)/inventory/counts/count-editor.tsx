@@ -4,36 +4,42 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { qty } from "@/lib/format";
+import { money, parseNum, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
-export function NewCount({ warehouses }: { warehouses: { id: string; name: string }[] }) {
+export function NewCount({ warehouses, today }: { warehouses: { id: string; name: string }[]; today: string }) {
   const router = useRouter();
   const t = useT();
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     const f = new FormData(e.currentTarget);
+    setBusy(true);
+    setErr(null);
     try {
       await call("POST", "/api/counts", { warehouseId: f.get("warehouseId"), countDate: `${f.get("countDate")}T23:00:00Z` });
       router.refresh();
     } catch (x) {
       setErr(x instanceof Error ? x.message : t("Failed"));
+    } finally {
+      setBusy(false);
     }
   }
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
       {err && <Alert>{err}</Alert>}
       <div><Label htmlFor="nc-wh">{t("Warehouse")}</Label><Select id="nc-wh" name="warehouseId" className="w-56">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
-      <div><Label htmlFor="nc-date">{t("Count date")}</Label><Input id="nc-date" name="countDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="w-44" /></div>
-      <Button type="submit">{t("Start count sheet")}</Button>
+      <div><Label htmlFor="nc-date">{t("Count date")}</Label><Input id="nc-date" name="countDate" type="date" defaultValue={today} className="w-44" /></div>
+      <Button type="submit" disabled={busy}>{busy ? t("Starting…") : t("Start count sheet")}</Button>
     </form>
   );
 }
 
 interface Line { productId: string; name: string; unit: string; systemQty: string; countedQty: string; varianceQty: string; varianceValue: string; reason: string }
 
-export function CountEditor({ countId, lines, editable }: { countId: string; lines: Line[]; editable: boolean }) {
+export function CountEditor({ countId, lines, editable, currency }: { countId: string; lines: Line[]; editable: boolean; currency: string }) {
   const router = useRouter();
   const t = useT();
   const [vals, setVals] = useState<Record<string, { countedQty: string; reason: string }>>(Object.fromEntries(lines.map((l) => [l.productId, { countedQty: l.countedQty, reason: l.reason }])));
@@ -66,14 +72,17 @@ export function CountEditor({ countId, lines, editable }: { countId: string; lin
         <tbody className="divide-y divide-ink-100">
           {lines.map((l) => {
             const v = vals[l.productId]!;
-            const diff = Number(v.countedQty || 0) - Number(l.systemQty);
+            const counted = parseNum(v.countedQty);
+            const diff = (Number.isNaN(counted) ? 0 : counted) - Number(l.systemQty);
+            // the stored variance value is only current while the input still matches what was saved
+            const saved = counted === Number(l.countedQty);
             return (
               <tr key={l.productId}>
                 <Td>{l.name}</Td>
                 <Td align="right">{qty(l.systemQty, l.unit)}</Td>
                 <Td align="right">{editable ? <Input aria-label={t("Counted {name}", { name: l.name })} inputMode="decimal" className="w-28 text-right" value={v.countedQty} onChange={(e) => setVals({ ...vals, [l.productId]: { ...v, countedQty: e.target.value } })} /> : qty(l.countedQty, l.unit)}</Td>
                 <Td align="right" className={diff < 0 ? "text-red-700" : diff > 0 ? "text-brand-700" : ""}>{editable ? qty(diff, l.unit) : qty(l.varianceQty, l.unit)}</Td>
-                <Td align="right">{editable ? t("on save") : Number(l.varianceValue).toFixed(2)}</Td>
+                <Td align="right">{editable && !saved ? t("on save") : money(l.varianceValue, currency)}</Td>
                 <Td>{editable ? <Input aria-label={t("Reason {name}", { name: l.name })} className="w-48" value={v.reason} onChange={(e) => setVals({ ...vals, [l.productId]: { ...v, reason: e.target.value } })} /> : l.reason}</Td>
               </tr>
             );

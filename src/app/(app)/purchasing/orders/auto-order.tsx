@@ -6,6 +6,7 @@ import { filterRules } from "./filter-rules";
 import { Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Label, Select, Table, Td, Th, cn } from "@/components/ui";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
+import { ExportButtons } from "@/components/export-buttons";
 import { call } from "@/lib/client";
 import { dateTime, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
@@ -40,7 +41,9 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
   const [v, setV] = useState(init);
   const [busy, setBusy] = useState(false);
   const dirty = JSON.stringify(v) !== JSON.stringify(init);
-  const supplierEmail = suppliers.find((s) => s.id === v.supplierId)?.email ?? "";
+  // the page lists active suppliers only: keep a deactivated supplier of this rule selectable instead of showing the first active one
+  const options = suppliers.some((s) => s.id === r.supplierId) ? suppliers : [{ id: r.supplierId, name: `${r.supplier} (${t("inactive")})`, email: r.ownEmail ? null : r.email }, ...suppliers];
+  const supplierEmail = options.find((s) => s.id === v.supplierId)?.email ?? "";
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -67,7 +70,7 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
       <Td>
         <div className="w-32">
           <Select aria-label={t("Supplier")} className="py-1 pl-2" disabled={!canManage} value={v.supplierId} onChange={(e) => setV({ ...v, supplierId: e.target.value })}>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </div>
       </Td>
@@ -177,6 +180,8 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-64"><Label htmlFor="ao-q">{t("Search")}</Label><Input id="ao-q" value={filter} placeholder={t("Product, category or supplier")} onChange={(e) => setFilter(e.target.value)} /></div>
         <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} />{t("Only at reorder point")} <Badge tone={due ? "amber" : "gray"}>{due}</Badge></label>
+        {/* right of the filters: the export takes them from the URL (synced above) */}
+        <div className="flex flex-wrap"><ExportButtons report="orders" params={{ tab: "auto" }} /></div>
         <div className="ml-auto flex gap-2">
           {canManage && <Button variant="secondary" disabled={busy} onClick={fill}>{t("Fill from recommendations")}</Button>}
           {canManage && <Button disabled={busy} onClick={check}>{t("Check now")}</Button>}

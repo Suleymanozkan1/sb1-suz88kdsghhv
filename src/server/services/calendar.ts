@@ -135,13 +135,15 @@ export async function completeTask(db: Db, actor: Actor, hotelId: string, raw: u
   });
 }
 
-export const taskInput = z.object({ title: z.string().trim().min(3).max(120), recurrence: z.enum(["WEEKLY", "MONTHLY"]), weekday: z.coerce.number().int().min(1).max(7).nullable().optional(), monthDay: z.coerce.number().int().min(0).max(28).nullable().optional(), ownerRole: z.string().max(40).nullable().optional() });
+export const taskInput = z.object({ title: z.string().trim().min(3).max(120), recurrence: z.enum(["WEEKLY", "MONTHLY"]), weekday: z.coerce.number().int().min(1).max(7).nullable().optional(), monthDay: z.coerce.number().int().min(0).max(28).nullable().optional(), ownerRole: z.string().trim().max(40).nullable().optional() });
 
 export async function createTask(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "period:manage", { hotelId });
   const v = taskInput.parse(raw);
   if (v.recurrence === "WEEKLY" && !v.weekday) throw new DomainError("VALIDATION", "Weekly tasks need a weekday");
   if (v.recurrence === "MONTHLY" && (v.monthDay === null || v.monthDay === undefined)) throw new DomainError("VALIDATION", "Monthly tasks need a day of month (0 = last day)");
+  // completing compares ownerRole with the user's role key: free text that matches no role would make the task completable by period managers only
+  if (v.ownerRole && !(await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: v.ownerRole } } }))) throw new DomainError("VALIDATION", "Owner role must be one of the organization's roles");
   const t = await db.calendarTask.create({ data: { hotelId, kind: "OTHER", title: v.title, recurrence: v.recurrence, weekday: v.recurrence === "WEEKLY" ? v.weekday ?? null : null, monthDay: v.recurrence === "MONTHLY" ? v.monthDay ?? 0 : null, ownerRole: v.ownerRole ?? null, createdById: actor.userId } });
   await audit(db, actor, { hotelId, action: "CONTROL_TASK_CREATE", entityType: "CalendarTask", entityId: t.id, after: t });
   return t;

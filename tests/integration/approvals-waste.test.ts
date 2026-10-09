@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day, ledgerInvariant } from "./fixtures";
-import { postMovement } from "@/server/services/ledger";
+import { postMovement, transferStock } from "@/server/services/ledger";
 import { requestStockDelete, decideApproval } from "@/server/services/approvals";
 import { recordWaste } from "@/server/services/waste";
 import { startCount, enterCount, submitCount } from "@/server/services/counts";
@@ -32,6 +32,11 @@ describe("stock delete approval (spec §285)", () => {
     const req = await requestStockDelete(prisma, wh, h.hotel.id, { stockTxId: posted.id, reason: "Entered twice by mistake" });
     expect(req.status).toBe("PENDING");
     await expect(requestStockDelete(prisma, wh, h.hotel.id, { stockTxId: posted.id, reason: "Entered twice by mistake" })).rejects.toThrow(/already pending/);
+    // one leg of a transfer can never be reversed alone: the request is refused up front, not left unapprovable
+    const salt = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "SLT", name: "Salt" });
+    await postMovement(prisma, mgr, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: salt.id, type: "PURCHASE", quantity: 10, unitCost: 5, txDate: day("2026-09-01"), sourceType: "MANUAL" });
+    const { out: leg } = await transferStock(prisma, mgr, { hotelId: h.hotel.id, fromWarehouseId: h.wh.main.id, toWarehouseId: h.wh.restStore.id, productId: salt.id, quantity: 1, txDate: day("2026-09-02") });
+    await expect(requestStockDelete(prisma, wh, h.hotel.id, { stockTxId: leg.id, reason: "Wrong store picked" })).rejects.toThrow(/opposite transfer/);
     // requester cannot self-approve (and warehouse role lacks approval:decide anyway)
     await expect(decideApproval(prisma, wh, h.hotel.id, { approvalId: req.id, decision: "APPROVE" })).rejects.toThrow(/permission/);
 

@@ -17,6 +17,7 @@ import { verifyReproducibility } from "@/server/services/reports";
 import { rollbackBatch } from "@/server/services/imports";
 import { reverseExpenseTx } from "@/server/services/opex";
 import { createRecipe, approveVersion } from "@/server/services/recipes";
+import { commitSales } from "@/server/services/sales";
 import { xlsxToObjects } from "@/server/util/xlsx";
 import { actorFromToken } from "@/server/auth/session";
 import type { Actor } from "@/server/auth/actor";
@@ -127,6 +128,22 @@ describe("cost engine safety (spec 300–303)", () => {
     const l2 = await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "L2" } });
     expect(l2.theoreticalCost).not.toBeNull();
     expect((await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "L1" } })).recipeVersionId).toBeNull();
+  });
+
+  it("reprocessing matches by recipe name like the import and deducts the newly mapped sales from stock", async () => {
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: true } });
+    const imp = await commitSales(prisma, cc, h.hotel.id, { rows: [{ externalId: "RP-1", saleDate: "2026-09-21T10:00:00Z", department: "REST", posCode: "Köfte Tabağı", quantity: 4, netRevenue: 1600 }], source: "API" });
+    expect(imp.stockMovements).toBe(0); // no recipe yet: unmapped, nothing deducted
+    const r = await createRecipe(prisma, cc, h.hotel.id, { code: "KOFTE", name: "köfte tabağı", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { batchYieldQty: 1, yieldUnit: "portion", portions: 1, sellingPrice: 400, lines: [{ productId: beef, quantity: 150, unit: "g" }] } });
+    await approveVersion(prisma, cc, h.hotel.id, r.versions[0]!.id, { effectiveFrom: day("2026-09-01") });
+    const res = await reprocessUnmappedSales(prisma, cc, h.hotel.id);
+    expect(res.mapped).toBe(1); // L2 (mapped earlier, deduction off then) is not deducted retroactively
+    expect(res.stockMovements).toBe(1);
+    const moves = await prisma.stockTransaction.findMany({ where: { hotelId: h.hotel.id, sourceType: "SALE", sourceId: imp.import.id } });
+    expect(moves.map((m) => [m.productId, m.quantity.toString(), m.txDate.toISOString().slice(0, 10)])).toEqual([[beef, "-0.6", "2026-09-21"]]);
+    expect((await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "RP-1" } })).consumptionPosted).toBe(true);
+    expect((await reprocessUnmappedSales(prisma, cc, h.hotel.id)).stockMovements).toBe(0); // never twice
+    await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: false } });
   });
 });
 

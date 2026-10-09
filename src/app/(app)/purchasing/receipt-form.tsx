@@ -14,7 +14,7 @@ const blank = (key: string = crypto.randomUUID()): Line => ({ key, product: null
 
 interface Impact { product: { name: string }; recipes: { name: string; oldPortionCost: string | null; newPortionCost: string | null; newMarginPct: string | null; belowTarget: boolean }[] }
 
-export function ReceiptForm({ suppliers, warehouses }: { suppliers: { id: string; name: string }[]; warehouses: { id: string; name: string }[] }) {
+export function ReceiptForm({ suppliers, warehouses, today }: { suppliers: { id: string; name: string }[]; warehouses: { id: string; name: string }[]; today: string }) {
   const router = useRouter();
   const t = useT();
   const [lines, setLines] = useState<Line[]>([blank("line-0")]);
@@ -58,7 +58,7 @@ export function ReceiptForm({ suppliers, warehouses }: { suppliers: { id: string
       <div className="grid gap-3 md:grid-cols-4">
         <div><Label htmlFor="rc-sup">{t("Supplier")}</Label><Select id="rc-sup" name="supplierId" required>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
         <div><Label htmlFor="rc-wh">{t("Warehouse")}</Label><Select id="rc-wh" name="warehouseId">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
-        <div><Label htmlFor="rc-date">{t("Receipt date")}</Label><Input id="rc-date" name="receiptDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+        <div><Label htmlFor="rc-date">{t("Receipt date")}</Label><Input id="rc-date" name="receiptDate" type="date" defaultValue={today} /></div>
         <div><Label htmlFor="rc-inv">{t("Invoice no")}</Label><Input id="rc-inv" name="invoiceNo" /></div>
       </div>
       {/* rarely used: kept out of the way, still sent with the form when filled in */}
@@ -75,9 +75,9 @@ export function ReceiptForm({ suppliers, warehouses }: { suppliers: { id: string
         {lines.map((l, i) => (
           <div key={l.key} className="grid items-end gap-2 rounded-lg border border-ink-100 p-2 md:grid-cols-12">
             <div className="md:col-span-4"><Label htmlFor={`p-${l.key}`}>{t("Product {n}", { n: i + 1 })}</Label><ProductPicker id={`p-${l.key}`} value={l.product} onChange={(p) => set(l.key, { product: p, unit: p?.purchaseUnit ?? "" })} /></div>
-            <div className="md:col-span-2"><Label htmlFor={`q-${l.key}`}>{t("Qty")}</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} required /></div>
+            <div className="md:col-span-2"><Label htmlFor={`q-${l.key}`}>{t("Qty")}</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} required={!!l.product} /></div>
             <div className="md:col-span-1"><Label htmlFor={`u-${l.key}`}>{t("Unit")}</Label><Select id={`u-${l.key}`} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })}>{unitsFor(l.product).map((u) => <option key={u}>{u}</option>)}</Select></div>
-            <div className="md:col-span-2"><Label htmlFor={`pr-${l.key}`}>{t("Unit price (net)")}</Label><Input id={`pr-${l.key}`} inputMode="decimal" value={l.unitPrice} onChange={(e) => set(l.key, { unitPrice: e.target.value })} required /></div>
+            <div className="md:col-span-2"><Label htmlFor={`pr-${l.key}`}>{t("Unit price (net)")}</Label><Input id={`pr-${l.key}`} inputMode="decimal" value={l.unitPrice} onChange={(e) => set(l.key, { unitPrice: e.target.value })} required={!!l.product} /></div>
             <div className="md:col-span-1"><Label htmlFor={`d-${l.key}`}>{t("Discount")}</Label><Input id={`d-${l.key}`} inputMode="decimal" value={l.discount} onChange={(e) => set(l.key, { discount: e.target.value })} /></div>
             <div className="md:col-span-1"><Label htmlFor={`t-${l.key}`}>{t("VAT %")}</Label><Input id={`t-${l.key}`} inputMode="decimal" value={l.taxRatePct} onChange={(e) => set(l.key, { taxRatePct: e.target.value })} /></div>
             <div className="md:col-span-1"><Button type="button" variant="ghost" aria-label={t("Remove line")} onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.key !== l.key) : ls))}><Trash2 className="h-4 w-4" /></Button></div>

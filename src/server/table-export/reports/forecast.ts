@@ -2,9 +2,11 @@ import { prisma } from "../../db";
 import { forecastReport, whatIfReport } from "../../services/planning";
 import { isDomainError } from "@/domain/errors";
 import { translateMessage } from "@/i18n/core";
+import { parseNum } from "@/lib/format";
 import type { ReportDef, XTable } from "../types";
 
-const pctIn = (v: string | null) => (v === null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v) / 100);
+const numIn = (v: string | null) => { const n = parseNum(v); return Number.isFinite(n) ? n : null; };
+const pctIn = (v: string | null) => { const n = numIn(v); return n === null ? null : n / 100; };
 
 /** /forecast — forecast KPIs, forecast by category, scenarios and (when a lever is set) the what-if result. */
 export const forecast: ReportDef = {
@@ -17,12 +19,14 @@ export const forecast: ReportDef = {
     const wf = wfrom ? new Date(`${wfrom}-01T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
     const wt = new Date(Date.UTC(wf.getUTCFullYear(), wf.getUTCMonth() + 1, 1));
     const wastePts = sp("wastePts");
-    const levers = { productPricePct: pctIn(q.get("productPricePct")) ?? undefined, occupancyPct: pctIn(q.get("wOccupancyPct")) ?? undefined, buffetCoversPct: pctIn(q.get("buffetCoversPct")) ?? undefined, wastePts: wastePts ? Number(wastePts) : undefined, laborPct: pctIn(q.get("laborPct")) ?? undefined, energyPct: pctIn(q.get("energyPct")) ?? undefined };
+    const levers = { productPricePct: pctIn(q.get("productPricePct")) ?? undefined, occupancyPct: pctIn(q.get("wOccupancyPct")) ?? undefined, buffetCoversPct: pctIn(q.get("buffetCoversPct")) ?? undefined, wastePts: numIn(wastePts ?? null) ?? undefined, laborPct: pctIn(q.get("laborPct")) ?? undefined, energyPct: pctIn(q.get("energyPct")) ?? undefined };
     const anyLever = Object.values(levers).some((v) => v !== undefined);
     const productId = sp("productId") || null;
 
     const filters: Array<[string, string]> = [[t("Month"), f.month]];
-    for (const [k, label] of [["occupancyPct", "Expected occupancy %"], ["coversPct", "Covers / room change %"], ["priceChangePct", "Known price change %"]] as const) if (sp(k)) filters.push([t(label), sp(k)!]);
+    // an input that is not a number was ignored by the calculation: the filter line says so
+    const shown = (k: string) => (numIn(q.get(k)) === null ? `${sp(k)} (${t("ignored — not a number")})` : sp(k)!);
+    for (const [k, label] of [["occupancyPct", "Expected occupancy %"], ["coversPct", "Covers / room change %"], ["priceChangePct", "Known price change %"]] as const) if (sp(k)) filters.push([t(label), shown(k)]);
 
     const tables: XTable[] = [
       {
@@ -55,7 +59,7 @@ export const forecast: ReportDef = {
       const product = productId ? await prisma.product.findFirst({ where: { id: productId, hotelId }, select: { name: true } }) : null;
       filters.push([t("Baseline month"), wf.toISOString().slice(0, 7)]);
       if (product) filters.push([t("Ingredient"), product.name]);
-      for (const [k, label] of [["productPricePct", "Price %"], ["wOccupancyPct", "Occupancy %"], ["buffetCoversPct", "Buffet covers %"], ["wastePts", "Waste (pts)"], ["laborPct", "Labor %"], ["energyPct", "Energy %"]] as const) if (sp(k)) filters.push([t(label), sp(k)!]);
+      for (const [k, label] of [["productPricePct", "Price %"], ["wOccupancyPct", "Occupancy %"], ["buffetCoversPct", "Buffet covers %"], ["wastePts", "Waste (pts)"], ["laborPct", "Labor %"], ["energyPct", "Energy %"]] as const) if (sp(k)) filters.push([t(label), shown(k)]);
       try {
         const wi = await whatIfReport(prisma, actor, hotelId, { from: wf, to: wt, productId, ...levers });
         tables.push({

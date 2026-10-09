@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { pageContext, guarded } from "@/server/page";
-import { sessionReport, forecast } from "@/server/services/buffet";
+import { sessionReport, forecast, sessionDefaults } from "@/server/services/buffet";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
@@ -19,6 +19,8 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
   const cur = hotel.baseCurrency;
   const open = s.status === "OPEN";
   const fc = open && s.expectedCovers ? await guarded(() => forecast(prisma, actor, hotelId, { departmentId: s.departmentId, type: s.type, serviceDate: s.serviceDate, expectedCovers: s.expectedCovers! })) : null;
+  // covers sold as Micros reports them (nightly import), read now: the session may have been opened before the import ran
+  const micros = open ? await guarded(() => sessionDefaults(prisma, actor, hotelId, { date: s.serviceDate.toISOString().slice(0, 10), departmentId: s.departmentId, type: s.type })) : null;
   const recipes = open ? await prisma.recipe.findMany({ where: { hotelId, active: true, versions: { some: { status: "APPROVED" } } }, include: { versions: { where: { status: "APPROVED" }, select: { yieldUnit: true } } }, orderBy: { name: "asc" } }) : [];
   const items = m.items.map((i) => ({ key: i.key, name: i.name, unit: i.unit, input: i.input.toString(), isDish: i.isDish }));
   return (
@@ -36,7 +38,7 @@ export default async function BuffetSessionPage({ params }: { params: Promise<{ 
       {open && can(actor, "buffet:manage") && (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Card title={t("Add production / refill")}><AddLine sessionId={s.id} recipes={recipes.map((r) => ({ id: r.id, name: r.name, unit: r.versions[0]?.yieldUnit ?? "kg" }))} /></Card>
-          <Card title={t("Close session: covers & leftovers")}><CloseSession sessionId={s.id} items={items} expectedCovers={s.expectedCovers} /></Card>
+          <Card title={t("Close session: covers & leftovers")}><CloseSession sessionId={s.id} items={items} expectedCovers={s.expectedCovers} microsCovers={micros?.ok ? micros.data.covers : null} /></Card>
         </div>
       )}
       {fc?.ok && fc.data.items.length > 0 && (

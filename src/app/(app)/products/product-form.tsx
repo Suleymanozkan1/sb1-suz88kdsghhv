@@ -12,13 +12,16 @@ export function ProductForm({ categories, suppliers }: { categories: { id: strin
   const router = useRouter();
   const t = useT();
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     const form = e.currentTarget;
     const f = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
     // stock code is optional (generated when empty); reorder point and safety stock live on the auto-order rules
     const body: Record<string, unknown> = { sku: f.sku || null, name: f.name, brand: f.brand || null, categoryId: f.categoryId, defaultSupplierId: f.defaultSupplierId || null, purchaseUnit: f.purchaseUnit, stockUnit: f.stockUnit, recipeUnit: f.recipeUnit, taxRatePct: f.taxRatePct || "0" };
     if (f.convFactor) body.conversions = [{ fromUnit: f.purchaseUnit, toUnit: f.stockUnit, factor: f.convFactor }];
+    setBusy(true);
     try {
       await call("POST", "/api/products", body);
       setMsg({ tone: "green", text: t("{name} created", { name: f.name }) });
@@ -26,6 +29,8 @@ export function ProductForm({ categories, suppliers }: { categories: { id: strin
       router.refresh();
     } catch (err) {
       setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -41,7 +46,7 @@ export function ProductForm({ categories, suppliers }: { categories: { id: strin
       <div><Label htmlFor="pf-sup">{t("Default supplier")}</Label><Select id="pf-sup" name="defaultSupplierId"><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
       <div><Label htmlFor="pf-tax">{t("VAT %")}</Label><Input id="pf-tax" name="taxRatePct" inputMode="decimal" placeholder="0" /></div>
       <div><Label htmlFor="pf-sku" hint={t("optional — generated when empty")}>{t("Stock code")}</Label><Input id="pf-sku" name="sku" /></div>
-      <div className="flex items-end"><Button type="submit">{t("Create product")}</Button></div>
+      <div className="flex items-end"><Button type="submit" disabled={busy}>{t("Create product")}</Button></div>
     </form>
   );
 }

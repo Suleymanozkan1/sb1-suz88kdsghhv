@@ -15,7 +15,12 @@ export default async function AdminPage() {
   const res = await guarded(() => Promise.all([adminOverview(prisma, actor, hotelId), listInvites(prisma, actor, hotelId)]));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const [o, invites] = res.data;
-  const orgHotels = await prisma.hotel.findMany({ where: { organizationId: actor.organizationId, id: { in: [...actor.hotelIds] } }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, active: true } });
+  // company administrators also see the suspended hotels they hold access to, so they can reactivate them
+  const orgHotels = await prisma.hotel.findMany({
+    where: { organizationId: actor.organizationId, OR: [{ id: { in: [...actor.hotelIds] } }, ...(can(actor, "admin:hotels") ? [{ active: false, userAccess: { some: { userId: actor.userId } } }] : [])] },
+    orderBy: { name: "asc" },
+    select: { id: true, code: true, name: true, active: true },
+  });
   return (
     <>
       <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} exportKey="admin" />

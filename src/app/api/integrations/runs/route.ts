@@ -5,6 +5,8 @@ import { botApi } from "@/server/integrations/route";
 import { integrationOverview, reportRun } from "@/server/integrations/ingest";
 
 export const dynamic = "force-dynamic";
+// a successful Micros report runs the automatic orders (e-mails) before answering
+export const maxDuration = 300;
 
 /** The bot reports a run: STARTED / SUCCEEDED / FAILED with its message. */
 export const POST = botApi(async ({ hotelId, body }) => reportRun(prisma, hotelId, await body()));

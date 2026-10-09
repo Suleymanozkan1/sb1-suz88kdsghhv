@@ -15,8 +15,9 @@ import { audit } from "./audit";
 import { postMovement } from "./ledger";
 import { raiseAlert } from "./alerts";
 import { toConversions } from "./products";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const pos = dec.refine((v) => Number(v) > 0, "Must be positive");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 

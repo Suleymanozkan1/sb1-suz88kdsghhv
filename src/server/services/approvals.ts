@@ -31,6 +31,8 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
     if (stx.departmentId) requireDepartment(actor, stx.departmentId);
     if (stx.reversedBy) throw new DomainError("CONFLICT", "Already reversed");
     if (stx.type === "REVERSAL") throw new DomainError("VALIDATION", "Reversals cannot be deleted");
+    // a transfer leg can never be reversed alone (reverseMovement refuses it), so the request could never be approved
+    if (stx.transferGroup && (await tx.stockTransaction.count({ where: { hotelId, transferGroup: stx.transferGroup } })) > 1) throw new DomainError("VALIDATION", "Reverse transfers by posting the opposite transfer, not a single leg");
     const pending = await tx.approval.findFirst({ where: { hotelId, entityType: "StockTransaction", entityId: stx.id, status: "PENDING" } });
     if (pending) throw new DomainError("CONFLICT", "A delete request is already pending for this entry");
     const a = await tx.approval.create({
@@ -112,6 +114,11 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
 export async function listApprovals(db: Db, actor: Actor, hotelId: string, status: "PENDING" | "APPROVED" | "REJECTED" | "ALL" = "PENDING") {
   authorize(actor, "dashboard:view", { hotelId });
   const rows = await db.approval.findMany({ where: { hotelId, ...(status === "ALL" ? {} : { status }) }, orderBy: { requestedAt: "desc" }, take: 200 });
+  return scopeApprovals(db, actor, hotelId, rows);
+}
+
+/** Drops the approvals of departments outside the user's scope (hotel-level ones stay with all-department roles). */
+export async function scopeApprovals<A extends { action: string; entityId: string }>(db: Db, actor: Actor, hotelId: string, rows: A[]): Promise<A[]> {
   if (actor.departmentIds === "ALL") return rows;
   const scope = actor.departmentIds;
   const depts = await approvalDepartments(db, hotelId, rows);
@@ -119,4 +126,14 @@ export async function listApprovals(db: Db, actor: Actor, hotelId: string, statu
     const d = depts.get(r.entityId);
     return d ? scope.includes(d) : false;
   });
+}
+
+/** Pending requests and the last decisions the user may see — the /approvals page and its export. */
+export async function approvalsOverview(db: Db, actor: Actor, hotelId: string, historyTake = 30) {
+  authorize(actor, "dashboard:view", { hotelId });
+  const [pending, history] = await Promise.all([
+    db.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "desc" } }),
+    db.approval.findMany({ where: { hotelId, status: { not: "PENDING" } }, orderBy: { decidedAt: "desc" }, take: actor.departmentIds === "ALL" ? historyTake : 500 }),
+  ]);
+  return { pending: await scopeApprovals(db, actor, hotelId, pending), history: (await scopeApprovals(db, actor, hotelId, history)).slice(0, historyTake) };
 }

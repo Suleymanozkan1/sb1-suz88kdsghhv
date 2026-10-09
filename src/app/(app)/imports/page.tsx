@@ -58,7 +58,7 @@ export default async function ImportsPage() {
           {can(actor, "admin:hotels") && <Card title={t("Automation keys")} className="mb-4"><Keys tz={hotel.timezone} keys={auto.keys.map((k) => ({ ...k, createdAt: k.createdAt.toISOString(), lastUsedAt: k.lastUsedAt?.toISOString() ?? null, revokedAt: k.revokedAt?.toISOString() ?? null }))} /></Card>}
         </>
       )}
-      {allowed.length > 0 && <Card title={t("Import a file")} className="mb-4"><Importer allowed={[...allowed]} /></Card>}
+      {allowed.length > 0 && <Card title={t("Import a file")} className="mb-4"><Importer allowed={[...allowed]} currency={hotel.baseCurrency} /></Card>}
       <Card title={t("Import history")} padded={false}>
         {batches.length === 0 ? <div className="p-4"><Empty title={t("Nothing imported yet")} /></div> : (
           <Table>
