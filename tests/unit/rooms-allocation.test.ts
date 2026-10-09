@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { allocate, previewRule, costStack } from "@/domain/allocation";
 import { D, sum } from "@/domain/money";
-import { roomCosts, rollup, channelReport, roomKpis, meterConsumption, laundryUnitCosts, nightsInRange, stayInPeriod, emptyComponents, componentOfCategory } from "@/domain/rooms";
+import { roomCosts, rollup, roomRevenueKpis, prorateMonth, monthsInRange, roomKpis, meterConsumption, laundryUnitCosts, nightsInRange, stayInPeriod, emptyComponents, componentOfCategory } from "@/domain/rooms";
 
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
 
@@ -94,14 +94,30 @@ describe("room costing (spec 100–106, scenario 330: 100 occupied rooms)", () =
     expect(sum(res.lines.map((l) => l.fullCost)).toString()).toBe("0");
   });
 
-  it("channel report: gross − distribution = net; minus room cost = net contribution (spec 207–209)", () => {
-    const ch = channelReport(stays, D(500), from, to);
-    const ota = ch.find((c) => c.channel === "OTA")!;
-    expect(ota.nights).toBe(13);
-    expect(ota.gross.toString()).toBe("62000");
-    expect(ota.distribution.toString()).toBe("9300");
-    expect(ota.net.toString()).toBe("52700");
-    expect(ota.netContribution!.toString()).toBe("46200"); // 52700 − 13 × 500
+  it("room revenue KPIs: ADR over sold nights, RevPAR over sellable nights, unsold rooms carry cost (feedback r2 §10)", () => {
+    // 1,600 sellable room nights (OOO / OOS already taken out), 1,360 sold → 240 unsold
+    const k = roomRevenueKpis({ roomRevenue: 4_080_000, soldRooms: 1360, sellableRooms: 1600, guests: 2720, fullCost: 800_000 });
+    expect(k.adr!.toString()).toBe("3000"); // 4,080,000 / 1,360
+    expect(k.revpar!.toString()).toBe("2550"); // 4,080,000 / 1,600
+    expect(k.occupancy!.toString()).toBe("0.85");
+    expect(k.revenuePerGuest!.toString()).toBe("1500"); // room revenue only / 2,720 guest nights
+    expect(k.costPerSellableRoom!.toString()).toBe("500");
+    expect(k.unsoldRooms).toBe(240);
+    expect(k.unsoldCost!.toString()).toBe("120000"); // 240 × 500
+    expect(k.unsoldRevenueAtAdr!.toString()).toBe("720000"); // 240 × ADR
+    const none = roomRevenueKpis({ roomRevenue: 0, soldRooms: 0, sellableRooms: 0, guests: 0 });
+    expect([none.adr, none.revpar, none.occupancy, none.revenuePerGuest, none.costPerSellableRoom, none.unsoldCost]).toEqual([null, null, null, null, null, null]);
+  });
+
+  it("monthly amounts prorate by the days of the period in each month", () => {
+    const d = (s: string) => new Date(`${s}T00:00:00Z`);
+    expect(prorateMonth("2026-09", 30000, d("2026-09-01"), d("2026-10-01")).toString()).toBe("30000");
+    expect(prorateMonth("2026-09", 30000, d("2026-09-16"), d("2026-10-16")).toString()).toBe("15000");
+    expect(prorateMonth("2026-10", 31000, d("2026-09-16"), d("2026-10-16")).toString()).toBe("15000");
+    expect(prorateMonth("2026-02", 28000, d("2026-02-01"), d("2026-02-08")).toString()).toBe("7000");
+    expect(prorateMonth("2026-11", 1000, d("2026-09-01"), d("2026-10-01")).toString()).toBe("0");
+    expect(monthsInRange(d("2026-09-16"), d("2026-10-16"))).toEqual(["2026-09", "2026-10"]);
+    expect(monthsInRange(d("2026-12-01"), d("2027-01-01"))).toEqual(["2026-12"]);
   });
 
   it("hotel unit economics (spec 161–163)", () => {

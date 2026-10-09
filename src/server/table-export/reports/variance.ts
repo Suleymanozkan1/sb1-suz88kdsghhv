@@ -42,7 +42,7 @@ export const variance: ReportDef = {
         {
           title: t("Inventory reconciliation (value)"),
           columns: [{ key: "label", header: t("Metric") }, { key: "value", header: t("Value"), type: "money" }],
-          rows: ([["Opening inventory", tt.opening], ["+ Purchases", tt.purchases], ["+ Transfers in", tt.transfersIn], ["− Transfers out", tt.transfersOut], ["− Closing inventory", tt.closing]] as const).map(([l, v]) => ({ label: t(l), value: v })),
+          rows: ([["Opening inventory", tt.opening], ["+ Purchases", tt.purchases], ["− Transfers out", tt.transfersOutNet], ["− Closing inventory", tt.closing]] as const).map(([l, v]) => ({ label: t(l), value: v })),
           totals: { label: t("= Actual usage (COGS)"), value: tt.actualCost },
         },
         {

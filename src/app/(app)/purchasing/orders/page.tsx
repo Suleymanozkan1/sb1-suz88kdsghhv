@@ -4,11 +4,13 @@ import { orderRecommendations } from "@/server/services/inventory";
 import { autoOrderOverview } from "@/server/services/auto-order";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
+import { trialAllFeatures } from "@/server/plans";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { AutoOrder } from "./auto-order";
 import { Suppliers } from "./suppliers";
+import { OrderEmailEditor } from "./order-email-editor";
 
 export const metadata = { title: "Order Suggestions" };
 
@@ -16,20 +18,30 @@ const TABS = ["recommendations", "auto", "suppliers"] as const;
 type Tab = (typeof TABS)[number];
 const PLAN_LABEL = { BASIC: "Basic plan", STANDARD: "Standard plan", PREMIUM: "Premium plan" } as const;
 
+/** The preview of the order e-mail: the first supplier with due rules (else the first rule's), or sample rows. */
+function sampleOrder(rules: { supplier: string; product: string; orderQty: string; unit: string; due: boolean }[]) {
+  const first = rules.find((r) => r.due) ?? rules[0];
+  if (!first) return { supplier: "Örnek Gıda A.Ş.", lines: [{ product: "Domates", qty: "20", unit: "kg" }, { product: "Zeytinyağı", qty: "10", unit: "l" }] };
+  const mine = rules.filter((r) => r.supplier === first.supplier && (r.due || !first.due)).slice(0, 10);
+  return { supplier: first.supplier, lines: mine.map((r) => ({ product: r.product, qty: r.orderQty, unit: r.unit })) };
+}
+
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "recommendations";
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  // trial: every feature is open (full package); the plan badges say so instead of looking locked
+  const trial = trialAllFeatures();
   const link = (v: Tab, label: string, badge?: React.ReactNode) => (
     <Link href={v === "recommendations" ? "?" : `?tab=${v}`} className={cn("flex items-center gap-1.5 rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium", tab === v ? "border-brand-600 text-brand-800" : "border-transparent text-ink-500 hover:text-ink-800")}>{label}{badge}</Link>
   );
   const head = (subtitle: string, plan?: keyof typeof PLAN_LABEL) => (
     <>
-      <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} canExport={tab !== "auto" /* the auto tab shows them next to its filters */} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={plan === "PREMIUM" ? "green" : "gray"}>{t(PLAN_LABEL[plan])}</Badge>} />
+      <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} canExport={tab !== "auto" /* the auto tab shows them next to its filters */} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={trial || plan === "PREMIUM" ? "green" : "gray"}>{trial ? t("Full package (trial)") : t(PLAN_LABEL[plan])}</Badge>} />
       <div className="mb-4 flex gap-1 border-b border-ink-200">
         {link("recommendations", t("Order recommendations"))}
-        {link("auto", t("Automatic ordering"), <Badge tone="blue">{t("Premium")}</Badge>)}
+        {link("auto", t("Automatic ordering"), <Badge tone={trial ? "green" : "blue"}>{trial ? t("Premium · open (trial)") : t("Premium")}</Badge>)}
         {link("suppliers", t("Suppliers"))}
       </div>
     </>
@@ -42,7 +54,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     return (
       <>
         {head(t("A rule per product: when the stock falls to the reorder point the order quantity is ordered from the supplier."), res.data.plan)}
-        <AutoOrder rules={JSON.parse(JSON.stringify(res.data.rules))} suppliers={suppliers} canManage={can(actor, "purchase:manage")} emailEnabled={res.data.emailEnabled} mailConfigured={res.data.mailConfigured} />
+        <AutoOrder rules={JSON.parse(JSON.stringify(res.data.rules))} suppliers={suppliers} canManage={can(actor, "purchase:manage")} emailEnabled={res.data.emailEnabled} mailConfigured={res.data.mailConfigured} trial={res.data.trial} />
+        <div className="mt-4">
+          <OrderEmailEditor template={res.data.template} hotel={res.data.hotel} today={res.data.today} canManage={can(actor, "purchase:manage")} sample={sampleOrder(res.data.rules)} />
+        </div>
       </>
     );
   }
@@ -55,7 +70,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     if (!rows.ok) return <Alert>{rows.error}</Alert>;
     return (
       <>
-        {head(t("Company name, address and e-mail: automatic orders are e-mailed to this address."))}
+        {head(t("Company name, address, e-mail and phone: automatic orders are e-mailed to this address."))}
         <Suppliers canManage={can(actor, "supplier:manage")} suppliers={rows.data.map((s) => ({ id: s.id, code: s.code, name: s.name, address: s.address, email: s.email, phone: s.phone, leadTimeDays: s.leadTimeDays, active: s.active, rules: s._count.autoOrders }))} />
       </>
     );

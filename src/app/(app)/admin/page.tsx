@@ -34,7 +34,7 @@ export default async function AdminPage() {
         users={o.users.map((u) => ({ id: u.id, email: u.email, name: u.name, active: u.active, roleKey: u.role.key, roleName: u.role.name, allDepartments: u.role.allDepartments, departmentIds: u.deptAccess.map((d) => d.departmentId), hotelIds: u.hotelAccess.map((h) => h.hotelId) }))}
         invites={invites.map((i) => ({ ...i, createdAt: i.createdAt.toISOString(), expiresAt: i.expiresAt.toISOString(), acceptedAt: i.acceptedAt?.toISOString() ?? null, revokedAt: i.revokedAt?.toISOString() ?? null }))}
         departments={o.departments.map((d) => ({ id: d.id, code: d.code, name: d.name, isOutlet: d.isOutlet, active: d.active, parentId: d.parentId, sqm: d.sqm?.toString() ?? null, headcount: d.headcount }))}
-        warehouses={o.warehouses.map((w) => ({ id: w.id, code: w.code, name: w.name, active: w.active, department: w.department?.name ?? null }))}
+        warehouses={o.warehouses.map((w) => ({ id: w.id, code: w.code, name: w.name, active: w.active, department: w.department?.name ?? null, countApprovers: w.countApprovers.map((a) => a.roleKey) }))}
         categories={o.categories.map((c) => ({ id: c.id, code: c.code, name: c.name, group: c.group, parentId: c.parentId }))}
         groups={[...CATEGORY_GROUPS]}
       />

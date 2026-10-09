@@ -107,7 +107,7 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
   );
 }
 
-export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfigured }: { rules: RuleRow[]; suppliers: Supplier[]; canManage: boolean; emailEnabled: boolean; mailConfigured: boolean }) {
+export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfigured, trial = false }: { rules: RuleRow[]; suppliers: Supplier[]; canManage: boolean; emailEnabled: boolean; mailConfigured: boolean; /** trial: every feature open */ trial?: boolean }) {
   const t = useT();
   const router = useRouter();
   const [msg, setMsg] = useState<Msg>(null);
@@ -172,9 +172,9 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       {!emailEnabled ? (
         <Alert tone="blue">{t("Basic plan: products at their reorder point are highlighted here. Automatic e-mail orders to suppliers are part of the Premium plan.")}</Alert>
       ) : !mailConfigured ? (
-        <Alert tone="amber">{t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
+        <Alert tone="amber">{trial ? t("Trial — every feature is open: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.") : t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
       ) : (
-        <Alert tone="green">{t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
+        <Alert tone="green">{trial ? t("Trial — every feature is open: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).") : t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
       )}
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       <div className="flex flex-wrap items-end gap-2">

@@ -4,11 +4,35 @@
  */
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize, requireDepartment, requireHotel } from "../auth/actor";
+import { type Actor, authorize, can, requireDepartment, requireHotel, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
 import { reverseMovement } from "./ledger";
 import { postWasteRecord } from "./waste";
 import { postCount } from "./counts";
+
+/** Approvals of stock counts (every count is sent for approval; see counts.submitCount). */
+const isCountApproval = (a: { action: string }) => a.action === "STOCK_ADJUSTMENT";
+
+/** Warehouse of each count approval, and the role keys configured to approve that warehouse's counts (Admin). */
+async function countApprovalRules(db: Db | Tx, hotelId: string, items: Array<{ action: string; entityId: string }>) {
+  const ids = items.filter(isCountApproval).map((i) => i.entityId);
+  if (!ids.length) return { warehouseOf: new Map<string, string>(), roles: new Map<string, string[]>() };
+  const counts = await db.stockCount.findMany({ where: { hotelId, id: { in: ids } }, select: { id: true, warehouseId: true } });
+  const rules = await db.countApprover.findMany({ where: { hotelId, warehouseId: { in: [...new Set(counts.map((c) => c.warehouseId))] } }, select: { warehouseId: true, roleKey: true } });
+  const roles = new Map<string, string[]>();
+  for (const r of rules) roles.set(r.warehouseId, [...(roles.get(r.warehouseId) ?? []), r.roleKey]);
+  return { warehouseOf: new Map(counts.map((c) => [c.id, c.warehouseId])), roles };
+}
+
+/**
+ * Who may decide: a count approval → the roles configured for its warehouse, or (none configured) any role
+ * with approval:decide; every other approval → approval:decide. Segregation of duties is checked separately.
+ */
+function mayDecide(actor: Actor, a: { action: string; entityId: string }, rules: Awaited<ReturnType<typeof countApprovalRules>>): boolean {
+  if (!isCountApproval(a)) return can(actor, "approval:decide");
+  const roles = rules.roles.get(rules.warehouseOf.get(a.entityId) ?? "") ?? [];
+  return roles.length ? roles.includes(actor.roleKey) : can(actor, "approval:decide");
+}
 
 /** The department an approval acts on (null = hotel-level), so department-scoped users stay in their scope. */
 async function approvalDepartments(db: Db | Tx, hotelId: string, items: Array<{ action: string; entityId: string }>): Promise<Map<string, string | null>> {
@@ -52,13 +76,19 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
 }
 
 export async function decideApproval(db: Db, actor: Actor, hotelId: string, input: { approvalId: string; decision: "APPROVE" | "REJECT"; note?: string }) {
-  authorize(actor, "approval:decide", { hotelId });
+  requireHotel(actor, hotelId);
+  // a role named as count approver in Admin may decide those counts without approval:decide
+  if (!can(actor, "approval:decide") && !(await db.countApprover.count({ where: { hotelId, roleKey: actor.roleKey } }))) requirePermission(actor, "approval:decide");
   return inTx(
     db,
     async (tx) => {
       const a = await tx.approval.findFirst({ where: { id: input.approvalId, hotelId } });
       if (!a) throw new DomainError("NOT_FOUND", "Approval not found");
       requireHotel(actor, a.hotelId);
+      if (!mayDecide(actor, a, await countApprovalRules(tx, hotelId, [a]))) {
+        if (!isCountApproval(a)) requirePermission(actor, "approval:decide");
+        throw new DomainError("FORBIDDEN", "Your role may not approve the counts of this warehouse");
+      }
       const dept = (await approvalDepartments(tx, hotelId, [a])).get(a.entityId);
       if (dept) requireDepartment(actor, dept);
       if (a.status !== "PENDING") throw new DomainError("CONFLICT", `Approval already ${a.status}`);
@@ -89,7 +119,8 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
       } else if (a.action === "WASTE") {
         await tx.wasteRecord.update({ where: { id: a.entityId }, data: { status: "REJECTED", approvedById: actor.userId, approvedAt: new Date() } });
       } else if (a.action === "STOCK_ADJUSTMENT") {
-        await tx.stockCount.update({ where: { id: a.entityId }, data: { status: "DRAFT" } });
+        // rejected: nothing is posted; the count goes back to DRAFT for a recount, with the approver's note
+        await tx.stockCount.update({ where: { id: a.entityId }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
       }
 
       const updated = await tx.approval.update({
@@ -117,15 +148,23 @@ export async function listApprovals(db: Db, actor: Actor, hotelId: string, statu
   return scopeApprovals(db, actor, hotelId, rows);
 }
 
-/** Drops the approvals of departments outside the user's scope (hotel-level ones stay with all-department roles). */
-export async function scopeApprovals<A extends { action: string; entityId: string }>(db: Db, actor: Actor, hotelId: string, rows: A[]): Promise<A[]> {
-  if (actor.departmentIds === "ALL") return rows;
+/**
+ * Drops the approvals of departments outside the user's scope (hotel-level ones stay with all-department roles),
+ * and count approvals the user may not decide unless they asked for them. `canDecide` drives the buttons.
+ */
+export async function scopeApprovals<A extends { action: string; entityId: string; requestedById: string }>(db: Db, actor: Actor, hotelId: string, rows: A[]): Promise<Array<A & { canDecide: boolean }>> {
+  const rules = await countApprovalRules(db, hotelId, rows);
   const scope = actor.departmentIds;
-  const depts = await approvalDepartments(db, hotelId, rows);
-  return rows.filter((r) => {
-    const d = depts.get(r.entityId);
-    return d ? scope.includes(d) : false;
-  });
+  const depts = scope === "ALL" ? null : await approvalDepartments(db, hotelId, rows);
+  return rows
+    .filter((r) => {
+      if (depts) {
+        const d = depts.get(r.entityId);
+        if (!d || !(scope as readonly string[]).includes(d)) return false;
+      }
+      return !isCountApproval(r) || r.requestedById === actor.userId || mayDecide(actor, r, rules);
+    })
+    .map((r) => ({ ...r, canDecide: r.requestedById !== actor.userId && mayDecide(actor, r, rules) }));
 }
 
 /** Pending requests and the last decisions the user may see — the /approvals page and its export. */

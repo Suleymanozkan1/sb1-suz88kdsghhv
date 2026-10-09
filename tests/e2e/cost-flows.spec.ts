@@ -32,6 +32,25 @@ test("purchase flow: receipt posts stock and appears in the ledger (spec §284)"
   await expect(page.getByRole("cell", { name: "Tomato" }).first()).toBeVisible();
 });
 
+test("order e-mail template: edited with a live preview, reset to the default (trial: every feature open)", async ({ page }) => {
+  page.on("dialog", (d) => void d.accept());
+  await login(page, "purchasing");
+  await page.goto("/purchasing/orders?tab=auto");
+  await expect(page.getByText("Premium · open (trial)")).toBeVisible();
+  await page.getByText("Order e-mail template").click();
+  const preview = page.getByTestId("order-email-preview");
+  await expect(preview).toContainText("için aşağıdaki ürünlere ihtiyacımız var"); // the built-in Turkish template
+  await expect(preview.locator("table")).toBeVisible();
+  const tag = uniq();
+  await page.getByLabel("E-mail text").fill(`Merhaba {supplier}, ${tag}\n{lines}`);
+  await expect(preview).toContainText(tag);
+  await page.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("Order e-mail template saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.getByText("The default template is back.")).toBeVisible();
+  await expect(preview).not.toContainText(tag);
+});
+
 test("recipe flow: create with live server-side cost, approve, view cost explosion (spec §279)", async ({ page }) => {
   await login(page, "fb");
   await page.goto("/recipes/new");

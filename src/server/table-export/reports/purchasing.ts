@@ -2,38 +2,35 @@ import { prisma } from "../../db";
 import { can, requirePermission } from "../../auth/actor";
 import { orderRecommendations } from "../../services/inventory";
 import { autoOrderOverview } from "../../services/auto-order";
+import { listReceipts, RECEIPT_SOURCE, RECEIPT_STATUS } from "../../services/purchasing";
 import { monthRange } from "../../page";
-
-const RECEIPT_SOURCE: Record<string, string> = { MICROS: "Micros", IMPORT: "From file import", MANUAL: "Entered by hand" };
 import { filterRules } from "@/app/(app)/purchasing/orders/filter-rules";
 import type { ReportDef } from "../types";
 
-/** /purchasing — goods receipts (one line per invoice line) and supplier price changes. */
+/** /purchasing — goods receipts (one line per invoice line; period, supplier and source as on screen) and supplier price changes. */
 export const purchasing: ReportDef = {
   perm: "purchase:view",
   async load({ actor, hotelId, t, q }) {
     const range = monthRange({ from: q.get("from") ?? undefined, to: q.get("to") ?? undefined });
-    const receipts = await prisma.goodsReceipt.findMany({
-      where: { hotelId, receiptDate: { gte: range.from, lt: range.to } },
-      include: { supplier: true, warehouse: true, items: { include: { product: true } } },
-      orderBy: { receiptDate: "desc" },
-      take: 5000,
-    });
+    const supplierId = q.get("supplierId") || null;
+    const source = q.get("source") || null;
+    const receipts = await listReceipts(prisma, hotelId, { ...range, supplierId, source }, 5000);
+    const supplier = supplierId ? await prisma.supplier.findFirst({ where: { id: supplierId, hotelId }, select: { name: true } }) : null;
     const prices = can(actor, "purchase:prices") ? await prisma.supplierPrice.findMany({ where: { hotelId, changePct: { not: null } }, include: { product: true, supplier: true }, orderBy: { priceDate: "desc" }, take: 25 }) : [];
     return {
       title: t("Purchasing & receiving"),
       fileName: "satin-alma",
-      filters: [[t("Period"), `${range.fromStr} – ${range.toStr}`]],
+      filters: [[t("Period"), `${range.fromStr} – ${range.toStr}`], [t("Supplier"), supplier?.name ?? t("All")], [t("Source"), source && RECEIPT_SOURCE[source] ? t(RECEIPT_SOURCE[source]) : t("All")]],
       tables: [
         {
-          title: t("Receipts"),
+          title: t("Goods receipts"),
           columns: [
             { key: "date", header: t("Date"), type: "date" }, { key: "source", header: t("Source") }, { key: "grn", header: t("GRN") }, { key: "supplier", header: t("Supplier") }, { key: "invoice", header: t("Invoice no.") }, { key: "warehouse", header: t("Warehouse") },
             { key: "product", header: t("Product") }, { key: "qty", header: t("Qty"), type: "qty" }, { key: "unit", header: t("Unit") }, { key: "price", header: t("Unit price"), type: "unitcost" },
-            { key: "net", header: t("Net"), type: "money" }, { key: "tax", header: t("Tax"), type: "money" }, { key: "landed", header: t("Landed"), type: "money" },
+            { key: "net", header: t("Net"), type: "money" }, { key: "vatPct", header: t("VAT %"), type: "pct" }, { key: "tax", header: t("VAT"), type: "money" }, { key: "landed", header: t("Landed"), type: "money" }, { key: "total", header: t("Total (incl. VAT)"), type: "money" }, { key: "status", header: t("Status") },
           ],
-          rows: receipts.flatMap((r) => r.items.map((i) => ({ date: r.receiptDate, source: t(RECEIPT_SOURCE[r.source] ?? r.source), grn: r.number, supplier: r.supplier.name, invoice: r.invoiceNo, warehouse: r.warehouse.name, product: i.product.name, qty: i.quantity.toString(), unit: i.unit, price: i.unitPrice.toString(), net: i.netAmount.toString(), tax: i.taxAmount.toString(), landed: i.landedAmount.toString() }))),
-          totals: { date: null, grn: t("Total"), net: receipts.reduce((a, r) => a + Number(r.netTotal), 0), tax: receipts.reduce((a, r) => a + Number(r.taxTotal), 0), landed: receipts.reduce((a, r) => a + Number(r.landedTotal), 0) },
+          rows: receipts.flatMap((r) => r.items.map((i) => ({ date: r.receiptDate, source: t(RECEIPT_SOURCE[r.source] ?? r.source), grn: r.number, supplier: r.supplier.name, invoice: r.invoiceNo, warehouse: r.warehouse.name, product: i.product.name, qty: i.quantity.toString(), unit: i.unit, price: i.unitPrice.toString(), net: i.netAmount.toString(), vatPct: i.taxRatePct.toString(), tax: i.taxAmount.toString(), landed: i.landedAmount.toString(), total: (Number(i.landedAmount) + Number(i.taxAmount)).toFixed(2), status: t(RECEIPT_STATUS[r.status]) }))),
+          totals: { date: null, grn: t("Total"), net: receipts.reduce((a, r) => a + Number(r.netTotal), 0), tax: receipts.reduce((a, r) => a + Number(r.taxTotal), 0), landed: receipts.reduce((a, r) => a + Number(r.landedTotal), 0), total: receipts.reduce((a, r) => a + Number(r.total), 0) },
         },
         ...(prices.length ? [{
           title: t("Supplier price changes"),

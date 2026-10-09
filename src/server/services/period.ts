@@ -61,7 +61,7 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
     db.purchaseOrder.count({ where: { hotelId, status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] }, expectedDate: { lte: period.endDate } } }),
     db.stockCount.count({ where: { hotelId, status: "POSTED", countDate: { gte: new Date(period.endDate.getTime() - 7 * 86400000), lt: range.lt } } }),
     db.wasteRecord.count({ where: { hotelId, status: "PENDING", wasteDate: range } }),
-    db.stockCount.count({ where: { hotelId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, countDate: range } }),
+    db.stockCount.count({ where: { hotelId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, deletedAt: null, countDate: range } }),
     db.buffetSession.count({ where: { hotelId, status: "OPEN", serviceDate: range } }),
     db.warehouse.count({ where: { hotelId, code: "MINIBAR_ROOMS" } }),
     db.minibarMovement.count({ where: { hotelId, movedAt: range } }),

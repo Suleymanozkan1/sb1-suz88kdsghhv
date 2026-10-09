@@ -237,7 +237,7 @@ async function ingestOccupancy(db: Db, hotelId: string, p: Extract<IngestInput, 
   const o = p.items[0]!;
   const businessDate = new Date(`${p.businessDay}T00:00:00Z`);
   // the sold rooms are kept for the minibar board (only those rooms are checked); a delivery without them keeps the stored list
-  const data = { availableRooms: int(o.availableRooms), occupiedRooms: int(o.occupiedRooms), guests: int(o.guests), roomRevenue: String(o.roomRevenue ?? 0), outOfOrder: int(o.outOfOrder ?? 0), source: p.source, ...(o.occupiedRoomNumbers ? { occupiedRoomNumbers: o.occupiedRoomNumbers } : {}) };
+  const data = { availableRooms: int(o.availableRooms), occupiedRooms: int(o.occupiedRooms), guests: int(o.guests), roomRevenue: String(o.roomRevenue ?? 0), outOfOrder: int(o.outOfOrder ?? 0), outOfService: int(o.outOfService ?? 0), source: p.source, ...(o.occupiedRoomNumbers ? { occupiedRoomNumbers: o.occupiedRoomNumbers } : {}) };
   await db.occupancyImport.upsert({ where: { hotelId_businessDate: { hotelId, businessDate } }, create: { hotelId, businessDate, ...data }, update: data });
   return { received: 1, accepted: 1, duplicates: 0, errors: [] };
 }

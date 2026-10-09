@@ -2,6 +2,7 @@
  * Dashboard, inventory status and data-quality center (spec §167–§178, §216–§222).
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
+import type { AlertSeverity, Prisma } from "@prisma/client";
 import { defaultConverter } from "@/domain/uom";
 import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
@@ -13,8 +14,16 @@ import { type Actor, authorize, can, departmentScope, requirePermission } from "
 import { theoreticalVsActual } from "./variance";
 import { openPoQuantities } from "./purchasing";
 import { buildResolver, versionToDef } from "./recipes";
+import { emptyMovement, periodMovements } from "./inventory";
 
-export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opts: { categoryGroup?: string; warehouseId?: string } = {}) {
+/** Stock statuses the app shows (feedback r2 §1): no "overstock" / "dead stock" - excess is a personal judgement. */
+export const STOCK_LEVELS = ["NORMAL", "LOW", "CRITICAL", "OUT_OF_STOCK"] as const;
+export const LEVEL_LABEL: Record<string, string> = { NORMAL: "Normal", LOW: "Low", CRITICAL: "Critical", OUT_OF_STOCK: "Out of stock" };
+/** A status filter from the URL; old bookmarks (?level=OVERSTOCK / DEAD) fall back to all products. */
+export const stockLevelParam = (v: string | null | undefined) => (STOCK_LEVELS as readonly string[]).includes(v ?? "") ? v! : undefined;
+
+/** Current stock per product (from the ledger balances) plus, with `period`, its opening / in / out / closing over that range. */
+export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opts: { categoryGroup?: string; warehouseId?: string; period?: { from: Date; to: Date } } = {}) {
   authorize(actor, "inventory:view", { hotelId });
   const warehouses = await db.warehouse.findMany({ where: { hotelId, ...(actor.departmentIds === "ALL" ? {} : { OR: [{ departmentId: { in: [...actor.departmentIds] } }] }) } });
   const whIds = warehouses.map((w) => w.id).filter((id) => !opts.warehouseId || id === opts.warehouseId);
@@ -34,7 +43,10 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
   // edited; the retired product-card columns are never read (migrated into paused rules)
   const ruleBy = new Map<string, (typeof rules)[number]>();
   for (const r of rules) if (!ruleBy.has(r.productId)) ruleBy.set(r.productId, r);
-  const lastOut = await db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, quantity: { lt: 0 } }, _max: { txDate: true } });
+  const [lastOut, moves] = await Promise.all([
+    db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: whIds }, quantity: { lt: 0 } }, _max: { txDate: true } }),
+    opts.period ? periodMovements(db, hotelId, { ...opts.period, warehouseIds: whIds }) : Promise.resolve(null),
+  ]);
   // index once (10k products × 10k balances must not be a nested scan)
   const balByProduct = new Map<string, typeof balances>();
   for (const b of balances) balByProduct.set(b.productId, [...(balByProduct.get(b.productId) ?? []), b]);
@@ -62,14 +74,17 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
         quantity: qty,
         value,
         unitCost: qty.gt(0) ? value.div(qty) : null,
-        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: thresholds.reorderPoint ?? undefined, maxStock: p.maxStock?.toString(), safetyStock: thresholds.safetyStock ?? undefined }),
+        // no maxStock: "overstock" is not a status any more (r2 §1)
+        level: stockLevel(qty, { minStock: p.minStock?.toString(), reorderPoint: thresholds.reorderPoint ?? undefined, safetyStock: thresholds.safetyStock ?? undefined }),
         reorderPoint: thresholds.reorderPoint,
         safetyStock: thresholds.safetyStock,
         openPo: openPo.get(p.id) ?? ZERO,
         avgDailyUsage: avgDaily,
         daysOfStock: daysOfStock(qty, avgDaily),
         daysSinceLastIssue: daysIdle,
+        // aging flag kept for the savings / weekly-review carrying-cost estimate; it is not a stock status
         deadStock: qty.gt(0) && (daysIdle === null || daysIdle > 60),
+        movement: moves ? (moves.get(p.id) ?? emptyMovement()) : null,
         hasBalance: bs.length > 0,
       };
     })
@@ -80,14 +95,7 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
     rows,
     totalValue: sum(rows.map((r) => r.value)),
     valueByGroup: [...byGroup].map(([group, value]) => ({ group, value })).sort((a, b) => b.value.comparedTo(a.value)),
-    counts: {
-      NORMAL: rows.filter((r) => r.level === "NORMAL").length,
-      LOW: rows.filter((r) => r.level === "LOW").length,
-      CRITICAL: rows.filter((r) => r.level === "CRITICAL").length,
-      OUT_OF_STOCK: rows.filter((r) => r.level === "OUT_OF_STOCK").length,
-      OVERSTOCK: rows.filter((r) => r.level === "OVERSTOCK").length,
-      DEAD: rows.filter((r) => r.deadStock).length,
-    },
+    counts: Object.fromEntries(STOCK_LEVELS.map((l) => [l, rows.filter((r) => r.level === l).length])) as Record<(typeof STOCK_LEVELS)[number], number>,
   };
 }
 
@@ -174,21 +182,134 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   };
 }
 
+/** Waste per product over [from, to) (approved records, the actor's departments), highest cost first. */
+async function wasteByProduct(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }, take: number) {
+  const where = { hotelId, status: "APPROVED" as const, wasteDate: { gte: q.from, lt: q.to }, ...departmentScope(actor) };
+  const [groups, total] = await Promise.all([
+    db.wasteRecord.groupBy({ by: ["productId"], where, _sum: { costValue: true, stockQty: true }, _count: { _all: true }, orderBy: { _sum: { costValue: "desc" } }, take }),
+    db.wasteRecord.aggregate({ where, _sum: { costValue: true } }),
+  ]);
+  const products = await db.product.findMany({ where: { hotelId, id: { in: groups.map((g) => g.productId) } }, include: { category: true } });
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const all = D(total._sum.costValue?.toString() ?? 0);
+  const rows = groups.map((g) => {
+    const p = byId.get(g.productId);
+    const cost = D(g._sum.costValue?.toString() ?? 0);
+    return { productId: g.productId, name: p?.name ?? g.productId, unit: p?.stockUnit ?? "", category: p?.category.name ?? "", categoryGroup: p?.category.group ?? "", qty: D(g._sum.stockQty?.toString() ?? 0), cost, records: g._count._all, pctOfTotal: pct(cost, all) };
+  });
+  return { rows, total: all };
+}
+
+/** Top waste products for the dashboard's detail page (feedback r2 §2: top 20, by cost, any date range). */
+export async function topWasteProducts(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }, take = 20) {
+  authorize(actor, "waste:view", { hotelId });
+  return wasteByProduct(db, actor, hotelId, q, take);
+}
+
+export type PriceChange = { productId: string; product: string; unit: string; supplier: string; receiptNo: string; date: Date; previous: Decimal; previousDate: Date; previousSupplier: string; current: Decimal; change: Decimal; changePct: Decimal; quantity: Decimal; impact: Decimal; latest: boolean };
+
+/**
+ * Supplier price changes from our own goods receipts (feedback r2 §2): for every receipt of a product in [from, to) its
+ * purchase price per stock unit (net of discount, excl. tax and landed extras - as the price history stores it) against
+ * the product's previous receipt, whenever before. Several lines of one product in one receipt (lots) are one price.
+ * `latest` marks the product's last receipt before `to`, i.e. "last purchase price vs the one before".
+ * Not market prices or imported price lists: only what we actually paid.
+ */
+async function priceChangeEvents(db: Db, hotelId: string, q: { from: Date; to: Date }): Promise<PriceChange[]> {
+  const rows = await db.$queryRaw<Array<{ productId: string; receiptId: string; number: string; supplierId: string; receiptDate: Date; qty: Prisma.Decimal; price: Prisma.Decimal; prev: Prisma.Decimal; prevDate: Date; prevSupplierId: string; rn: bigint }>>`
+    WITH r AS (
+      SELECT i."productId", g.id AS "receiptId", g.number, g."supplierId", g."receiptDate", g."postedAt", SUM(i."stockQty") AS qty, SUM(i."netAmount") / SUM(i."stockQty") AS price
+      FROM "GoodsReceiptItem" i JOIN "GoodsReceipt" g ON g.id = i."receiptId"
+      WHERE g."hotelId" = ${hotelId} AND g."receiptDate" < ${q.to} AND i."productId" IN (
+        SELECT i2."productId" FROM "GoodsReceiptItem" i2 JOIN "GoodsReceipt" g2 ON g2.id = i2."receiptId" WHERE g2."hotelId" = ${hotelId} AND g2."receiptDate" >= ${q.from} AND g2."receiptDate" < ${q.to})
+      GROUP BY i."productId", g.id
+      HAVING SUM(i."stockQty") > 0
+    ), l AS (
+      SELECT r.*, LAG(price) OVER w AS prev, LAG("receiptDate") OVER w AS "prevDate", LAG("supplierId") OVER w AS "prevSupplierId",
+        ROW_NUMBER() OVER (PARTITION BY "productId" ORDER BY "receiptDate" DESC, "postedAt" DESC NULLS LAST, "receiptId" DESC) AS rn
+      FROM r WINDOW w AS (PARTITION BY "productId" ORDER BY "receiptDate", "postedAt" NULLS FIRST, "receiptId")
+    )
+    SELECT * FROM l WHERE "receiptDate" >= ${q.from} AND prev > 0 AND ROUND(price, 4) <> ROUND(prev, 4)`;
+  const [products, suppliers] = await Promise.all([
+    db.product.findMany({ where: { hotelId, id: { in: [...new Set(rows.map((r) => r.productId))] } }, select: { id: true, name: true, stockUnit: true } }),
+    db.supplier.findMany({ where: { hotelId, id: { in: [...new Set(rows.flatMap((r) => [r.supplierId, r.prevSupplierId]))] } }, select: { id: true, name: true } }),
+  ]);
+  const pn = new Map(products.map((p) => [p.id, p]));
+  const sn = new Map(suppliers.map((x) => [x.id, x.name]));
+  return rows.map((r) => {
+    const current = D(r.price.toString());
+    const previous = D(r.prev.toString());
+    const quantity = D(r.qty.toString());
+    const change = current.minus(previous);
+    return { productId: r.productId, product: pn.get(r.productId)?.name ?? r.productId, unit: pn.get(r.productId)?.stockUnit ?? "", supplier: sn.get(r.supplierId) ?? "", receiptNo: r.number, date: r.receiptDate, previous, previousDate: r.prevDate, previousSupplier: sn.get(r.prevSupplierId) ?? "", current, change, changePct: change.div(previous).times(100), quantity, impact: change.times(quantity), latest: Number(r.rn) === 1 };
+  });
+}
+
+/** Who may see purchase prices on the dashboard: buyers, and the cost roles that already see them as variance. */
+const seesPrices = (actor: Actor) => can(actor, "purchase:view") || can(actor, "variance:view");
+
+/** Detail page "Supplier price increases / decreases": every change in the range, split and sorted by size. */
+export async function supplierPriceChanges(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
+  authorize(actor, "dashboard:view", { hotelId });
+  if (!seesPrices(actor)) requirePermission(actor, "purchase:view");
+  const all = await priceChangeEvents(db, hotelId, q);
+  return { increases: all.filter((c) => c.change.gt(0)).sort((a, b) => b.changePct.comparedTo(a.changePct)), decreases: all.filter((c) => c.change.lt(0)).sort((a, b) => a.changePct.comparedTo(b.changePct)) };
+}
+
+export type PriceSummaryData = ReturnType<typeof priceSummary>;
+
+/** Dashboard panel: the latest price change per product (last vs previous purchase), biggest moves first. */
+function priceSummary(events: PriceChange[], take = 5) {
+  const latest = events.filter((e) => e.latest);
+  const up = latest.filter((e) => e.change.gt(0)).sort((a, b) => b.changePct.comparedTo(a.changePct));
+  const down = latest.filter((e) => e.change.lt(0)).sort((a, b) => a.changePct.comparedTo(b.changePct));
+  return { increases: up.slice(0, take), decreases: down.slice(0, 3), increaseCount: up.length, decreaseCount: down.length };
+}
+
+export type DashboardAlert = { id: string; type: string; severity: AlertSeverity; title: string; message: string; vars?: Record<string, string>; createdAt: Date; href?: string };
+const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, WARNING: 2, INFO: 3 };
+
+/**
+ * The alert list (feedback r2 §2). Supplier price increases at or above the hotel's threshold (Administration → price
+ * alert %, default 10) and critical / out-of-stock products are derived live from receipts and stock, so every one of
+ * them shows - before, only the 10 newest stored alerts were listed, older increases dropped out of that window and
+ * imported price lists never raised one. Other stored alerts (margin, ...) are listed as before.
+ */
+async function alertList(db: Db, hotelId: string, src: { prices: PriceChange[] | null; stock: Awaited<ReturnType<typeof inventoryStatus>> | null; from: Date; to: Date }): Promise<DashboardAlert[]> {
+  const [hotel, stored] = await Promise.all([
+    db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { priceAlertPct: true, baseCurrency: true } }),
+    db.alert.findMany({ where: { hotelId, acknowledged: false, type: { notIn: ["PRICE_INCREASE", "CRITICAL_STOCK"] } }, orderBy: { createdAt: "desc" }, take: 10 }),
+  ]);
+  const threshold = D(hotel.priceAlertPct.toString());
+  const now = new Date();
+  const out: DashboardAlert[] = stored.map((a) => ({ id: a.id, type: a.type, severity: a.severity, title: a.title, message: a.message, createdAt: a.createdAt }));
+  for (const c of src.prices ?? []) {
+    if (!c.change.gt(0) || c.changePct.lt(threshold)) continue;
+    const vars = { product: c.product, previous: str(c.previous, 2)!, current: str(c.current, 2)!, currency: hotel.baseCurrency, unit: c.unit, pct: str(c.changePct, 1)!, supplier: c.supplier };
+    out.push({ id: `price-${c.productId}-${c.receiptNo}`, type: "PRICE_INCREASE", severity: c.changePct.gte(threshold.times(2)) ? "HIGH" : "WARNING", title: "Price increase: {product}", message: "{product}: {previous} → {current} {currency}/{unit} (+{pct}%) from {supplier}", vars, createdAt: c.date, href: `/insights/price-changes?from=${src.from.toISOString().slice(0, 10)}&to=${new Date(src.to.getTime() - 86400000).toISOString().slice(0, 10)}` });
+  }
+  for (const r of src.stock?.rows ?? []) {
+    if (r.level !== "CRITICAL" && r.level !== "OUT_OF_STOCK") continue;
+    const vars = { product: r.name, quantity: str(r.quantity, 2)!, unit: r.unit };
+    out.push({ id: `stock-${r.productId}`, type: "CRITICAL_STOCK", severity: r.level === "OUT_OF_STOCK" ? "HIGH" : "WARNING", title: r.level === "OUT_OF_STOCK" ? "Out of stock: {product}" : "Critical stock: {product}", message: "{product}: {quantity} {unit} in stock", vars, createdAt: now, href: `/inventory?level=${r.level}` });
+  }
+  return out.sort((a, b) => SEVERITY_RANK[a.severity]! - SEVERITY_RANK[b.severity]! || b.createdAt.getTime() - a.createdAt.getTime());
+}
+
 /** Cost intelligence dashboard (spec §167, §222, §335). */
 /** The cost KPI dashboard: actual vs theoretical needs variance rights (cost controllers, F&B, chefs). */
 export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
   authorize(actor, "dashboard:view", { hotelId });
   requirePermission(actor, "variance:view");
-  const [variance, inv, alerts, purchases, topWaste, priceMoves, quality] = await Promise.all([
+  const [variance, inv, purchases, topWaste, prices, quality] = await Promise.all([
     theoreticalVsActual(db, actor, hotelId, { from: q.from, to: q.to }),
     inventoryStatus(db, actor, hotelId),
-    db.alert.findMany({ where: { hotelId, acknowledged: false }, orderBy: { createdAt: "desc" }, take: 10 }),
     db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true, taxTotal: true }, _count: true }),
-    db.wasteRecord.groupBy({ by: ["productId"], where: { hotelId, status: "APPROVED", wasteDate: { gte: q.from, lt: q.to }, ...departmentScope(actor) }, _sum: { costValue: true, stockQty: true }, orderBy: { _sum: { costValue: "desc" } }, take: 5 }),
-    db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: q.from, lt: q.to }, changePct: { not: null } }, orderBy: { changePct: "desc" }, take: 5, include: { product: true, supplier: true } }),
+    wasteByProduct(db, actor, hotelId, q, 5),
+    priceChangeEvents(db, hotelId, q),
     dataQuality(db, actor, hotelId),
   ]);
-  const wasteProducts = await db.product.findMany({ where: { hotelId, id: { in: topWaste.map((w) => w.productId) } } });
+  const alerts = await alertList(db, hotelId, { prices, stock: inv, ...q });
   const t = variance.totals;
   return {
     period: { from: q.from.toISOString(), to: q.to.toISOString() },
@@ -213,8 +334,8 @@ export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from
     stockValueByGroup: inv.valueByGroup,
     critical: inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK" || r.level === "LOW").slice(0, 10),
     topVariance: variance.products.slice(0, 5),
-    topWaste: topWaste.map((w) => ({ productId: w.productId, name: wasteProducts.find((p) => p.id === w.productId)?.name ?? w.productId, cost: D(w._sum.costValue?.toString() ?? 0), qty: D(w._sum.stockQty?.toString() ?? 0) })),
-    priceIncreases: priceMoves.filter((p) => p.changePct && D(p.changePct.toString()).gt(0)).map((p) => ({ product: p.product.name, supplier: p.supplier.name, previous: p.previousUnitPrice?.toString() ?? null, current: p.unitPrice.toString(), changePct: p.changePct!.toString(), date: p.priceDate })),
+    topWaste: topWaste.rows,
+    prices: priceSummary(prices),
     alerts,
     quality: quality.score,
     dataQuality: variance.dataQuality,
@@ -228,17 +349,17 @@ export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from
  */
 export async function basicDashboard(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
   authorize(actor, "dashboard:view", { hotelId });
-  const [inv, purchases, priceMoves, alerts] = await Promise.all([
+  const [inv, purchases, prices] = await Promise.all([
     can(actor, "inventory:view") ? inventoryStatus(db, actor, hotelId) : Promise.resolve(null),
     can(actor, "purchase:view") ? db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true }, _count: true }) : Promise.resolve(null),
-    can(actor, "purchase:view") ? db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: q.from, lt: q.to }, changePct: { gt: 0 } }, orderBy: { changePct: "desc" }, take: 5, include: { product: true, supplier: true } }) : Promise.resolve([]),
-    can(actor, "inventory:view") || can(actor, "purchase:view") ? db.alert.findMany({ where: { hotelId, acknowledged: false }, orderBy: { createdAt: "desc" }, take: 10 }) : Promise.resolve([]),
+    can(actor, "purchase:view") ? priceChangeEvents(db, hotelId, q) : Promise.resolve(null),
   ]);
+  const alerts = inv || prices ? await alertList(db, hotelId, { prices, stock: inv, ...q }) : [];
   return {
     period: { from: q.from.toISOString(), to: q.to.toISOString() },
     stock: inv ? { value: inv.totalValue, counts: inv.counts, critical: inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK" || r.level === "LOW").slice(0, 10) } : null,
     purchases: purchases ? { spend: D(purchases._sum.landedTotal?.toString() ?? 0), receipts: purchases._count } : null,
-    priceIncreases: priceMoves.map((p) => ({ product: p.product.name, supplier: p.supplier.name, previous: p.previousUnitPrice?.toString() ?? null, current: p.unitPrice.toString(), changePct: p.changePct!.toString(), date: p.priceDate })),
+    prices: prices ? priceSummary(prices) : null,
     alerts,
   };
 }

@@ -13,9 +13,6 @@ import { waste } from "./reports/waste";
 import { buffet, buffetSession } from "./reports/buffet";
 import { minibar } from "./reports/minibar";
 import { imports } from "./reports/imports";
-import { budget } from "./reports/budget";
-import { forecast } from "./reports/forecast";
-import { allocation } from "./reports/allocation";
 import { periods } from "./reports/periods";
 import { approvals } from "./reports/approvals";
 import { calendar } from "./reports/calendar";
@@ -46,9 +43,6 @@ export const REPORTS: Record<string, ReportDef> = {
   buffet,
   "buffet-session": buffetSession,
   minibar,
-  budget,
-  forecast,
-  allocation,
   periods,
   approvals,
   calendar,

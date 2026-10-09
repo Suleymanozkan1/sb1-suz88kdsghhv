@@ -6,7 +6,10 @@
  * must come before a more general one that could also match it. The most general templates ("Line {0}: {1}",
  * "{0} is inactive", "PO is {0}" …) are therefore collected in the last section — keep them there.
  */
+import { r2bMessages } from "./r2b";
+
 export const TR_MESSAGES: Record<string, string> = {
+  ...r2bMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "{0}% price": "fiyat %{0}",

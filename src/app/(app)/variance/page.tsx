@@ -63,8 +63,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
               {[
                 ["Opening inventory", t.opening],
                 ["+ Purchases", t.purchases],
-                ["+ Transfers in", t.transfersIn],
-                ["− Transfers out", t.transfersOut],
+                ["− Transfers out", t.transfersOutNet],
                 ["− Closing inventory", t.closing],
               ].map(([l, v]) => (
                 <tr key={l as string}><Td>{tr(l as string)}</Td><Td align="right">{money(v as never, cur)}</Td></tr>
@@ -72,19 +71,22 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
               <tr className="bg-ink-50 font-semibold"><Td>{tr("= Actual usage (COGS)")}</Td><Td align="right">{money(t.actualCost, cur)}</Td></tr>
             </tbody>
           </Table>
+          <p className="mt-2 text-xs text-ink-500">{tr("Transfers out are shown net: issues from the main store to the other stores cancel out for the whole hotel; for a department, what it received from other stores is deducted.")}</p>
         </Card>
         <Card title={tr("Variance breakdown")}>
-          <Table>
-            <tbody className="divide-y divide-ink-100">
-              <tr><Td>{tr("Actual − theoretical")}</Td><Td align="right" className="font-semibold">{money(r.breakdown.total, cur)}</Td></tr>
-              {r.breakdown.components.map((c) => (
-                <tr key={c.cause} className={c.cause === "UNEXPLAINED" ? "bg-amber-50 font-semibold" : ""}>
-                  <Td>{c.cause === "UNEXPLAINED" ? tr("= Unexplained") : `− ${tr(c.cause.replace("_", " ").toLowerCase())}`}{c.evidence && <span className="block text-xs font-normal text-ink-400">{tr(c.evidence)}</span>}</Td>
-                  <Td align="right">{money(c.amount, cur)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+          {/* a wrapping list, not a table: the evidence texts are long and must be readable without horizontal scrolling */}
+          <ul className="divide-y divide-ink-100 text-sm" aria-label={tr("Variance breakdown")}>
+            <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-1 py-2"><span className="min-w-0">{tr("Actual − theoretical")}</span><span className="ml-auto whitespace-nowrap font-semibold tabular-nums">{money(r.breakdown.total, cur)}</span></li>
+            {r.breakdown.components.map((c) => (
+              <li key={c.cause} className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-1 py-2 ${c.cause === "UNEXPLAINED" ? "bg-amber-50 font-semibold" : ""}`}>
+                <span className="min-w-0 flex-1 basis-48 break-words">
+                  {c.cause === "UNEXPLAINED" ? tr("= Unexplained") : `− ${tr(c.cause.replace("_", " ").toLowerCase())}`}
+                  {c.evidence && <span className="block text-xs font-normal text-ink-400">{tr(c.evidence)}</span>}
+                </span>
+                <span className="ml-auto whitespace-nowrap tabular-nums">{money(c.amount, cur)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></span>
+              </li>
+            ))}
+          </ul>
           {r.dataQuality.unmappedSaleLines > 0 && (
             <div className="mt-3"><Alert tone="amber">{tr("{n} sale lines ({revenue} revenue) have no recipe mapping — theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, cur, 0) })}</Alert></div>
           )}

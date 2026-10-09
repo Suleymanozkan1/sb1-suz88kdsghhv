@@ -96,6 +96,22 @@ export function fifoIssue(layers: Layer[], qty: Numeric): { draws: LayerDraw[]; 
   return { draws, totalCost: total, unitCost: total.div(q) };
 }
 
+/**
+ * A transfer keeps its batches: the receiving store gets one layer per batch the sending store gave up, with the
+ * batch's receipt date and cost, so it consumes them in the same FIFO order. `settled` (stock the receiving store
+ * owed: receipt into negative stock) is taken from the oldest batches first.
+ */
+export function transferBatches<T extends { quantity: Decimal; unitCost: Decimal; receivedAt: Date }>(drawn: T[], settled: Decimal): T[] {
+  let skip = settled;
+  const out: T[] = [];
+  for (const d of drawn) {
+    const take = skip.gt(0) ? Decimal.max(d.quantity.minus(skip), ZERO) : d.quantity;
+    skip = Decimal.max(skip.minus(d.quantity), ZERO);
+    if (take.gt(0)) out.push({ ...d, quantity: take });
+  }
+  return out;
+}
+
 /** Inventory turnover = COGS / average inventory value. */
 export function inventoryTurnover(cogs: Numeric, openingValue: Numeric, closingValue: Numeric): Decimal | null {
   const avg = D(openingValue).plus(D(closingValue)).div(2);

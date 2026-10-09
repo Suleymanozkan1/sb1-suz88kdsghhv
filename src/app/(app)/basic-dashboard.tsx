@@ -1,17 +1,17 @@
 import Link from "next/link";
 import type { basicDashboard } from "@/server/services/insights";
-import { Badge, Card, Empty, PageHeader, Stat, levelTone, severityTone } from "@/components/ui";
+import { Badge, Card, Empty, PageHeader, Stat, levelTone } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
-import { money, pct, qty, dateTime } from "@/lib/format";
-import { getLocale, getT } from "@/i18n/server";
-import { translateMessage } from "@/i18n/core";
+import { money, qty } from "@/lib/format";
+import { getT } from "@/i18n/server";
+import { AlertList, PriceSummary } from "./dashboard-panels";
 
 type D = Awaited<ReturnType<typeof basicDashboard>>;
 
 /** Home page for roles without cost-variance rights: only the blocks their permissions allow. */
 export async function BasicDashboard({ hotelName, currency, timezone, range, d }: { hotelName: string; currency: string; timezone: string; range: { fromStr: string; toStr: string }; d: D }) {
   const t = await getT();
-  const locale = await getLocale();
+  const qs = `from=${range.fromStr}&to=${range.toStr}`;
   return (
     <>
       <PageHeader exportKey="dashboard" title={t("Overview - {hotel}", { hotel: hotelName })} subtitle={t("Your role's view: stock, purchasing and alerts you are allowed to see.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
@@ -28,14 +28,14 @@ export async function BasicDashboard({ hotelName, currency, timezone, range, d }
             )}
           </Card>
         )}
-        {d.priceIncreases.length > 0 && (
-          <Card title={t("Supplier price increases")}>
-            <ul className="divide-y divide-ink-100 text-sm">{d.priceIncreases.map((p, i) => <li key={i} className="flex justify-between py-1.5"><span className="truncate">{p.product} · {p.supplier}</span><span className="tabular-nums text-red-700">+{pct(p.changePct)}</span></li>)}</ul>
+        {d.prices && (
+          <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline">{t("Supplier price increases / decreases")}</Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="text-xs font-medium text-brand-700 hover:underline">{t("All changes")}</Link>}>
+            <PriceSummary p={d.prices} cur={currency} />
           </Card>
         )}
         {d.alerts.length > 0 && (
-          <Card title={t("Open alerts")}>
-            <ul className="divide-y divide-ink-100 text-sm">{d.alerts.map((a) => <li key={a.id} className="py-1.5"><Badge tone={severityTone[a.severity]}>{t(a.severity)}</Badge> {translateMessage(locale, a.message)} <span className="text-xs text-ink-500">{dateTime(a.createdAt, timezone)}</span></li>)}</ul>
+          <Card title={`${t("Open alerts")} (${d.alerts.length})`}>
+            <AlertList alerts={d.alerts} timezone={timezone} />
           </Card>
         )}
       </div>

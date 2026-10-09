@@ -19,7 +19,7 @@ const GROUPS: Record<string, string[]> = {
   purchasing: ["purchaseCost", "supplierPrice", "ppv", "priceTrend"],
   buffet: ["buffetCost", "buffetSummary", "buffetProduct"],
   minibar: ["minibarCost"],
-  rooms: ["roomCost", "roomTypeCost", "roomFloorCost", "roomChannelCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost"],
+  rooms: ["roomCost", "roomTypeCost", "roomFloorCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost"],
   departments: ["departmentCost", "outletCost", "costCenter", "costAllocation"],
   pnl: ["pnl", "budgetVariance", "forecast", "costSaving", "menuEngineering"],
 };

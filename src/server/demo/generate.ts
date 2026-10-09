@@ -157,7 +157,8 @@ const SUPPLIER_PLAN: Array<{ kind: string; cats: string[]; schedule: "daily" | "
   { kind: "Enerji Dağıtım", cats: [], schedule: "none" },
   { kind: "Teknik Servis", cats: [], schedule: "none" },
 ];
-const STORE_OF_OUTLET: Record<string, string> = { REST: "KITCH", CAFE: "KITCH", BANQ: "KITCH", ROOMSVC: "KITCH", BAR: "BAR", BRKF: "BRKF", PAST: "PAST" };
+// breakfast is issued from the kitchen store (there is no breakfast store)
+const STORE_OF_OUTLET: Record<string, string> = { REST: "KITCH", CAFE: "KITCH", BANQ: "KITCH", ROOMSVC: "KITCH", BAR: "BAR", BRKF: "KITCH", PAST: "PAST" };
 const MARKUP: Record<string, number> = { RESTAURANT: 3.3, CAFE: 4.2, BAR: 4.6, BREAKFAST: 3.0, PASTRY: 3.6, BANQUET: 2.8, ROOM_SERVICE: 3.8, MINIBAR: 3.5 };
 const WASTE_TYPES: Array<[WasteType, string]> = [["SPOILED", "Spoiled in storage"], ["EXPIRED", "Past expiry date"], ["PREPARATION", "Preparation loss"], ["TRIMMING", "Trimming above standard"], ["BURNED", "Burned on grill"], ["OVERCOOKED", "Overcooked, not served"], ["DROPPED", "Dropped during service"], ["PLATE_WASTE", "Returned plate waste"], ["RETURNED_FOOD", "Guest complaint, returned"], ["QUALITY_REJECTION", "Rejected at quality check"], ["OVERPRODUCTION", "Over-produced for service"], ["TEMPERATURE_LOSS", "Cold chain break"]];
 
@@ -333,7 +334,7 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
     ["controller", "Cost Controller", "cost_controller", hotelIds, []],
     ["fbm", "F&B Manager", "fb_manager", [first], await dept(["FB", "REST", "CAFE", "BAR", "BRKF", "KITCH", "PAST", "BANQ"])],
     ["chef", "Executive Chef", "chef", [first], await dept(["KITCH", "REST", "BANQ"])],
-    ["breakfast", "Breakfast Chef", "breakfast_chef", [first], await dept(["BRKF"])],
+    ["breakfast", "Breakfast Chef", "breakfast_chef", [first], await dept(["BRKF", "KITCH"])],
     ["pastry", "Pastry Chef", "pastry_chef", [first], await dept(["PAST"])],
     ["purchasing", "Purchasing Manager", "purchasing_manager", hotelIds, []],
     ["accounting", "Accounting Manager", "accounting_manager", hotelIds, []],
@@ -879,6 +880,10 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   let saleNo = 0;
   let weekImport: { id: string; rows: number } | null = null;
   let wasteCount = 0;
+  // buffet reserve held in the kitchen store until the buffet sessions are posted (buffet phase): the kitchen's
+  // own top-ups, usage and waste leave it alone
+  const buffetReserve = new Map<string, Decimal>();
+  const kitchenFree = (p: string) => L.position(ctx.wh.KITCH!, p).quantity.minus(buffetReserve.get(p) ?? ZERO);
   for (const [i, d] of ctx.days.entries()) {
     // 06:00 deliveries for the need until the next delivery (+ 10 % and one day of safety)
     for (const [k, sp] of SUPPLIER_PLAN.entries()) {
@@ -908,18 +913,22 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       for (const [p, q] of sm) m.set(p, (m.get(p) ?? ZERO).plus(q));
       perStore.set(store, m);
     }
-    // buffet reserve goes to its own store: nothing else draws from it (sessions are posted by the buffet service)
-    for (const [p, q] of buffetNeed.get(ymd(d)) ?? []) perStore.set("BUFFET", new Map([...(perStore.get("BUFFET") ?? new Map()), [p, (perStore.get("BUFFET")?.get(p) ?? ZERO).plus(q)]]));
+    // tomorrow's buffet reserve goes to the kitchen store at 08:00 (sessions are posted by the buffet service)
+    for (const [p, q] of buffetNeed.get(ymd(d)) ?? []) {
+      const qty = r3(Decimal.min(q, L.position(ctx.wh.MAIN!, p).quantity));
+      if (qty.lte(0)) continue;
+      L.transfer(ctx.wh.MAIN!, ctx.wh.KITCH!, p, qty, at(d, 8));
+      buffetReserve.set(p, (buffetReserve.get(p) ?? ZERO).plus(qty));
+    }
     // the day runs in `issueSlots` shifts (morning / afternoon): top up the store, then post that shift's usage
     const slots = ctx.profile.issueSlots;
     for (let k = 0; k < slots; k++) {
       const share = D(1).div(slots);
       for (const [store, m] of perStore) {
-        if (store === "BUFFET" && k > 0) continue;
         for (const [p, q] of m) {
-          // outlet stores are topped up to the shift's need; the buffet store accumulates one reserve per session
-          const part = store === "BUFFET" ? q : q.times(share);
-          const inStore = store === "BUFFET" ? ZERO : L.position(ctx.wh[store]!, p).quantity;
+          // outlet stores are topped up to the shift's need (the kitchen's buffet reserve does not count)
+          const part = q.times(share);
+          const inStore = store === "KITCH" ? kitchenFree(p) : L.position(ctx.wh[store]!, p).quantity;
           const want = r3(part.times(1.03).minus(inStore));
           const avail = L.position(ctx.wh.MAIN!, p).quantity;
           const qty = r3(Decimal.min(want, avail));
@@ -930,7 +939,7 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
         const [store, outlet] = key.split("|") as [string, string];
         const deptId = ctx.dept[outlet === "ROOMSVC" ? "REST" : outlet]!;
         for (const [p, q] of sm) {
-          const qty = r3(Decimal.min(q.times(share), L.position(ctx.wh[store]!, p).quantity));
+          const qty = r3(Decimal.min(q.times(share), store === "KITCH" ? kitchenFree(p) : L.position(ctx.wh[store]!, p).quantity));
           if (qty.gt(0)) L.post({ warehouseId: ctx.wh[store]!, productId: p, type: "CONSUMPTION", quantity: qty.neg(), txDate: at(d, 13 + k * 9), departmentId: deptId, sourceType: "MANUAL", reason: N.t(k === 0 ? "Kitchen issue (lunch shift)" : "Kitchen issue (dinner shift)") });
         }
       }
@@ -954,20 +963,23 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     // waste (spec 64): realistic reasons, quantities from what is on hand
     const wasteN = Math.max(0, rint(ctx.profile.wastePerDay * (0.6 + rnd() * 0.8)));
     for (let w = 0, tries = 0; w < wasteN && tries < wasteN * 4; tries++) {
-      const store = ["KITCH", "KITCH", "BAR", "BRKF", "PAST"][Math.trunc(rnd() * 5)]!;
+      const outlet = ["KITCH", "KITCH", "BAR", "BRKF", "PAST"][Math.trunc(rnd() * 5)]!;
+      // breakfast waste comes out of the kitchen store (booked to the breakfast department)
+      const store = outlet === "BRKF" ? "KITCH" : outlet;
+      const onHand = (pid: string) => (store === "KITCH" ? kitchenFree(pid) : L.position(ctx.wh[store]!, pid).quantity);
       // something must be physically there to be wasted (at least one piece for counted items)
-      const candidates = ctx.products.filter((p) => L.position(ctx.wh[store]!, p.id).quantity.gte(p.stockUnit === "pc" ? 1 : 0.05) && p.cat.group !== "HOUSEKEEPING");
+      const candidates = ctx.products.filter((p) => onHand(p.id).gte(p.stockUnit === "pc" ? 1 : 0.05) && p.cat.group !== "HOUSEKEEPING");
       if (!candidates.length) continue;
       const p = candidates[Math.trunc(rnd() * candidates.length)]!;
-      const have = L.position(ctx.wh[store]!, p.id).quantity;
-      const heavy = highWaste && inLastMonth(d) && store === "KITCH";
+      const have = onHand(p.id);
+      const heavy = highWaste && inLastMonth(d) && outlet === "KITCH";
       let qty = r3(have.times(heavy ? 0.12 + rnd() * 0.15 : 0.01 + rnd() * 0.04));
       if (p.stockUnit === "pc") qty = D(Math.max(1, Math.trunc(Number(qty.toString()))));
       if (qty.lte(0) || qty.gt(have)) continue;
       const [wt, reasonEn] = WASTE_TYPES[Math.trunc(rnd() * WASTE_TYPES.length)]!;
       const reason = N.t(reasonEn);
       const id = randomUUID();
-      const deptId = ctx.dept[store === "KITCH" ? (rnd() < 0.7 ? "REST" : "KITCH") : store]!;
+      const deptId = ctx.dept[outlet === "KITCH" ? (rnd() < 0.7 ? "REST" : "KITCH") : outlet]!;
       const stx = L.post({ warehouseId: ctx.wh[store]!, productId: p.id, type: "WASTE", quantity: qty.neg(), txDate: at(d, 15), departmentId: deptId, sourceType: "WASTE", sourceId: id, reason: N.locale === "tr" ? `Fire: ${reason}` : `${wt}: ${reason}`, idempotencyKey: `waste:${id}` });
       w++;
       wasteRows.push({ id, hotelId: H, departmentId: deptId, warehouseId: ctx.wh[store]!, productId: p.id, wasteType: wt, wasteDate: at(d, 15), quantity: qty.toString(), unit: p.stockUnit, stockQty: qty.toString(), unitCost: stx.unitCost.toString(), costValue: stx.totalCost.neg().toString(), reason, status: "APPROVED", userId, stockTxId: stx.id, createdAt: at(d, 15) });
@@ -1098,12 +1110,12 @@ async function buffetPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   let buffets = 0;
   const overproduction: string[] = [];
   for (const b of sim.buffetPlan) {
-    const stocked = await db.stockBalance.count({ where: { warehouseId: ctx.wh.BUFFET!, productId: { in: b.items.map((x) => x.productId) }, quantity: { gt: 1 } } });
+    const stocked = await db.stockBalance.count({ where: { warehouseId: ctx.wh.KITCH!, productId: { in: b.items.map((x) => x.productId) }, quantity: { gt: 1 } } });
     if (!stocked) continue;
-    const s = await createSession(db, admin, H, { departmentId: ctx.dept.BRKF, warehouseId: ctx.wh.BUFFET, type: "BREAKFAST", serviceDate: b.day, expectedCovers: b.expected, occupiedRooms: rint(b.covers / 1.9), inHouseGuests: rint(b.covers * 1.1), boardBasis: ctx.hotel.resort ? "AI" : "BB" });
+    const s = await createSession(db, admin, H, { departmentId: ctx.dept.BRKF, warehouseId: ctx.wh.KITCH, type: "BREAKFAST", serviceDate: b.day, expectedCovers: b.expected, occupiedRooms: rint(b.covers / 1.9), inHouseGuests: rint(b.covers * 1.1), boardBasis: ctx.hotel.resort ? "AI" : "BB" });
     const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
     for (const it of b.items) {
-      const pos = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.BUFFET!, productId: it.productId } } });
+      const pos = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId: it.productId } } });
       const have = Number(pos?.quantity.toString() ?? 0);
       const planned = b.expected * it.perCover;
       const first = Math.min(have * 0.6, planned * 0.8);

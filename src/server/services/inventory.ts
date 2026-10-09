@@ -3,6 +3,7 @@
  * manual adjustments, transfers) with authorization, plus ledger queries.
  */
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { D, ZERO, type Decimal } from "@/domain/money";
 import { businessDay } from "@/domain/business-day";
 import { checkNumber } from "@/domain/check-number";
@@ -96,6 +97,41 @@ export async function ledgerEntries(db: Db, actor: Actor, hotelId: string, f: { 
     db.stockTransaction.count({ where }),
   ]);
   return { rows, total };
+}
+
+export type PeriodMovement = { openingQty: Decimal; openingValue: Decimal; inQty: Decimal; inValue: Decimal; outQty: Decimal; outValue: Decimal; closingQty: Decimal; closingValue: Decimal };
+export const emptyMovement = (): PeriodMovement => ({ openingQty: ZERO, openingValue: ZERO, inQty: ZERO, inValue: ZERO, outQty: ZERO, outValue: ZERO, closingQty: ZERO, closingValue: ZERO });
+
+/**
+ * Per-product stock movement over [from, to) in the given warehouses, straight from the ledger (feedback r2 §1):
+ * opening = everything before `from`, in / out = positive / negative movements in the range, closing = opening + in − out.
+ * Transfers are netted per product: between two selected warehouses they cancel out (moving stock inside the hotel is
+ * neither an in nor an out); from or to a warehouse outside the selection the net shows as in or out.
+ */
+export async function periodMovements(db: Db, hotelId: string, q: { from: Date; to: Date; warehouseIds: string[] }): Promise<Map<string, PeriodMovement>> {
+  const TRANSFERS: Array<"TRANSFER_IN" | "TRANSFER_OUT"> = ["TRANSFER_IN", "TRANSFER_OUT"];
+  const range = { gte: q.from, lt: q.to };
+  const sums = (where: Prisma.StockTransactionWhereInput) => db.stockTransaction.groupBy({ by: ["productId"], where: { hotelId, warehouseId: { in: q.warehouseIds }, ...where }, _sum: { quantity: true, totalCost: true } });
+  const [opening, ins, outs, transfers] = await Promise.all([
+    sums({ txDate: { lt: q.from } }),
+    sums({ txDate: range, quantity: { gt: 0 }, type: { notIn: TRANSFERS } }),
+    sums({ txDate: range, quantity: { lt: 0 }, type: { notIn: TRANSFERS } }),
+    sums({ txDate: range, type: { in: TRANSFERS } }),
+  ]);
+  const out = new Map<string, PeriodMovement>();
+  const row = (id: string) => out.get(id) ?? out.set(id, emptyMovement()).get(id)!;
+  const qv = (g: { _sum: { quantity: unknown; totalCost: unknown } }) => [D(String(g._sum.quantity ?? 0)), D(String(g._sum.totalCost ?? 0))] as const;
+  for (const g of opening) { const [x, v] = qv(g); Object.assign(row(g.productId), { openingQty: x, openingValue: v }); }
+  for (const g of ins) { const [x, v] = qv(g); Object.assign(row(g.productId), { inQty: x, inValue: v }); }
+  for (const g of outs) { const [x, v] = qv(g); Object.assign(row(g.productId), { outQty: x.neg(), outValue: v.neg() }); }
+  for (const g of transfers) {
+    const [x, v] = qv(g);
+    const m = row(g.productId);
+    if (x.gt(0)) Object.assign(m, { inQty: m.inQty.plus(x), inValue: m.inValue.plus(v) });
+    else if (x.lt(0)) Object.assign(m, { outQty: m.outQty.minus(x), outValue: m.outValue.minus(v) });
+  }
+  for (const m of out.values()) Object.assign(m, { closingQty: m.openingQty.plus(m.inQty).minus(m.outQty), closingValue: m.openingValue.plus(m.inValue).minus(m.outValue) });
+  return out;
 }
 
 /**

@@ -103,7 +103,7 @@ export const DEPARTMENT_TR: Record<string, string> = {
 
 /** warehouses by code */
 export const WAREHOUSE_TR: Record<string, string> = {
-  MAIN: "Ana Depo", KITCH: "Mutfak Deposu", BAR: "Bar Deposu", BRKF: "Kahvaltı Deposu", BUFFET: "Kahvaltı Büfesi Deposu", PAST: "Pastane Deposu",
+  MAIN: "Ana Depo", KITCH: "Mutfak Deposu", BAR: "Bar Deposu", PAST: "Pastane Deposu",
   HK: "Kat Hizmetleri Deposu", MINIBAR: "Minibar Deposu", MINIBAR_ROOMS: "Minibar (odada)", ENG: "Teknik Depo",
 };
 

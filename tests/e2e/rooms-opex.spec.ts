@@ -50,14 +50,6 @@ test("operating cost modules show laundry unit cost, energy and cost per asset",
   await expect(page.getByText("Cost per asset")).toBeVisible();
 });
 
-test("allocation: preview shows the split; posted run is listed", async ({ page }) => {
-  await login(page, "controller");
-  await page.goto("/allocation");
-  await expect(page.getByRole("cell", { name: "Electricity by sub-meter" }).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Posted runs" })).toBeVisible();
-  await expect(page.getByText("POSTED").first()).toBeVisible();
-});
-
 test("imports: preview flags invalid rows and blocks the import", async ({ page }) => {
   await login(page, "controller");
   await page.goto("/imports");

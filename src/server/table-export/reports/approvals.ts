@@ -23,6 +23,9 @@ export function approvalDetails(payload: unknown, t: T, currency: string): strin
     .join(" · ");
 }
 
+/** Action column text: every STOCK_ADJUSTMENT approval is a stock count waiting to be posted. */
+export const actionLabel = (action: string) => (action === "STOCK_ADJUSTMENT" ? "STOCK COUNT" : action.replace(/_/g, " "));
+
 /** /approvals — pending requests and the last 30 decisions (the user's departments only, as on screen). */
 export const approvals: ReportDef = {
   perm: "dashboard:view",
@@ -36,12 +39,12 @@ export const approvals: ReportDef = {
         {
           title: t("Pending ({n})", { n: pending.length }),
           columns: [{ key: "requested", header: t("Requested"), type: "datetime" }, { key: "action", header: t("Action") }, { key: "by", header: t("Requested by") }, { key: "reason", header: t("Reason") }, { key: "details", header: t("Details") }],
-          rows: pending.map((a) => ({ requested: a.requestedAt, action: t(a.action.replace(/_/g, " ")), by: users.get(a.requestedById), reason: a.reason, details: approvalDetails(a.payload, t, hotel.baseCurrency) })),
+          rows: pending.map((a) => ({ requested: a.requestedAt, action: t(actionLabel(a.action)), by: users.get(a.requestedById), reason: a.reason, details: approvalDetails(a.payload, t, hotel.baseCurrency) })),
         },
         {
           title: t("Recent decisions"),
           columns: [{ key: "decided", header: t("Decided"), type: "datetime" }, { key: "action", header: t("Action") }, { key: "status", header: t("Status") }, { key: "by", header: t("Requested by") }, { key: "decidedBy", header: t("Decided by") }, { key: "note", header: t("Note") }],
-          rows: history.map((a) => ({ decided: a.decidedAt, action: t(a.action.replace(/_/g, " ")), status: t(a.status), by: users.get(a.requestedById), decidedBy: users.get(a.decidedById ?? ""), note: a.decisionNote })),
+          rows: history.map((a) => ({ decided: a.decidedAt, action: t(actionLabel(a.action)), status: t(a.status), by: users.get(a.requestedById), decidedBy: users.get(a.decidedById ?? ""), note: a.status === "CANCELLED" && a.decisionNote ? t(a.decisionNote) : a.decisionNote })),
         },
       ],
     };

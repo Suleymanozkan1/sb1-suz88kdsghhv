@@ -10,7 +10,7 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
-import { currentUnitCosts } from "./ledger";
+import { currentUnitCosts, fifoNextCosts } from "./ledger";
 import { decimalText } from "@/lib/format";
 
 const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
@@ -18,7 +18,7 @@ const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unkno
 
 /**
  * Barcode, yield, costing method, reorder point and safety stock are not on the product card any more: such keys
- * are dropped (weighted average costing; reorder point / safety stock live on the automatic-ordering rules).
+ * are dropped (FIFO costing for every product; reorder point / safety stock live on the automatic-ordering rules).
  */
 export const productInput = z.object({
   /** optional: hotels rarely keep stock codes (Micros lists products by name); generated when empty */
@@ -65,7 +65,7 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
     const sku = input.sku || (await nextSku(tx, hotelId));
     const dup = await tx.product.findFirst({ where: { hotelId, sku } });
     if (dup) throw new DomainError("DUPLICATE", `SKU ${sku} already exists`);
-    // a recipe quantity is the raw quantity used: products carry no yield; costing is the ledger's weighted average
+    // a recipe quantity is the raw quantity used: products carry no yield; costing is FIFO (the schema default)
     const { conversions: _c, ...rest } = input;
     const data = { ...rest, sku };
     const product = await tx.product.create({
@@ -172,12 +172,15 @@ export type CostSource = "WAC" | "FIFO" | "LAST_PURCHASE" | "STANDARD" | "NONE";
 
 /**
  * The single authoritative "current unit cost per stock unit" for every product of a hotel.
- * Order: inventory average (WAC/FIFO value) → last purchase price → standard cost → none.
+ * FIFO (every product by default): what the next consumption costs = the oldest open layer across the hotel's
+ * stores; with no stock, the last purchase price. Weighted average: the inventory average.
+ * Then: last purchase price → inventory average → standard cost → none.
  */
 export async function productCostTable(db: Db, hotelId: string): Promise<Map<string, { unitCost: Decimal | null; source: CostSource }>> {
-  const [products, inv, lastPrices] = await Promise.all([
+  const [products, inv, next, lastPrices] = await Promise.all([
     db.product.findMany({ where: { hotelId }, select: { id: true, standardCost: true, costingMethod: true } }),
     currentUnitCosts(db, hotelId),
+    fifoNextCosts(db, hotelId),
     db.$queryRaw<Array<{ productId: string; unitPrice: { toString(): string } }>>`
       SELECT DISTINCT ON ("productId") "productId", "unitPrice" FROM "SupplierPrice"
       WHERE "hotelId" = ${hotelId} ORDER BY "productId", "priceDate" DESC, "createdAt" DESC`,
@@ -185,9 +188,11 @@ export async function productCostTable(db: Db, hotelId: string): Promise<Map<str
   const last = new Map(lastPrices.map((r) => [r.productId, D(r.unitPrice.toString())]));
   const out = new Map<string, { unitCost: Decimal | null; source: CostSource }>();
   for (const p of products) {
-    const i = inv.get(p.id);
-    if (i) out.set(p.id, { unitCost: i, source: p.costingMethod === "FIFO" ? "FIFO" : "WAC" });
+    const fifo = p.costingMethod === "FIFO";
+    const i = fifo ? next.get(p.id) : inv.get(p.id);
+    if (i) out.set(p.id, { unitCost: i, source: fifo ? "FIFO" : "WAC" });
     else if (last.has(p.id)) out.set(p.id, { unitCost: last.get(p.id)!, source: "LAST_PURCHASE" });
+    else if (fifo && inv.get(p.id)) out.set(p.id, { unitCost: inv.get(p.id)!, source: "FIFO" });
     else if (p.standardCost) out.set(p.id, { unitCost: D(p.standardCost.toString()), source: "STANDARD" });
     else out.set(p.id, { unitCost: null, source: "NONE" });
   }

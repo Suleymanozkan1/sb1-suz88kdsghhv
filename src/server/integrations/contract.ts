@@ -58,7 +58,7 @@ export const coversSchema = z.object({ outlet: z.string().trim().min(1).max(100)
 /** Opera night-audit statistics for the business day. */
 export const occupancySchema = z.object({
   availableRooms: num, occupiedRooms: num, guests: num,
-  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(),
+  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(), outOfService: num.optional().nullable(),
   /** room numbers occupied that night (minibar checks only rooms that were sold) */
   occupiedRoomNumbers: z.array(z.string().trim().max(20)).optional(),
 });

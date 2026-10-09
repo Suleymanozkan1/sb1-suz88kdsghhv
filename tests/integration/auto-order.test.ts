@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postGoodsReceipt } from "@/server/services/purchasing";
-import { addSupplier, autoOrderOverview, deleteRule, runAutoOrders, saveRule, setRuleActive, updateSupplier } from "@/server/services/auto-order";
+import { addSupplier, autoOrderOverview, deleteRule, orderEmailTemplate, resetOrderEmailTemplate, runAutoOrders, saveOrderEmailTemplate, saveRule, setRuleActive, updateSupplier } from "@/server/services/auto-order";
+import { DEFAULT_ORDER_EMAIL } from "@/app/(app)/purchasing/orders/order-email";
 import { orderRecommendations } from "@/server/services/inventory";
 import { inventoryStatus } from "@/server/services/insights";
 import { sentMail } from "@/server/mail";
@@ -13,9 +14,12 @@ let viewer: Actor;
 let oil: Awaited<ReturnType<typeof makeProduct>>;
 let flour: Awaited<ReturnType<typeof makeProduct>>;
 const prevTransport = process.env.MAIL_TRANSPORT;
+const prevTrial = process.env.TRIAL_ALL_FEATURES;
 
 beforeAll(async () => {
   process.env.MAIL_TRANSPORT = "memory";
+  // the plan tests below check the packages themselves: the trial switch (every feature open) is turned off
+  process.env.TRIAL_ALL_FEATURES = "0";
   h = await makeHotel("AUTOORD");
   pm = await h.actor("purchasing_manager");
   viewer = await h.actor("viewer");
@@ -27,6 +31,8 @@ beforeAll(async () => {
 });
 afterAll(() => {
   process.env.MAIL_TRANSPORT = prevTransport;
+  if (prevTrial === undefined) delete process.env.TRIAL_ALL_FEATURES;
+  else process.env.TRIAL_ALL_FEATURES = prevTrial;
 });
 
 describe("suppliers for ordering", () => {
@@ -67,6 +73,12 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     expect(mail).toHaveLength(1);
     expect(mail[0]!.to).toBe("orders@anadolu.test");
     expect(mail[0]!.text).toContain("Olive Oil: 20 l");
+    // the built-in Turkish template, addressed to the supplier, with an HTML product table
+    expect(mail[0]!.subject).toBe(`Sipariş — ${h.hotel.name} — 03.09.2026`);
+    expect(mail[0]!.text).toContain(`Sayın ${h.supplier.name},`);
+    expect(mail[0]!.text).toContain(`${h.hotel.name} için aşağıdaki ürünlere ihtiyacımız var:`);
+    expect(mail[0]!.html).toContain("<table");
+    expect(mail[0]!.html).toMatch(/<td[^>]*>Olive Oil<\/td><td[^>]*>20<\/td><td[^>]*>l<\/td>/);
     expect(await prisma.autoOrderSend.count({ where: { hotelId: h.hotel.id, status: "SENT" } })).toBe(1);
     // the order is on its way: the same night / the next check does not order again
     expect(await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-03T10:00:00Z") })).toMatchObject({ due: 0, sent: 0 });
@@ -119,5 +131,59 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     await expect(deleteRule(prisma, viewer, h.hotel.id, rule.id)).rejects.toThrow();
     await expect(runAutoOrders(prisma, h.hotel.id, { actor: viewer })).rejects.toThrow();
     expect(await deleteRule(prisma, pm, h.hotel.id, rule.id)).toEqual({ ok: true });
+  });
+});
+
+describe("trial: every feature open (TRIAL_ALL_FEATURES, default on)", () => {
+  it("a basic-plan organization gets automatic e-mail orders while the trial switch is on", async () => {
+    const t = await makeHotel("AOTRIAL");
+    const p = await t.actor("purchasing_manager");
+    const salt = await makeProduct(t.hotel.id, t.cats.food.id, { sku: "SALT", name: "Salt", supplierId: t.supplier.id });
+    await postGoodsReceipt(prisma, p, t.hotel.id, { supplierId: t.supplier.id, warehouseId: t.wh.main.id, receiptDate: day("2026-09-02"), invoiceNo: "TR-1", items: [{ productId: salt.id, quantity: 2, unit: "kg", unitPrice: 10 }] });
+    await prisma.supplier.update({ where: { id: t.supplier.id }, data: { email: "trial@supplier.test" } });
+    await saveRule(prisma, p, t.hotel.id, { productId: salt.id, supplierId: t.supplier.id, reorderPoint: "5", orderQty: "10" });
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: t.org.id } })).plan).toBe("BASIC");
+    delete process.env.TRIAL_ALL_FEATURES; // default: on
+    try {
+      const o = await autoOrderOverview(prisma, p, t.hotel.id);
+      expect(o).toMatchObject({ plan: "PREMIUM", trial: true, emailEnabled: true });
+      const before = sentMail.length;
+      expect(await runAutoOrders(prisma, t.hotel.id, { now: new Date("2026-09-03T02:00:00Z") })).toMatchObject({ due: 1, sent: 1 });
+      expect(sentMail.slice(before).map((m) => m.to)).toEqual(["trial@supplier.test"]);
+    } finally {
+      process.env.TRIAL_ALL_FEATURES = "0";
+    }
+    expect(await autoOrderOverview(prisma, p, t.hotel.id)).toMatchObject({ plan: "BASIC", trial: false, emailEnabled: false });
+  });
+});
+
+describe("order e-mail template (per hotel, editable)", () => {
+  it("starts with the built-in Turkish template; a saved one is used for the order; reset brings the default back", async () => {
+    expect(await orderEmailTemplate(prisma, h.hotel.id)).toEqual({ ...DEFAULT_ORDER_EMAIL, custom: false });
+    await expect(saveOrderEmailTemplate(prisma, pm, h.hotel.id, { subject: "Sipariş", body: "Merhaba {supplier}" })).rejects.toThrow(/\{lines\}/);
+    await expect(saveOrderEmailTemplate(prisma, viewer, h.hotel.id, { subject: "x", body: "{lines}" })).rejects.toThrow();
+    const saved = await saveOrderEmailTemplate(prisma, pm, h.hotel.id, { subject: "Acil sipariş {date} <{hotel}>", body: "Merhaba {supplier} & ekibi,\n{lines}\nTeşekkürler" });
+    expect(saved.custom).toBe(true);
+    expect((await autoOrderOverview(prisma, pm, h.hotel.id)).template).toMatchObject({ subject: "Acil sipariş {date} <{hotel}>", custom: true });
+
+    const s2 = await addSupplier(prisma, pm, h.hotel.id, { name: "Şeker Dünyası", email: "seker@supplier.test" });
+    const sugar = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "SUGAR", name: "Sugar <fine>", supplierId: s2.id });
+    await postGoodsReceipt(prisma, pm, h.hotel.id, { supplierId: s2.id, warehouseId: h.wh.main.id, receiptDate: day("2026-09-02"), invoiceNo: "AO-SUGAR", items: [{ productId: sugar.id, quantity: 1, unit: "kg", unitPrice: 30 }] });
+    await saveRule(prisma, pm, h.hotel.id, { productId: sugar.id, supplierId: s2.id, reorderPoint: "3", orderQty: "12.5" });
+    await prisma.organization.update({ where: { id: h.org.id }, data: { plan: "PREMIUM" } });
+    const before = sentMail.length;
+    const r = await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-10T02:00:00Z") });
+    expect(r.sent).toBeGreaterThanOrEqual(1);
+    const m = sentMail.slice(before).find((x) => x.to === "seker@supplier.test")!;
+    expect(m.subject).toBe(`Acil sipariş 10.09.2026 <${h.hotel.name}>`);
+    expect(m.text).toBe(`Merhaba Şeker Dünyası & ekibi,\n- Sugar <fine>: 12,5 kg\nTeşekkürler`);
+    // HTML: the template text is escaped, only the product table is markup
+    expect(m.html).toContain("Merhaba");
+    expect(m.html).toContain("&amp; ekibi,<br><table");
+    expect(m.html).toContain("Sugar &lt;fine&gt;");
+    expect(m.html).not.toContain("<fine>");
+
+    expect(await resetOrderEmailTemplate(prisma, pm, h.hotel.id)).toEqual({ ...DEFAULT_ORDER_EMAIL, custom: false });
+    expect(await orderEmailTemplate(prisma, h.hotel.id)).toMatchObject({ custom: false });
   });
 });

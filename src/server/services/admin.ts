@@ -56,7 +56,7 @@ export async function adminOverview(db: Db, actor: Actor, hotelId: string) {
       select: { id: true, email: true, name: true, active: true, createdAt: true, role: { select: { key: true, name: true, allDepartments: true } }, deptAccess: { select: { departmentId: true } }, hotelAccess: { select: { hotelId: true } } },
     }),
     db.department.findMany({ where: { hotelId }, orderBy: { code: "asc" } }),
-    db.warehouse.findMany({ where: { hotelId }, orderBy: { code: "asc" }, include: { department: { select: { name: true } } } }),
+    db.warehouse.findMany({ where: { hotelId }, orderBy: { code: "asc" }, include: { department: { select: { name: true } }, countApprovers: { select: { roleKey: true } } } }),
     db.productCategory.findMany({ where: { hotelId }, orderBy: [{ group: "asc" }, { name: "asc" }] }),
     db.hotel.findMany({ where: { id: { in: [...actor.hotelIds] } }, select: { id: true, code: true, name: true } }),
   ]);
@@ -270,6 +270,26 @@ export async function setWarehouseActive(db: Db, actor: Actor, hotelId: string, 
   });
 }
 
+/**
+ * Who approves the stock counts of a warehouse (round 2, §4): role keys of the company. An empty list restores the
+ * default — any role with approval:decide. The requester can never approve their own count.
+ */
+export async function setCountApprovers(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = z.object({ warehouseId: z.string().min(1), roleKeys: z.array(z.string().min(1)).max(50) }).parse(input);
+  const w = await db.warehouse.findFirst({ where: { id: p.warehouseId, hotelId } });
+  if (!w) throw new DomainError("NOT_FOUND", "Warehouse not found");
+  const keys = [...new Set(p.roleKeys)];
+  if (keys.length && (await db.role.count({ where: { organizationId: actor.organizationId, key: { in: keys } } })) !== keys.length) throw new DomainError("VALIDATION", "Unknown role");
+  return inTx(db, async (tx) => {
+    const before = (await tx.countApprover.findMany({ where: { warehouseId: w.id }, select: { roleKey: true } })).map((r) => r.roleKey);
+    await tx.countApprover.deleteMany({ where: { warehouseId: w.id } });
+    if (keys.length) await tx.countApprover.createMany({ data: keys.map((roleKey) => ({ hotelId, warehouseId: w.id, roleKey })) });
+    await audit(tx, actor, { hotelId, action: "COUNT_APPROVERS_SET", entityType: "Warehouse", entityId: w.id, before: { roleKeys: before }, after: { roleKeys: keys } });
+    return { warehouseId: w.id, roleKeys: keys };
+  });
+}
+
 const catInput = z.object({ code, name: z.string().trim().min(2).max(80), group: z.enum(CATEGORY_GROUPS), parentId: z.string().nullish() });
 
 export async function createCategory(db: Db, actor: Actor, hotelId: string, input: unknown) {
@@ -310,7 +330,6 @@ export const DEFAULT_WAREHOUSES: Array<[string, string, string | null]> = [
   ["KITCH", "Kitchen Store", "KITCH"],
   ["REST", "Restaurant Store", "REST"],
   ["BAR", "Bar Store", "BAR"],
-  ["BRKF", "Breakfast Store", "BRKF"],
   ["PAST", "Pastry Store", "PAST"],
   ["HK", "Housekeeping Store", "HK"],
   ["LINEN", "Linen Room", "LAUN"],
@@ -329,7 +348,7 @@ export const DEFAULT_CATEGORIES: Record<(typeof CATEGORY_GROUPS)[number], string
 const DEFAULT_NAMES_TR: Record<string, string> = {
   "Food & Beverage": "Yiyecek & İçecek", Restaurant: "Restoran", Bar: "Bar", Breakfast: "Kahvaltı", Banquet: "Banket", "Main Kitchen": "Ana Mutfak", Pastry: "Pastane",
   Rooms: "Odalar", Housekeeping: "Kat Hizmetleri", Laundry: "Çamaşırhane", Engineering: "Teknik Servis", Administration: "İdari İşler", "Sales & Marketing": "Satış & Pazarlama",
-  "Main Store": "Ana Depo", "Kitchen Store": "Mutfak Deposu", "Restaurant Store": "Restoran Deposu", "Bar Store": "Bar Deposu", "Breakfast Store": "Kahvaltı Deposu", "Pastry Store": "Pastane Deposu",
+  "Main Store": "Ana Depo", "Kitchen Store": "Mutfak Deposu", "Restaurant Store": "Restoran Deposu", "Bar Store": "Bar Deposu", "Pastry Store": "Pastane Deposu",
   "Housekeeping Store": "Kat Hizmetleri Deposu", "Linen Room": "Çamaşır Odası", "Engineering Store": "Teknik Depo",
   Food: "Yiyecek", Beverage: "İçecek", Packaging: "Ambalaj", Linen: "Tekstil",
   Meat: "Et", Chicken: "Tavuk", Fish: "Balık", Seafood: "Deniz ürünleri", Vegetables: "Sebze", Fruits: "Meyve", Dairy: "Süt ürünleri", Cheese: "Peynir", Eggs: "Yumurta",

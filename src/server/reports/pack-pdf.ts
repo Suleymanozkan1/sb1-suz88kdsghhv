@@ -181,7 +181,6 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
 
   h1(t("3. Rooms cost"));
   table(S.roomTypeCost, [["group", 0.16], ["rooms", 0.08], ["occupiedNights", 0.12], ["roomRevenue", 0.16], ["fullCost", 0.16], ["costPerNight", 0.14], ["contribution", 0.18]], { title: t("By room type") });
-  table(S.roomChannelCost, [["channel", 0.16], ["nights", 0.1], ["gross", 0.16], ["distribution", 0.16], ["net", 0.14], ["roomCost", 0.14], ["netContribution", 0.14]], { title: t("By channel (net room contribution)") });
 
   h1(t("4. Labor · energy · laundry · housekeeping · engineering"));
   table(S.laborCost, [["department", 0.22], ["employees", 0.1], ["salary", 0.14], ["employerCost", 0.14], ["overtime", 0.12], ["total", 0.14], ["costPct", 0.14]], { title: t("Labor"), max: 15 });
