@@ -24,3 +24,27 @@ describe("localDay", () => {
     expect(localDay("UTC", new Date("2026-10-07T21:30:00Z"))).toBe("2026-10-07");
   });
 });
+
+describe("titleTr", () => {
+  it("capitalises every word with Turkish rules and keeps acronyms", async () => {
+    const { titleTr } = await import("@/lib/format");
+    expect(titleTr("dana incik")).toBe("Dana İncik");
+    expect(titleTr("ılık süt")).toBe("Ilık Süt");
+    expect(titleTr("en çok fire veren ürünler")).toBe("En Çok Fire Veren Ürünler");
+    expect(titleTr("KDV dahil fiyat (birim/kg)")).toBe("KDV Dahil Fiyat (Birim/Kg)");
+    expect(titleTr("coca-cola 24'lü")).toBe("Coca-Cola 24'lü");
+    expect(titleTr("ice tea", "en")).toBe("Ice Tea");
+    expect(titleTr(null)).toBe("");
+  });
+});
+
+describe("export display case", () => {
+  it("title-cases titles, headers and product names, not other text", async () => {
+    const { displayCase } = await import("@/server/table-export/types");
+    const { titleTr } = await import("@/lib/format");
+    const r = displayCase({ title: "en çok fire veren ürünler", tables: [{ title: "ilk 20", columns: [{ key: "product", header: "ürün adı" }, { key: "reason", header: "gerekçe" }, { key: "qty", header: "miktar", type: "qty" }], rows: [{ product: "dana incik", reason: "bozuk ürün", qty: 2 }] }] }, "tr", titleTr);
+    expect(r.title).toBe("En Çok Fire Veren Ürünler");
+    expect(r.tables[0]!.columns.map((c) => c.header)).toEqual(["Ürün Adı", "Gerekçe", "Miktar"]);
+    expect(r.tables[0]!.rows[0]).toEqual({ product: "Dana İncik", reason: "bozuk ürün", qty: 2 });
+  });
+});

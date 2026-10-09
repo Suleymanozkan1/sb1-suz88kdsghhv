@@ -2,7 +2,8 @@
  * The demo bulk-ledger engine must write exactly what the real posting services write.
  * One scenario covers opening, purchase (exact landed total), transfers, issues at average,
  * emptying issue (no rounding residue), allowed negative stock, receipt into negative stock,
- * waste, staff meal, adjustments and count adjustments.
+ * waste, staff meal, adjustments and count adjustments — with FIFO products (the default), so the FIFO layers and
+ * their draws must match too.
  */
 import { describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day } from "./fixtures";
@@ -74,7 +75,7 @@ describe("demo bulk ledger = real posting services", () => {
       const key = d.toISOString().slice(0, 7);
       if (!periods.has(key)) periods.set(key, (await periodFor(prisma, sim.h.hotel.id, d)).id);
     }
-    const eng = new BulkLedger(sim.h.hotel.id, sim.cc.userId, new Map(products.map((p) => [p.id, { id: p.id, categoryId: p.categoryId, group: p.category.group }])), new Map(whs.map((w) => [w.id, w.departmentId])), periodOf);
+    const eng = new BulkLedger(sim.h.hotel.id, sim.cc.userId, new Map(products.map((p) => [p.id, { id: p.id, categoryId: p.categoryId, group: p.category.group, costingMethod: p.costingMethod }])), new Map(whs.map((w) => [w.id, w.departmentId])), periodOf);
     for (const op of SCENARIO) {
       if (op.kind === "tr") eng.transfer(sim.W[op.from], sim.W[op.to], sim.P[op.p], op.q, op.d);
       else {
@@ -97,5 +98,12 @@ describe("demo bulk ledger = real posting services", () => {
 
     const bal = async (s: typeof real) => (await prisma.stockBalance.findMany({ where: { hotelId: s.h.hotel.id } })).map((x) => `${mapOf(s).get(x.warehouseId)}/${mapOf(s).get(x.productId)} ${x.quantity} ${x.value} ${x.avgCost}`).sort();
     expect(await bal(sim)).toEqual(await bal(real));
+
+    // FIFO (the default costing method): the same batches, drawn the same way
+    const lay = async (s: typeof real) => (await prisma.fifoLayer.findMany({ where: { hotelId: s.h.hotel.id } })).map((l) => `${mapOf(s).get(l.warehouseId)}/${mapOf(s).get(l.productId)} ${l.receivedAt.toISOString()} ${l.originalQty} ${l.remainingQty} ${l.unitCost}`).sort();
+    expect((await lay(real)).length).toBeGreaterThan(0);
+    expect(await lay(sim)).toEqual(await lay(real));
+    const draws = async (s: typeof real) => (await prisma.fifoConsumption.findMany({ where: { layer: { hotelId: s.h.hotel.id } }, include: { layer: true, tx: true } })).map((c) => `${c.tx.type} ${mapOf(s).get(c.layer.warehouseId)}/${mapOf(s).get(c.layer.productId)} ${c.quantity} ${c.unitCost}`).sort();
+    expect(await draws(sim)).toEqual(await draws(real));
   });
 });

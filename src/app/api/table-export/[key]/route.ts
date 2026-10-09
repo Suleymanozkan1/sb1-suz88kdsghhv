@@ -6,6 +6,8 @@ import { requireHotel } from "@/server/auth/actor";
 import { makeT } from "@/i18n/core";
 import { REPORTS } from "@/server/table-export/registry";
 import { renderCsv, renderPdf, renderXlsx } from "@/server/table-export/render";
+import { displayCase } from "@/server/table-export/types";
+import { titleTr } from "@/lib/format";
 
 const CONTENT_TYPE = { pdf: "application/pdf", csv: "text/csv; charset=utf-8", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } as const;
 
@@ -27,7 +29,7 @@ export const GET = api(async ({ actor, hotelId, params, query, req }) => {
   const locale = requestLocale(req);
   const t = makeT(locale);
   const hotel = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { id: true, name: true, baseCurrency: true, timezone: true } });
-  const report = await def.load({ actor, hotelId, hotel, locale, t, q });
+  const report = displayCase(await def.load({ actor, hotelId, hotel, locale, t, q }), locale, titleTr);
   const meta = { hotel: hotel.name, currency: hotel.baseCurrency, generatedAt: new Date(), generatedBy: actor.name, timeZone: hotel.timezone, labels: { generated: t("Generated"), page: t("Page"), noRows: t("No rows"), total: t("Total") } };
   const file = format === "pdf" ? await renderPdf(report, meta) : format === "csv" ? renderCsv(report, meta) : await renderXlsx(report, meta);
   const base = (report.fileName ?? params.key ?? "report").replace(/[^\w.-]+/g, "_");

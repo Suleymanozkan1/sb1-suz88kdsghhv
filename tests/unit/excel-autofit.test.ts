@@ -77,7 +77,7 @@ describe("page export workbook", () => {
     };
     const wb = await load(await renderXlsx(report, meta));
     const ws = wb.worksheets[0]!;
-    const header = ws.views[0]!.ySplit!;
+    const header = (ws.views[0] as { ySplit?: number }).ySplit!;
     expect(ws.views[0]!.state).toBe("frozen");
     report.tables[0]!.columns.forEach((c, i) => {
       const cell = ws.getRow(header).getCell(i + 1);
@@ -96,7 +96,7 @@ describe("page export workbook", () => {
     const long = "Organik soğuk sıkım natürel sızma zeytinyağı, cam şişe, 12 x 750 ml koli, İtalya menşeli";
     const wb = await load(await renderXlsx({ title: "Ürünler", tables: [{ columns: [{ key: "n", header: "Ürün" }], rows: [{ n: long }] }] }, meta));
     const ws = wb.worksheets[0]!;
-    const header = ws.views[0]!.ySplit!;
+    const header = (ws.views[0] as { ySplit?: number }).ySplit!;
     expect(ws.getColumn(1).width).toBe(60);
     expect(ws.getRow(header + 1).getCell(1).value).toBe(long);
     expect(ws.getRow(header + 1).getCell(1).alignment?.wrapText).toBe(true);

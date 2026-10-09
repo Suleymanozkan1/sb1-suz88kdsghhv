@@ -124,15 +124,14 @@ export function daysOfStock(available: Numeric, avgDailyConsumption: Numeric): D
   return c.lte(0) ? null : D(available).div(c);
 }
 
-export type StockLevel = "NORMAL" | "LOW" | "CRITICAL" | "OUT_OF_STOCK" | "OVERSTOCK";
+export type StockLevel = "NORMAL" | "LOW" | "CRITICAL" | "OUT_OF_STOCK";
 
-/** Stock status classification (spec §168, §177, §178). Thresholds come from product config. */
+/** Stock status classification (spec §168, §177, §178). No "overstock": excess is a judgement, not a status (feedback r2 §1). */
 export function stockLevel(qty: Numeric, cfg: { minStock?: Numeric | null; reorderPoint?: Numeric | null; maxStock?: Numeric | null; safetyStock?: Numeric | null }): StockLevel {
   const q = D(qty);
   if (q.lte(0)) return "OUT_OF_STOCK";
   const critical = cfg.safetyStock ?? cfg.minStock;
   if (critical !== null && critical !== undefined && q.lte(D(critical))) return "CRITICAL";
   if (cfg.reorderPoint !== null && cfg.reorderPoint !== undefined && q.lt(D(cfg.reorderPoint))) return "LOW";
-  if (cfg.maxStock !== null && cfg.maxStock !== undefined && D(cfg.maxStock).gt(0) && q.gt(D(cfg.maxStock))) return "OVERSTOCK";
   return "NORMAL";
 }

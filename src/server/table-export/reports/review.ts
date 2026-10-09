@@ -48,11 +48,6 @@ export const review: ReportDef = {
           rows: r.critical.map((c) => ({ product: c.product, qty: c.qty, unit: c.unit, openPo: c.openPo, level: t(c.level.replaceAll("_", " ")) })),
         },
         {
-          title: t("High stock (overstock / dead)"),
-          columns: [{ key: "product", header: t("Product") }, { key: "value", header: t("Value"), type: "money" }, { key: "daysIdle", header: t("Days idle"), type: "int" }, { key: "level", header: t("Level") }],
-          rows: r.high.map((h) => ({ product: h.product, value: h.value, daysIdle: h.daysIdle ?? t("never"), level: t(h.level) })),
-        },
-        {
           title: t("Recipe changes"),
           columns: [{ key: "recipe", header: t("Recipe") }, { key: "version", header: t("Version"), type: "int" }, { key: "approvedAt", header: t("Approved"), type: "date" }, { key: "portionCost", header: t("Portion cost"), type: "unitcost" }],
           rows: r.recipeChanges.map((c) => ({ ...c })),

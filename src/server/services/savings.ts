@@ -108,7 +108,7 @@ export async function opportunities(db: Db, actor: Actor, hotelId: string, r: { 
   // 6. overstock: carrying cost of stock above max
   if (can(actor, "inventory:view")) {
     const inv = await inventoryStatus(db, actor, hotelId);
-    const over = inv.rows.filter((x) => x.level === "OVERSTOCK" || x.deadStock);
+    const over = inv.rows.filter((x) => x.deadStock); // overstock is no longer a stock status (r2 §1); this screen is not reviewed yet
     const value = sum(over.map((x) => x.value));
     const monthlyCarry = value.times(A.carryingCostAnnual).times(days).div(365); // carrying cost for the period
     add({ key: "OVERSTOCK", driver: "OVERSTOCK", title: `Reduce overstock & dead stock (${over.length} items, ${value.toFixed(0)} in stock)`, current: monthlyCarry, potential: ZERO, formula: "stock value above max / idle > 60 days × carrying cost", assumption: `${(A.carryingCostAnnual * 100).toFixed(0)} % carrying cost per year` });
