@@ -77,5 +77,28 @@
     "columns": { "outlet": "td.outlet", "meal": "td.meal", "covers": "td.covers" },
     "defaultMeal": null,
     "skipOutletPattern": "^(Toplam|Total)\\b"
+  },
+  "products": {
+    "steps": [
+      { "goto": "/purchasing/items" },
+      { "fill": "input[name=since]", "value": "{since}" },
+      { "press": "input[name=since]", "key": "Enter" }
+    ],
+    "table": "#itemList",
+    "row": "tbody tr",
+    "noData": "#noItems",
+    "nextPage": null,
+    "columns": {
+      "name": "td.name",
+      "code": "td.code",
+      "unit": "td.unit",
+      "packSize": "td.pack",
+      "packUnit": "td.packUnit",
+      "taxRatePct": "td.vat",
+      "category": "td.group",
+      "createdAt": "td.created"
+    },
+    "createdAtFormat": null,
+    "skipNamePattern": "^(Toplam|Total)\\b"
   }
 }

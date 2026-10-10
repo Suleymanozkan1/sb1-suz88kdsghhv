@@ -118,13 +118,16 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
       WHERE COALESCE(l.q, 0) <> COALESCE(b.quantity, 0) OR COALESCE(l.v, 0) <> COALESCE(b.value, 0)`;
     add("balances", "Stock balances = Σ stock ledger (quantity and value)", bal.map((b) => ({ warehouseId: b.warehouseId, productId: b.productId, ledgerQty: b.lq?.toString() ?? "0", balanceQty: b.bq?.toString() ?? "0", ledgerValue: b.lv?.toString() ?? "0", balanceValue: b.bv?.toString() ?? "0" })));
 
-    const fifo = await db.$queryRaw<Array<{ warehouseId: string; productId: string; lq: Num; bq: Num }>>`
-      SELECT b."warehouseId", b."productId", COALESCE(SUM(f."remainingQty"), 0) lq, b.quantity bq
+    // quantity and value: a stocked FIFO position is worth exactly what its open layers hold (±0.01 rounding)
+    const fifo = await db.$queryRaw<Array<{ warehouseId: string; productId: string; lq: Num; bq: Num; lv: Num; bv: Num }>>`
+      SELECT b."warehouseId", b."productId", COALESCE(SUM(f."remainingQty"), 0) lq, b.quantity bq,
+        COALESCE(SUM(f."remainingQty" * f."unitCost"), 0) lv, b.value bv
       FROM "StockBalance" b JOIN "Product" p ON p.id = b."productId" AND p."costingMethod" = 'FIFO'
-      LEFT JOIN "FifoLayer" f ON f."warehouseId" = b."warehouseId" AND f."productId" = b."productId"
-      WHERE b."hotelId" = ${hotelId} GROUP BY b."warehouseId", b."productId", b.quantity
-      HAVING COALESCE(SUM(f."remainingQty"), 0) <> GREATEST(b.quantity, 0)`;
-    add("fifo", "FIFO layers remaining = balance quantity", fifo.map((f) => ({ warehouseId: f.warehouseId, productId: f.productId, layers: f.lq?.toString(), balance: f.bq?.toString() })));
+      LEFT JOIN "FifoLayer" f ON f."warehouseId" = b."warehouseId" AND f."productId" = b."productId" AND f."remainingQty" > 0
+      WHERE b."hotelId" = ${hotelId} GROUP BY b."warehouseId", b."productId", b.quantity, b.value
+      HAVING COALESCE(SUM(f."remainingQty"), 0) <> GREATEST(b.quantity, 0)
+        OR (b.quantity >= 0 AND ABS(COALESCE(SUM(f."remainingQty" * f."unitCost"), 0) - b.value) > 0.01)`;
+    add("fifo", "FIFO layers remaining = balance quantity and value", fifo.map((f) => ({ warehouseId: f.warehouseId, productId: f.productId, layers: f.lq?.toString(), balance: f.bq?.toString(), layersValue: f.lv?.toString(), balanceValue: f.bv?.toString() })));
 
     const missingCost = await db.$queryRaw<Array<{ id: string; type: string; totalCost: Num }>>`
       SELECT s.id, s.type::text AS type, s."totalCost" FROM "StockTransaction" s
@@ -134,7 +137,9 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
 
     const mismatched = await db.$queryRaw<Array<{ id: string; stock: Num; cost: Num }>>`
       SELECT s.id, s."totalCost" AS stock, SUM(c.amount) AS cost FROM "StockTransaction" s JOIN "CostTransaction" c ON c."stockTxId" = s.id
-      WHERE s."hotelId" = ${hotelId} GROUP BY s.id, s."totalCost" HAVING SUM(c.amount) <> -s."totalCost" LIMIT 50`;
+      WHERE s."hotelId" = ${hotelId} GROUP BY s.id, s."totalCost" HAVING SUM(c.amount) <> -s."totalCost"
+        -- a stock-only movement (receipt reversal) carries just its revaluation difference, not a mirror of its value
+        AND bool_or(c.kind <> 'REVALUATION') LIMIT 50`;
     add("cost_amounts", "Cost-ledger amounts mirror stock movements", mismatched.map((m) => ({ stockTxId: m.id, stock: m.stock?.toString(), cost: m.cost?.toString() })));
 
     const exp = await db.$queryRaw<Array<{ id: string; status: string; amount: Num; ledger: Num }>>`

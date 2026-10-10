@@ -6,7 +6,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { Alert, Button, Input, Label, Select } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { useT } from "@/i18n/client";
+import { useT, useLocale } from "@/i18n/client";
+import { titleTr } from "@/lib/format";
 
 interface Line { key: string; product: PickedProduct | null; quantity: string; unit: string; unitPrice: string; discount: string; taxRatePct: string }
 // the first line is server-rendered: its key (used in element ids) must be the same on server and client
@@ -17,6 +18,7 @@ interface Impact { product: { name: string }; recipes: { name: string; oldPortio
 export function ReceiptForm({ suppliers, warehouses, today }: { suppliers: { id: string; name: string }[]; warehouses: { id: string; name: string }[]; today: string }) {
   const router = useRouter();
   const t = useT();
+  const locale = useLocale();
   const [lines, setLines] = useState<Line[]>([blank("line-0")]);
   const [msg, setMsg] = useState<{ tone: "red" | "green" | "amber"; text: string } | null>(null);
   const [impacts, setImpacts] = useState<Impact[]>([]);
@@ -35,7 +37,7 @@ export function ReceiptForm({ suppliers, warehouses, today }: { suppliers: { id:
       const r = await call<{ receipt: { number: string; landedTotal: string }; priceAlerts: { name: string; changePct: string }[]; impacts: Impact[] }>("POST", "/api/receipts", {
         supplierId: f.get("supplierId"), warehouseId: f.get("warehouseId"), receiptDate: `${f.get("receiptDate")}T12:00:00Z`, invoiceNo: num("invoiceNo"), freight: num("freight"), handling: num("handling"), otherCost: num("otherCost"), allocationMethod: f.get("allocationMethod"), idempotencyKey: crypto.randomUUID(), items,
       });
-      setMsg({ tone: r.priceAlerts.length ? "amber" : "green", text: `${t("{number} posted · landed {total}", { number: r.receipt.number, total: Number(r.receipt.landedTotal).toFixed(2) })}${r.priceAlerts.length ? ` · ${t("PRICE ALERT:")} ${r.priceAlerts.map((a) => `${a.name} +${a.changePct}%`).join(", ")}` : ""}` });
+      setMsg({ tone: r.priceAlerts.length ? "amber" : "green", text: `${t("{number} posted · landed {total}", { number: r.receipt.number, total: Number(r.receipt.landedTotal).toFixed(2) })}${r.priceAlerts.length ? ` · ${t("PRICE ALERT:")} ${r.priceAlerts.map((a) => `${titleTr(a.name, locale)} +${a.changePct}%`).join(", ")}` : ""}` });
       setImpacts(r.impacts);
       setLines([blank()]);
       router.refresh();
@@ -52,7 +54,7 @@ export function ReceiptForm({ suppliers, warehouses, today }: { suppliers: { id:
       {impacts.some((i) => i.recipes.length) && (
         <Alert tone="amber">
           <strong>{t("Recipe impact:")}</strong>{" "}
-          {impacts.flatMap((i) => i.recipes.map((r) => `${r.name}: ${Number(r.oldPortionCost).toFixed(2)} → ${Number(r.newPortionCost).toFixed(2)} (${t("margin")} ${r.newMarginPct ?? "—"}%${r.belowTarget ? ` — ${t("BELOW TARGET")}` : ""})`)).join(" · ")}
+          {impacts.flatMap((i) => i.recipes.map((r) => `${titleTr(r.name, locale)}: ${Number(r.oldPortionCost).toFixed(2)} → ${Number(r.newPortionCost).toFixed(2)} (${t("margin")} ${r.newMarginPct ?? "—"}%${r.belowTarget ? ` — ${t("BELOW TARGET")}` : ""})`)).join(" · ")}
         </Alert>
       )}
       <div className="grid gap-3 md:grid-cols-4">

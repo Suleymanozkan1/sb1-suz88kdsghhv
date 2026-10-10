@@ -2,12 +2,54 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { money, parseNum, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
-export function NewCount({ warehouses, today }: { warehouses: { id: string; name: string }[]; today: string }) {
+/** Only the selected warehouse's counts are listed; changing it reloads the page (and the export) for that store. */
+export function WarehousePicker({ warehouses, selected }: { warehouses: { id: string; name: string }[]; selected: string }) {
+  const router = useRouter();
+  const t = useT();
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor="cnt-wh">{t("Show counts of")}</Label>
+        <Select id="cnt-wh" className="w-64" value={selected} onChange={(e) => router.push(`/inventory/counts?warehouseId=${encodeURIComponent(e.target.value)}`)}>
+          {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+/** Soft delete (authorised users only; the server checks count:delete and refuses posted counts). */
+export function DeleteCount({ countId, number }: { countId: string; number: string }) {
+  const router = useRouter();
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    if (busy || !window.confirm(t("Do you want to delete this count?"))) return;
+    setBusy(true);
+    try {
+      await call("DELETE", `/api/counts/${countId}`);
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button type="button" disabled={busy} onClick={go} title={t("Delete count")} aria-label={t("Delete count {number}", { number })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-500 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-50">
+      <X className="h-4 w-4" />
+    </button>
+  );
+}
+
+export function NewCount({ warehouses, selected, today }: { warehouses: { id: string; name: string }[]; selected: string; today: string }) {
   const router = useRouter();
   const t = useT();
   const [err, setErr] = useState<string | null>(null);
@@ -19,8 +61,11 @@ export function NewCount({ warehouses, today }: { warehouses: { id: string; name
     setBusy(true);
     setErr(null);
     try {
-      await call("POST", "/api/counts", { warehouseId: f.get("warehouseId"), countDate: `${f.get("countDate")}T23:00:00Z` });
-      router.refresh();
+      const wh = String(f.get("warehouseId") ?? "");
+      await call("POST", "/api/counts", { warehouseId: wh, countDate: `${f.get("countDate")}T23:00:00Z` });
+      // show the new count sheet: the list is per warehouse
+      if (wh !== selected) router.push(`/inventory/counts?warehouseId=${encodeURIComponent(wh)}`);
+      else router.refresh();
     } catch (x) {
       setErr(x instanceof Error ? x.message : t("Failed"));
     } finally {
@@ -30,7 +75,7 @@ export function NewCount({ warehouses, today }: { warehouses: { id: string; name
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
       {err && <Alert>{err}</Alert>}
-      <div><Label htmlFor="nc-wh">{t("Warehouse")}</Label><Select id="nc-wh" name="warehouseId" className="w-56">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
+      <div><Label htmlFor="nc-wh">{t("Warehouse")}</Label><Select key={selected} id="nc-wh" name="warehouseId" className="w-56" defaultValue={selected}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
       <div><Label htmlFor="nc-date">{t("Count date")}</Label><Input id="nc-date" name="countDate" type="date" defaultValue={today} className="w-44" /></div>
       <Button type="submit" disabled={busy}>{busy ? t("Starting…") : t("Start count sheet")}</Button>
     </form>
@@ -52,8 +97,8 @@ export function CountEditor({ countId, lines, editable, currency }: { countId: s
     try {
       await call("PUT", `/api/counts/${countId}`, { lines: Object.entries(vals).map(([productId, v]) => ({ productId, countedQty: v.countedQty, reason: v.reason || null })) });
       if (submit) {
-        const r = await call<{ status: string }>("POST", `/api/counts/${countId}/submit`);
-        setMsg(r.status === "POSTED" ? { tone: "green", text: t("Count posted to the ledger.") } : { tone: "amber", text: t("Variance exceeds the threshold — sent for manager approval.") });
+        await call("POST", `/api/counts/${countId}/submit`);
+        setMsg({ tone: "amber", text: t("Sent for approval. Stock changes when an authorised manager approves the count.") });
       } else setMsg({ tone: "green", text: t("Saved.") });
       router.refresh();
     } catch (e) {
@@ -78,7 +123,7 @@ export function CountEditor({ countId, lines, editable, currency }: { countId: s
             const saved = counted === Number(l.countedQty);
             return (
               <tr key={l.productId}>
-                <Td>{l.name}</Td>
+                <Td><Title>{l.name}</Title></Td>
                 <Td align="right">{qty(l.systemQty, l.unit)}</Td>
                 <Td align="right">{editable ? <Input aria-label={t("Counted {name}", { name: l.name })} inputMode="decimal" className="w-28 text-right" value={v.countedQty} onChange={(e) => setVals({ ...vals, [l.productId]: { ...v, countedQty: e.target.value } })} /> : qty(l.countedQty, l.unit)}</Td>
                 <Td align="right" className={diff < 0 ? "text-red-700" : diff > 0 ? "text-brand-700" : ""}>{editable ? qty(diff, l.unit) : qty(l.varianceQty, l.unit)}</Td>
@@ -92,7 +137,7 @@ export function CountEditor({ countId, lines, editable, currency }: { countId: s
       {editable && (
         <div className="mt-3 flex gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => save(false)}>{t("Save")}</Button>
-          <Button disabled={busy} onClick={() => save(true)}>{t("Submit & post")}</Button>
+          <Button disabled={busy} onClick={() => save(true)}>{t("Send for approval")}</Button>
         </div>
       )}
     </div>

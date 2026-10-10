@@ -10,6 +10,7 @@ import { date, money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { AssetForm, ExpenseForm, LaundryForm, MeterForm, MeterReadingForm, ReverseButton } from "./forms";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Operating Costs" };
 
@@ -136,7 +137,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
               <thead><tr><Th>{t("Item")}</Th><Th align="right">{t("Opening")}</Th><Th align="right">{t("Purchases")}</Th><Th align="right">{t("Lost")}</Th><Th align="right">{t("Damaged")}</Th><Th align="right">{t("Discarded")}</Th><Th align="right">{t("Closing")}</Th><Th align="right">{t("Replacement cost")}</Th></tr></thead>
               <tbody className="divide-y divide-ink-100">
                 {d.linen.map((l) => (
-                  <tr key={l.product}><Td className="font-medium">{l.product}</Td><Td align="right">{qty(l.opening)}</Td><Td align="right">{qty(l.purchases)}</Td><Td align="right">{qty(l.lost)}</Td><Td align="right">{qty(l.damaged)}</Td><Td align="right">{qty(l.discarded)}</Td><Td align="right">{qty(l.closing)}</Td><Td align="right">{money(l.replacementCost, cur)}</Td></tr>
+                  <tr key={l.product}><Td className="font-medium"><Title>{l.product}</Title></Td><Td align="right">{qty(l.opening)}</Td><Td align="right">{qty(l.purchases)}</Td><Td align="right">{qty(l.lost)}</Td><Td align="right">{qty(l.damaged)}</Td><Td align="right">{qty(l.discarded)}</Td><Td align="right">{qty(l.closing)}</Td><Td align="right">{money(l.replacementCost, cur)}</Td></tr>
                 ))}
               </tbody>
             </Table>

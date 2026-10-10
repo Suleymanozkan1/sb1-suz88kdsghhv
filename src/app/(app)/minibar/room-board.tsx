@@ -6,6 +6,7 @@ import { Alert, Button, Input, Label, Select, Table, Td, Th, cn } from "@/compon
 import { call } from "@/lib/client";
 import { parseNum } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 interface Room { id: string; number: string; roomType: string; floor: string | null; complete: boolean; missing: string; occupied: boolean | null; items: { productId: string; product: string; par: string; qty: string }[] }
 
@@ -78,7 +79,7 @@ function RoomPanel({ room, canManage }: { room: Room; canManage: boolean }) {
         <tbody className="divide-y divide-ink-100">
           {room.items.map((i) => (
             <tr key={i.productId}>
-              <Td>{i.product}</Td><Td align="right">{Number(i.qty)}</Td><Td align="right">{Number(i.par)}</Td>
+              <Td><Title>{i.product}</Title></Td><Td align="right">{Number(i.qty)}</Td><Td align="right">{Number(i.par)}</Td>
               {canManage && <Td align="right"><Input aria-label={`${t(type)} ${i.product}`} className="w-16 text-right" inputMode="decimal" value={vals[i.productId] ?? ""} onChange={(e) => { setVals({ ...vals, [i.productId]: e.target.value }); idem.current = crypto.randomUUID(); }} /></Td>}
             </tr>
           ))}

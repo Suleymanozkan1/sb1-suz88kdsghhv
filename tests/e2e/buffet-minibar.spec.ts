@@ -20,7 +20,7 @@ test("buffet flow: open session, issue production, classify leftovers, close →
     ]);
     if (opened) break;
   }
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet", { ignoreCase: true }); // headings are shown in title case
 
   await pickProduct(page, "Product", "Cheddar", /Cheddar Slices/);
   await page.getByLabel("Quantity").fill("2");

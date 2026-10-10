@@ -45,6 +45,22 @@ export interface MicrosSelectors {
   checks: ListDetailScreen;
   invoices: ListDetailScreen;
   covers: { steps: Step[]; table: SelectorValue; row: SelectorValue; noData?: SelectorValue; columns: { outlet: SelectorValue; meal: SelectorValue; covers: SelectorValue }; defaultMeal?: string | null; skipOutletPattern?: string | null };
+  /** product cards of the purchasing module ("Ürünleri çek"); null / missing = not set up */
+  products?: ProductsScreen | null;
+}
+
+/** A flat table of product cards (one row = one product), filtered to those added since {since}. */
+export interface ProductsScreen {
+  steps: Step[];
+  table: SelectorValue;
+  row: SelectorValue;
+  noData?: SelectorValue;
+  nextPage?: SelectorValue;
+  columns: { name: SelectorValue; code?: SelectorValue; unit: SelectorValue; packSize?: SelectorValue; packUnit?: SelectorValue; taxRatePct?: SelectorValue; category?: SelectorValue; createdAt?: SelectorValue };
+  /** date format of the createdAt column (default: the file's dateFormat) */
+  createdAtFormat?: string | null;
+  /** regex on the product name: rows to ignore (totals, headers) */
+  skipNamePattern?: string | null;
 }
 
 /** A flat table of minibar postings (one row = one item charged to a room). */

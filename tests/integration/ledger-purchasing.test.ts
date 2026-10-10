@@ -14,7 +14,8 @@ beforeAll(async () => {
   h = await makeHotel("LEDGER");
   pm = await h.actor("purchasing_manager");
   cc = await h.actor("cost_controller");
-  chicken = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "CHK-BR", name: "Chicken Breast", purchaseUnit: "case", caseKg: "10", supplierId: h.supplier.id });
+  // products are FIFO by default; this scenario keeps the weighted-average path (still supported) under test
+  chicken = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "CHK-BR", name: "Chicken Breast", purchaseUnit: "case", caseKg: "10", supplierId: h.supplier.id, costingMethod: "WEIGHTED_AVERAGE" });
 });
 
 describe("purchase → receipt → stock → average cost → price variance (spec §284)", () => {

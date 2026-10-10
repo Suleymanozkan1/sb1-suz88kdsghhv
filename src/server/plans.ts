@@ -1,6 +1,10 @@
 /**
  * Packages (Temel / Orta / Üst): every feature is switched on per plan here, nowhere else. Prices come later;
  * this is only the switch. A self-hosted installation can set PLAN_OVERRIDE=PREMIUM (or STANDARD / BASIC).
+ *
+ * Trial: while the product is in its trial every tenant gets the full package (every feature open), whatever its
+ * Organization.plan says. One switch, TRIAL_ALL_FEATURES (on unless set to 0 / false / off); the plans stay stored
+ * and take effect the day it is turned off.
  */
 import type { Plan } from "@prisma/client";
 import { DomainError } from "@/domain/errors";
@@ -21,9 +25,15 @@ export type Feature = keyof typeof FEATURES;
 
 const rank = (p: Plan) => PLANS.indexOf(p);
 
+/** the trial switch: every feature open for every tenant (default on) */
+export function trialAllFeatures(): boolean {
+  return !["0", "false", "off", "no"].includes((process.env.TRIAL_ALL_FEATURES ?? "").trim().toLowerCase());
+}
+
 export function effectivePlan(orgPlan: Plan): Plan {
   const o = process.env.PLAN_OVERRIDE as Plan | undefined;
-  return o && PLANS.includes(o) ? o : orgPlan;
+  if (o && PLANS.includes(o)) return o;
+  return trialAllFeatures() ? "PREMIUM" : orgPlan;
 }
 
 export const planHas = (plan: Plan, f: Feature) => rank(effectivePlan(plan)) >= rank(FEATURES[f]);

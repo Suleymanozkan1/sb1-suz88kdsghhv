@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { Suspense } from "react";
 import { ExportButtons } from "./export-buttons";
+import { Title } from "./title";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
 
 export function cn(...a: Parameters<typeof clsx>) {
@@ -15,7 +16,7 @@ export function PageHeader({ title, subtitle, actions, exportKey, exportParams, 
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-ink-950">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink-950"><Title>{title}</Title></h1>
         {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
       </div>
       {(actions || (exportKey && canExport)) && (
@@ -37,7 +38,7 @@ export function Card({ title, actions, children, className, padded = true }: { t
     <section className={cn("rounded-xl border border-ink-200 bg-white shadow-sm", className)}>
       {(title || actions) && (
         <header className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink-800">{title}</h2>
+          <h2 className="text-sm font-semibold text-ink-800">{typeof title === "string" ? <Title>{title}</Title> : title}</h2>
           {actions}
         </header>
       )}
@@ -148,5 +149,5 @@ export function Alert({ tone = "red", children }: { tone?: "red" | "amber" | "gr
   );
 }
 
-export const levelTone: Record<string, Tone> = { NORMAL: "green", LOW: "amber", CRITICAL: "red", OUT_OF_STOCK: "red", OVERSTOCK: "violet" };
+export const levelTone: Record<string, Tone> = { NORMAL: "green", LOW: "amber", CRITICAL: "red", OUT_OF_STOCK: "red" };
 export const severityTone: Record<string, Tone> = { INFO: "blue", WARNING: "amber", HIGH: "red", CRITICAL: "red" };

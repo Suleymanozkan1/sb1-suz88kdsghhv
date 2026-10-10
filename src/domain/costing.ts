@@ -96,6 +96,22 @@ export function fifoIssue(layers: Layer[], qty: Numeric): { draws: LayerDraw[]; 
   return { draws, totalCost: total, unitCost: total.div(q) };
 }
 
+/**
+ * A transfer keeps its batches: the receiving store gets one layer per batch the sending store gave up, with the
+ * batch's receipt date and cost, so it consumes them in the same FIFO order. `settled` (stock the receiving store
+ * owed: receipt into negative stock) is taken from the oldest batches first.
+ */
+export function transferBatches<T extends { quantity: Decimal; unitCost: Decimal; receivedAt: Date }>(drawn: T[], settled: Decimal): T[] {
+  let skip = settled;
+  const out: T[] = [];
+  for (const d of drawn) {
+    const take = skip.gt(0) ? Decimal.max(d.quantity.minus(skip), ZERO) : d.quantity;
+    skip = Decimal.max(skip.minus(d.quantity), ZERO);
+    if (take.gt(0)) out.push({ ...d, quantity: take });
+  }
+  return out;
+}
+
 /** Inventory turnover = COGS / average inventory value. */
 export function inventoryTurnover(cogs: Numeric, openingValue: Numeric, closingValue: Numeric): Decimal | null {
   const avg = D(openingValue).plus(D(closingValue)).div(2);
@@ -108,15 +124,14 @@ export function daysOfStock(available: Numeric, avgDailyConsumption: Numeric): D
   return c.lte(0) ? null : D(available).div(c);
 }
 
-export type StockLevel = "NORMAL" | "LOW" | "CRITICAL" | "OUT_OF_STOCK" | "OVERSTOCK";
+export type StockLevel = "NORMAL" | "LOW" | "CRITICAL" | "OUT_OF_STOCK";
 
-/** Stock status classification (spec §168, §177, §178). Thresholds come from product config. */
+/** Stock status classification (spec §168, §177, §178). No "overstock": excess is a judgement, not a status (feedback r2 §1). */
 export function stockLevel(qty: Numeric, cfg: { minStock?: Numeric | null; reorderPoint?: Numeric | null; maxStock?: Numeric | null; safetyStock?: Numeric | null }): StockLevel {
   const q = D(qty);
   if (q.lte(0)) return "OUT_OF_STOCK";
   const critical = cfg.safetyStock ?? cfg.minStock;
   if (critical !== null && critical !== undefined && q.lte(D(critical))) return "CRITICAL";
   if (cfg.reorderPoint !== null && cfg.reorderPoint !== undefined && q.lt(D(cfg.reorderPoint))) return "LOW";
-  if (cfg.maxStock !== null && cfg.maxStock !== undefined && D(cfg.maxStock).gt(0) && q.gt(D(cfg.maxStock))) return "OVERSTOCK";
   return "NORMAL";
 }

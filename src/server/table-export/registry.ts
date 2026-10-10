@@ -12,10 +12,8 @@ import { counts, countSummaryReport } from "./reports/counts";
 import { waste } from "./reports/waste";
 import { buffet, buffetSession } from "./reports/buffet";
 import { minibar } from "./reports/minibar";
+import { rooms, roomExpenses } from "./reports/rooms";
 import { imports } from "./reports/imports";
-import { budget } from "./reports/budget";
-import { forecast } from "./reports/forecast";
-import { allocation } from "./reports/allocation";
 import { periods } from "./reports/periods";
 import { approvals } from "./reports/approvals";
 import { calendar } from "./reports/calendar";
@@ -25,6 +23,7 @@ import { integrity } from "./reports/integrity";
 import { sales } from "./reports/sales";
 import { admin } from "./reports/admin";
 import { dashboard } from "./reports/dashboard";
+import { priceChanges, topWaste } from "./reports/insights";
 import { variance } from "./reports/variance";
 import { menuEngineering } from "./reports/menu-engineering";
 import { savings } from "./reports/savings";
@@ -46,9 +45,8 @@ export const REPORTS: Record<string, ReportDef> = {
   buffet,
   "buffet-session": buffetSession,
   minibar,
-  budget,
-  forecast,
-  allocation,
+  rooms,
+  "room-expenses": roomExpenses,
   periods,
   approvals,
   calendar,
@@ -58,6 +56,8 @@ export const REPORTS: Record<string, ReportDef> = {
   sales,
   admin,
   dashboard,
+  "top-waste": topWaste,
+  "price-changes": priceChanges,
   variance,
   "menu-engineering": menuEngineering,
   savings,

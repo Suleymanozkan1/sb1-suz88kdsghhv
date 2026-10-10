@@ -583,7 +583,7 @@ export const planning: Record<string, string> = {
   "Findings": "Bulgu",
   "Examples": "Örnekler",
   "Stock balances = Σ stock ledger (quantity and value)": "Stok bakiyeleri = Σ stok hareketleri (miktar ve tutar)",
-  "FIFO layers remaining = balance quantity": "Kalan FIFO katmanları = bakiye miktarı",
+  "FIFO layers remaining = balance quantity and value": "Kalan FIFO katmanları = bakiye miktarı ve değeri",
   "Every usage movement has its cost-ledger row": "Her kullanım hareketinin maliyet defteri satırı var",
   "Cost-ledger amounts mirror stock movements": "Maliyet defteri tutarları stok hareketleriyle aynı",
   "Expenses ↔ cost ledger (posted = amount, reversed = 0)": "Giderler ↔ maliyet defteri (kayıtlı = tutar, iptal = 0)",

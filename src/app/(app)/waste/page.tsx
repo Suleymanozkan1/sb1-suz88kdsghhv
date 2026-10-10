@@ -9,6 +9,7 @@ import { getT } from "@/i18n/server";
 import { WasteForm } from "./waste-form";
 import { D, ZERO, sum, type Decimal } from "@/domain/money";
 import { currentBusinessDay } from "@/domain/business-day";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Waste" };
 
@@ -47,7 +48,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
             <tbody className="divide-y divide-ink-100">
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <Td>{date(r.wasteDate)}</Td><Td>{r.department.name}</Td><Td>{r.product.name}</Td>
+                  <Td>{date(r.wasteDate)}</Td><Td>{r.department.name}</Td><Td><Title>{r.product.name}</Title></Td>
                   <Td><Badge>{t(r.wasteType)}</Badge>{r.reason && <span className="ml-1 text-xs text-ink-500">{r.reason}</span>}</Td>
                   <Td align="right">{qty(r.quantity.toString(), r.unit)}</Td>
                   <Td align="right">{money(r.unitCost?.toString(), cur)}</Td>

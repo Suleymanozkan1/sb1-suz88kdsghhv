@@ -1,16 +1,19 @@
 import { Fragment } from "react";
+import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { notFound } from "next/navigation";
 import { pageContext, guarded } from "@/server/page";
 import { recipeCost } from "@/server/services/recipes";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import type { CostedLine } from "@/domain/recipe-cost";
-import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
+import { Alert, Badge, Button, Card, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { money, pct, qty } from "@/lib/format";
 import { isDomainError } from "@/domain/errors";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
-import { ApproveButton, PriceImpact } from "./actions";
+import { ApproveButton, DeleteRecipeButton, PriceImpact } from "./actions";
+import { Title } from "@/components/title";
 
 function Lines({ lines, depth = 0, cur, t }: { lines: CostedLine[]; depth?: number; cur: string; t: T }) {
   return (
@@ -18,7 +21,7 @@ function Lines({ lines, depth = 0, cur, t }: { lines: CostedLine[]; depth?: numb
       {lines.map((l, i) => (
         <Fragment key={`${depth}-${i}`}>
           <tr className={depth ? "bg-ink-50/60 text-ink-600" : ""}>
-            <Td style={{ paddingLeft: 12 + depth * 20 }}>{depth > 0 && "↳ "}{l.name} {l.kind === "SUB_RECIPE" && <Badge tone="violet">{t("sub-recipe")}</Badge>}{l.children && <span className="ml-1 text-xs text-ink-400">{t("(breakdown below is per {qty} {unit} batch)", { qty: l.children.usableOutput.toString(), unit: l.children.outputUnit })}</span>} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td>
+            <Td style={{ paddingLeft: 12 + depth * 20 }}>{depth > 0 && "↳ "}<Title>{l.name}</Title> {l.kind === "SUB_RECIPE" && <Badge tone="violet">{t("sub-recipe")}</Badge>}{l.children && <span className="ml-1 text-xs text-ink-400">{t("(breakdown below is per {qty} {unit} batch)", { qty: l.children.usableOutput.toString(), unit: l.children.outputUnit })}</span>} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td>
             <Td align="right">{qty(l.quantity.toString(), l.unit)}</Td>
             <Td align="right">{l.unitCost ? `${money(l.unitCost.toString(), cur, 4)} / ${l.baseUnit}` : "—"}</Td>
             <Td align="right" className="font-medium">{money(l.lineCost.toString(), cur)}</Td>
@@ -39,14 +42,21 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const { result: c, version } = res.data;
   const { marginTargetPct } = await prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { marginTargetPct: true } });
-  const recipe = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
+  const recipe = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId, deletedAt: null }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
+  const manage = can(actor, "recipe:manage");
   const cur = hotel.baseCurrency;
   // approval / effective moments are timestamps: shown as the hotel's local day (format.date() would give the UTC day)
   const day = (v: Date | null) => (v ? new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: hotel.timezone }).format(v) : "—");
   const products = c.lines.filter((l) => l.kind === "PRODUCT").map((l) => ({ id: l.refId, name: l.name, unitCost: l.unitCost?.toString() ?? null, unit: l.baseUnit }));
   return (
     <>
-      <PageHeader exportKey="recipe" exportParams={{ id }} title={recipe.name} subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}</span>} />
+      <PageHeader
+        exportKey="recipe"
+        exportParams={{ id }}
+        title={recipe.name}
+        subtitle={<span>{recipe.code} · {t(recipe.type)} · {recipe.department?.name ?? "—"} · {t("showing v{version} ({status}) at current costs", { version: version.version, status: t(version.status) })}<span className="block">{t("Created on")}: {day(recipe.createdAt)} · {t("Updated on")}: {day(recipe.updatedAt)}</span></span>}
+        actions={manage ? <><Link href={`/recipes/${id}/edit`}><Button variant="secondary"><Pencil className="h-4 w-4" /> {t("Edit")}</Button></Link><DeleteRecipeButton recipeId={id} name={recipe.name} /></> : null}
+      />
       {!c.complete && <div className="mb-4"><Alert tone="amber">{t("Incomplete cost:")} {c.issues.map((i) => `${t(i.issue)} (${i.path})`).join(", ")}</Alert></div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Food cost")} value={money(c.foodCost.toString(), cur)} />
@@ -80,7 +90,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
                   <Td><Badge tone={v.status === "APPROVED" ? "green" : v.status === "DRAFT" ? "amber" : "gray"}>{t(v.status)}</Badge></Td>
                   <Td>{day(v.effectiveFrom)}{v.effectiveTo ? ` → ${day(v.effectiveTo)}` : ""}</Td>
                   <Td align="right">{money(v.portionCost?.toString(), cur)}</Td>
-                  <Td><span className="text-xs text-ink-500">{v.reason ?? "—"}</span></Td>
+                  <Td><span className="text-xs text-ink-500">{v.reason ? t(v.reason) : "—"}</span></Td>
                   <Td>{v.status === "DRAFT" && can(actor, "recipe:approve") && <ApproveButton versionId={v.id} />}</Td>
                 </tr>
               ))}

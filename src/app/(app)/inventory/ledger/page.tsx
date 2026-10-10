@@ -2,13 +2,14 @@ import Link from "next/link";
 import { pageContext, guarded } from "@/server/page";
 import { explodeSalesRows, ledgerEntries, summarizeSalesRows, type DetailLine } from "@/server/services/inventory";
 import { LEDGER_TYPES, ledgerRange, parseLedgerQuery, sourceText } from "@/server/table-export/reports/ledger";
-import { can } from "@/server/auth/actor";
+import { can, canDepartment } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { money, qty, date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { DeleteRequest } from "./delete-request";
 import { LedgerFilters } from "./ledger-filters";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Stock Ledger" };
 const PAGE = 50;
@@ -62,13 +63,13 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                 <tr key={`${r.id}-${i}`} className={r.reversedBy ? "bg-ink-50 text-ink-400" : ""}>
                   <Td>{date(r.txDate)}</Td>
                   <Td><Badge tone={Number(r.quantity) > 0 ? "green" : r.type === "REVERSAL" ? "violet" : r.type === "WASTE" ? "red" : "amber"}>{t(r.type)}</Badge></Td>
-                  <Td><Link href={q({ productId: r.productId, page: "1" })} className="hover:underline">{r.product.name}</Link></Td>
+                  <Td><Link href={q({ productId: r.productId, page: "1" })} className="hover:underline"><Title>{r.product.name}</Title></Link></Td>
                   <Td>{r.warehouse.name}</Td>
                   <Td align="right">{qty(d.quantity.toString(), r.product.stockUnit)}</Td>
                   <Td align="right">{money(r.unitCost.toString(), cur, 4)}</Td>
                   <Td align="right">{money(d.total.toString(), cur)}</Td>
                   <Td className="max-w-md whitespace-normal"><span className={cn("text-xs", r.type === "WASTE" ? "text-red-700" : "text-ink-500")}>{sourceText(d, t)}</span>{r.reversedBy && <Badge tone="violet">{t("reversed")}</Badge>}</Td>
-                  <Td>{first && !d.merged && !r.reversedBy && r.type !== "REVERSAL" && !r.transferGroup && can(actor, "inventory:post") && <DeleteRequest txId={r.id} />}</Td>
+                  <Td>{first && !d.merged && !r.reversedBy && r.type !== "REVERSAL" && !r.transferGroup && can(actor, "inventory:post") && (!r.departmentId || canDepartment(actor, r.departmentId)) && <DeleteRequest txId={r.id} />}</Td>
                 </tr>
               );
             })}

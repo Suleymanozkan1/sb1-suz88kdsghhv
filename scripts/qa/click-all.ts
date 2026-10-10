@@ -13,9 +13,9 @@ const EMAIL = arg("email") ?? "admin@grandanatolia.test";
 const PASSWORD = arg("password") ?? "HotelCost!2026";
 const ONLY = arg("only");
 const PAGES = [
-  "/", "/admin", "/allocation", "/approvals", "/audit", "/budget", "/buffet", "/calendar", "/data-quality", "/excel", "/forecast",
+  "/", "/admin", "/approvals", "/audit", "/buffet", "/calendar", "/data-quality", "/excel", "/insights/waste", "/insights/price-changes",
   "/imports", "/integrity", "/inventory", "/inventory/counts", "/inventory/counts/summary", "/inventory/ledger", "/menu-engineering", "/minibar",
-  "/operations", "/periods", "/products", "/purchasing", "/purchasing/orders", "/recipes", "/recipes/new", "/reports", "/review", "/rooms",
+  "/operations", "/periods", "/products", "/purchasing", "/purchasing/orders", "/recipes", "/recipes/new", "/reports", "/review", "/rooms", "/rooms/expenses",
   "/sales", "/savings", "/variance", "/waste",
 ];
 // never click: sign-out and the language switch (they change the session, not the page)

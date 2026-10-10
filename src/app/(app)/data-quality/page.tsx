@@ -4,6 +4,7 @@ import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat } from "@/components/ui";
 import { pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Data Quality" };
 
@@ -26,9 +27,9 @@ export default async function DataQualityPage() {
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {checks.map((c) => (
-          <Card key={c.key} title={<span className="flex items-center gap-2">{t(c.label)} <Badge tone={c.count === 0 ? "green" : "amber"}>{c.count < 0 ? t("never") : c.count}</Badge></span>}>
+          <Card key={c.key} title={<span className="flex items-center gap-2"><Title>{t(c.label)}</Title> <Badge tone={c.count === 0 ? "green" : "amber"}>{c.count < 0 ? t("never") : c.count}</Badge></span>}>
             {c.items.length === 0 ? <p className="text-sm text-ink-500">{c.count === 0 ? t("All good.") : t("See related screen.")}</p> : (
-              <ul className="max-h-48 space-y-1 overflow-auto text-sm" tabIndex={0}>{c.items.map((i) => <li key={i.id} className="truncate">{i.name}{"problem" in i ? <span className="block text-xs text-ink-500">{issueText(String((i as { problem: string }).problem), t)}</span> : null}</li>)}</ul>
+              <ul className="max-h-48 space-y-1 overflow-auto text-sm" tabIndex={0}>{c.items.map((i) => <li key={i.id} className="truncate"><Title>{i.name}</Title>{"problem" in i ? <span className="block text-xs text-ink-500">{issueText(String((i as { problem: string }).problem), t)}</span> : null}</li>)}</ul>
             )}
           </Card>
         ))}

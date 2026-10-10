@@ -11,6 +11,7 @@ import type { Column, FullCostExport, Section } from "../services/export";
 import { EXPORT_VERSION, APP_VERSION } from "../services/export";
 import type { Locale } from "@/i18n/core";
 import { colRef, localizeExport, xlLang, type XlLang } from "./i18n";
+import { autoFitColumns } from "./autofit";
 
 /**
  * Everything the user reads is in the workbook's language (see ./i18n): sheet names, column headers, values,
@@ -56,8 +57,8 @@ export const SHEETS: SheetSpec[] = [
   { name: "15_BUFFET_SUMMARY", title: "Buffet Summary", sections: ["buffetSummary"], description: "Buffet cost per cover by meal" },
   { name: "16_BUFFET_PRODUCT", title: "Buffet Product Cost", sections: ["buffetProduct"], description: "Buffet item flow: produced, refilled, consumed, waste, reusable" },
   { name: "17_MINIBAR_COST", title: "Minibar Cost", sections: ["minibarCost"], description: "Minibar by room: restock, consumption, shrinkage, cost, revenue, contribution" },
-  { name: "18_ROOM_COST", title: "Room Cost", sections: ["roomCost"], description: "Full room cost per room: housekeeping, laundry, amenities, energy, maintenance, labor, other, distribution; cost / night, contribution", print: true },
-  { name: "19_ROOM_TYPE_COST", title: "Room Type Cost", sections: ["roomTypeCost", "roomFloorCost", "roomChannelCost"], description: "Room cost by type, floor / area and by booking channel (net room contribution)" },
+  { name: "18_ROOM_COST", title: "Room Cost", sections: ["roomCost"], description: "Full room cost per room: housekeeping, laundry, amenities, energy, maintenance, labor, other, monthly room expenses, distribution; cost / night, contribution", print: true },
+  { name: "19_ROOM_TYPE_COST", title: "Room Type Cost", sections: ["roomTypeCost", "roomFloorCost"], description: "Room cost by type and by floor / area" },
   { name: "20_HOUSEKEEPING_COST", title: "Housekeeping Cost", sections: ["housekeepingCost"], description: "Amenities, chemicals, supplies, labor, outsourced; per occupied room" },
   { name: "21_LAUNDRY_COST", title: "Laundry Cost", sections: ["laundryCost", "linenCost"], description: "Laundry cost, cost per kg / piece / occupied room, linen movement and replacement" },
   { name: "22_LABOR_COST", title: "Labor Cost", sections: ["laborCost"], description: "Payroll by department and component, labor cost %" },
@@ -70,7 +71,7 @@ export const SHEETS: SheetSpec[] = [
   { name: "29_MONTHLY_STOCK", title: "Monthly Stock", sections: ["monthlyStock"], description: "Stock roll-forward per product" },
   { name: "30_STOCK_VARIANCE", title: "Stock Variance", sections: ["stockVariance"], description: "System vs physical counts" },
   { name: "31_CRITICAL_STOCK", title: "Critical Stock", sections: ["criticalStock"], description: "Low / critical / out-of-stock items with order suggestion" },
-  { name: "32_STOCK_AGING", title: "Stock Aging", sections: ["stockAging"], description: "Active / slow / dead / overstock" },
+  { name: "32_STOCK_AGING", title: "Stock Aging", sections: ["stockAging"], description: "Active / slow moving" },
   { name: "33_REORDER_RECOMMENDATION", title: "Reorder Recommendation", sections: ["reorder"], description: "Recommended orders with explanation" },
   { name: "34_DEPARTMENT_COST", title: "Department Cost", sections: ["departmentCost"], description: "Revenue, direct / allocated cost, contribution", print: true },
   { name: "35_OUTLET_COST", title: "Outlet Cost", sections: ["outletCost"], description: "Outlets only" },
@@ -171,6 +172,8 @@ export interface BuiltWorkbook {
 
 /** Tables above this size get only their first data row from ExcelJS; the packager streams the rest. */
 export const BULK_THRESHOLD = 2000;
+/** rows measured per column when fitting widths (large sheets are sampled) */
+const FIT_SAMPLE = 2000;
 export interface BulkTable {
   sheet: string;
   table: string;
@@ -215,12 +218,10 @@ function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, heade
     columns: sec.columns.map((c) => ({ name: c.header, filterButton: true })),
     rows,
   });
+  // widths are fitted once the whole sheet is written (fitSheet), from the values as Excel formats them
   sec.columns.forEach((c, i) => {
-    const col = ws.getColumn(startCol + i);
     const fmt = numFmt(c.type, currency);
-    if (fmt) col.numFmt = fmt;
-    const longest = Math.max(c.header.length, ...sec.rows.slice(0, 200).map((r) => (r[c.key] ?? "").length));
-    col.width = Math.min(Math.max(longest + 2, c.type === "text" ? 12 : 14), 60);
+    if (fmt) ws.getColumn(startCol + i).numFmt = fmt;
   });
   // per-row formats for statement tables carrying a "kind" column (value may be money or pct)
   const kindIdx = sec.columns.findIndex((c) => c.key === "kind");
@@ -244,7 +245,6 @@ function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, heade
         { type: "containsText", operator: "containsText", text: lg.val("FAIL"), priority: 1, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
         { type: "containsText", operator: "containsText", text: lg.val("CRITICAL"), priority: 2, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
         { type: "containsText", operator: "containsText", text: lg.val("OUT_OF_STOCK"), priority: 3, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
-        { type: "containsText", operator: "containsText", text: lg.val("Dead Stock"), priority: 4, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
         { type: "containsText", operator: "containsText", text: lg.val("UNFAVOURABLE"), priority: 5, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEE2E2" } } } },
         { type: "containsText", operator: "containsText", text: lg.val("WARNING"), priority: 6, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
         { type: "containsText", operator: "containsText", text: lg.val("LOW"), priority: 7, style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFEF3C7" } } } },
@@ -580,7 +580,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     "RAW_* sheets (hidden, protected) contain the raw datasets used by pivots. RUN_LOG and _LISTS are hidden helper sheets.",
     "",
     "COLOURS",
-    "Green = PASS / good · Yellow = WARNING / not available / low stock · Red = FAIL / critical / dead stock / unfavourable variance.",
+    "Green = PASS / good · Yellow = WARNING / not available / low stock · Red = FAIL / critical / unfavourable variance.",
     "Red numbers in variance columns = actual above theoretical (unfavourable); green = below.",
     "",
     "DATA STATUS",
@@ -624,6 +624,22 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
   writeList("I", outletList, "lst_OutletNames");
   writeList("J", whList, "lst_WarehouseNames");
   writeList("K", [ALL, ...categories.map(val)], "lst_CategoryNames");
+
+  // ── column widths: every column fits its header and its values (spec: no cut-off text) ──
+  for (const spec of SHEETS) {
+    if (spec.name === "51_README") continue; // one wide text column by design
+    const ws = sheet(spec.name);
+    const headerRow = spec.headerRow ?? HEADER_ROW;
+    // rows streamed by the packager (large tables) are measured from the data
+    const extra = new Map<number, ExcelJS.CellValue[]>();
+    for (const b of bulk.filter((x) => x.sheet === ws.name)) {
+      b.columns.forEach((c, i) => extra.set(b.startCol + i, b.rows.slice(0, FIT_SAMPLE).map((row) => cellValue(row[c.key], c.type))));
+    }
+    // the executive summary's KPI tiles (rows 5–16) share the table's columns
+    autoFitColumns(ws, { fromRow: spec.name === "02_EXECUTIVE_SUMMARY" ? 5 : headerRow, header: { row: headerRow, bold: false }, extra, sampleRows: FIT_SAMPLE });
+  }
+  // CONTROL: label and value columns grow with their text (the buttons sit to the right, on fixed columns)
+  autoFitColumns(ctl, { fromRow: 4, columns: [2, 3], keepWider: true, sampleRows: FIT_SAMPLE });
 
   // ── protection (no password: prevents accidental edits; VBA re-protects after refresh) ──
   for (const ws of wb.worksheets) {

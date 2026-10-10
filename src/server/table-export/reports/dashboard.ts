@@ -1,6 +1,6 @@
 import { prisma } from "../../db";
 import { monthRange } from "../../page";
-import { homeDashboard } from "../../services/insights";
+import { homeDashboard, LEVEL_LABEL, STOCK_LEVELS, type DashboardAlert, type PriceSummaryData } from "../../services/insights";
 import { date } from "@/lib/format";
 import { translateMessage } from "@/i18n/core";
 import type { ReportDef, XTable } from "../types";
@@ -14,9 +14,15 @@ export const dashboard: ReportDef = {
     const range = monthRange({ from: q.get("from") || undefined, to: q.get("to") || undefined });
     const filters: Array<[string, string]> = [[t("From"), date(range.fromStr)], [t("To"), date(range.toStr)]];
     const res = await homeDashboard(prisma, actor, hotelId, range);
-    const levelLabel = (l: string) => t(l.replace(/_/g, " "));
+    const levelLabel = (l: string) => t(LEVEL_LABEL[l] ?? l);
     const alertCols = [{ key: "title", header: t("Title") }, { key: "severity", header: t("Severity") }, { key: "message", header: t("Message") }, { key: "createdAt", header: t("Created"), type: "datetime" as const }];
-    const alertRow = (a: { title: string; severity: string; message: string; createdAt: Date }) => ({ title: translateMessage(locale, a.title), severity: t(a.severity), message: translateMessage(locale, a.message), createdAt: a.createdAt });
+    // derived alerts carry {placeholders} + vars; stored ones are server messages (t() falls back to their templates)
+    const alertRow = (a: DashboardAlert) => ({ title: a.vars ? t(a.title, a.vars) : translateMessage(locale, a.title), severity: t(a.severity), message: a.vars ? t(a.message, a.vars) : translateMessage(locale, a.message), createdAt: a.createdAt });
+    const priceTable = (p: PriceSummaryData): XTable => ({
+      title: t("Supplier price increases / decreases"),
+      columns: [{ key: "product", header: t("Product") }, { key: "supplier", header: t("Supplier") }, { key: "date", header: t("Date"), type: "date" }, { key: "previous", header: t("Previous price"), type: "unitcost" }, { key: "current", header: t("Last price"), type: "unitcost" }, { key: "unit", header: t("Unit") }, { key: "changePct", header: t("Change %"), type: "pct" }],
+      rows: [...p.increases, ...p.decreases].map((c) => ({ product: c.product, supplier: c.supplier, date: c.date, previous: c.previous, current: c.current, unit: c.unit, changePct: c.changePct })),
+    });
     const criticalCols = [{ key: "name", header: t("Product") }, { key: "quantity", header: t("Quantity"), type: "qty" as const }, { key: "unit", header: t("Unit") }, { key: "level", header: t("Status") }];
 
     if (res.kind === "basic") {
@@ -28,7 +34,7 @@ export const dashboard: ReportDef = {
       ];
       if (kpis.length) tables.push(metricTable(t, kpis, { title: t("Overview - {hotel}", { hotel: hotel.name }) }));
       if (d.stock) tables.push({ title: t("Critical stock"), columns: criticalCols, rows: d.stock.critical.map((c) => ({ name: c.name, quantity: c.quantity, unit: c.unit, level: levelLabel(c.level) })) });
-      if (d.priceIncreases.length) tables.push({ title: t("Supplier price increases"), columns: [{ key: "product", header: t("Product") }, { key: "supplier", header: t("Supplier") }, { key: "previous", header: t("Previous"), type: "unitcost" }, { key: "current", header: t("Current"), type: "unitcost" }, { key: "changePct", header: t("Change"), type: "pct" }], rows: d.priceIncreases.map((p) => ({ ...p })) });
+      if (d.prices) tables.push(priceTable(d.prices));
       if (d.alerts.length) tables.push({ title: t("Open alerts"), columns: alertCols, rows: d.alerts.map(alertRow) });
       return { title: t("Overview - {hotel}", { hotel: hotel.name }), subtitle: t("Your role's view: stock, purchasing and alerts you are allowed to see."), fileName: "genel-bakis", filters, tables };
     }
@@ -74,7 +80,7 @@ export const dashboard: ReportDef = {
         {
           title: t("Stock status"),
           columns: [{ key: "level", header: t("Status") }, { key: "count", header: t("Count"), type: "int" }],
-          rows: (["NORMAL", "LOW", "CRITICAL", "OUT_OF_STOCK", "OVERSTOCK", "DEAD"] as const).map((s) => ({ level: t(s.replace(/_/g, " ").toLowerCase()), count: d.stock[s] })),
+          rows: STOCK_LEVELS.map((s) => ({ level: levelLabel(s), count: d.stock[s] })),
         },
         { title: t("Critical stock"), columns: criticalCols, rows: d.critical.map((c) => ({ name: c.name, quantity: c.quantity, unit: c.unit, level: levelLabel(c.level) })) },
         {
@@ -83,12 +89,8 @@ export const dashboard: ReportDef = {
           rows: d.stockValueByGroup.map((g) => ({ group: t(g.group), value: g.value })),
           totals: { group: t("Total"), value: k.stockValue },
         },
-        { title: t("Top waste products"), columns: [{ key: "name", header: t("Product") }, { key: "cost", header: t("Cost"), type: "money" }], rows: d.topWaste.map((w) => ({ name: w.name, cost: w.cost })) },
-        {
-          title: t("Supplier price increases"),
-          columns: [{ key: "product", header: t("Product") }, { key: "supplier", header: t("Supplier") }, { key: "previous", header: t("Previous"), type: "unitcost" }, { key: "current", header: t("Current"), type: "unitcost" }, { key: "changePct", header: t("Change"), type: "pct" }],
-          rows: d.priceIncreases.map((p) => ({ ...p })),
-        },
+        { title: t("Top waste products"), columns: [{ key: "name", header: t("Product") }, { key: "qty", header: t("Quantity"), type: "qty" }, { key: "unit", header: t("Unit") }, { key: "cost", header: t("Cost"), type: "money" }], rows: d.topWaste.map((w) => ({ name: w.name, qty: w.qty, unit: w.unit, cost: w.cost })) },
+        priceTable(d.prices),
         { title: t("Alerts"), columns: alertCols, rows: d.alerts.map(alertRow) },
       ],
     };

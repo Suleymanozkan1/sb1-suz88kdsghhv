@@ -3,7 +3,7 @@
  * role can open (home redirect, "back" link on /forbidden). No "use client": importable on both sides.
  */
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, Split, FileUp, Target, TrendingUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, FileUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users,
 } from "lucide-react";
 
 export const NAV = [
@@ -21,10 +21,7 @@ export const NAV = [
   { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view" },
   { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view" },
   { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
-  { href: "/allocation", label: "Cost Allocation", icon: Split, perm: "opex:view" },
   { href: "/imports", label: "Imports", icon: FileUp, perm: "report:view" },
-  { href: "/budget", label: "Budget & Targets", icon: Target, perm: "budget:view" },
-  { href: "/forecast", label: "Forecast & What-if", icon: TrendingUp, perm: "budget:view" },
   { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
   { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },

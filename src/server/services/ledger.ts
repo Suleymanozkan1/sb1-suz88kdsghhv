@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type StockTransaction, type StockTxType, type DataOrigin } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage, type Numeric } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
-import { fifoIssue, wacIssue, wacReceive, type Layer } from "@/domain/costing";
+import { fifoIssue, transferBatches, wacIssue, wacReceive, type Layer } from "@/domain/costing";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, requireHotel } from "../auth/actor";
 import { assertPostable } from "./period";
@@ -59,6 +59,8 @@ export interface MovementInput {
   reversesId?: string;
   /** internal: FIFO layer to reduce when reversing a receipt */
   reverseLayerOfTxId?: string;
+  /** internal: transfer-in leg; its FIFO layers are the batches the out leg (this tx id) drew, with their dates and costs */
+  layersFromTxId?: string;
 }
 
 interface BalanceRow {
@@ -75,6 +77,15 @@ async function lockBalance(tx: Tx, hotelId: string, warehouseId: string, product
     WHERE "warehouseId" = ${warehouseId} AND "productId" = ${productId} FOR UPDATE`;
   const r = rows[0]!;
   return { quantity: D(r.quantity.toString()), value: D(r.value.toString()), avgCost: D(r.avgCost.toString()) };
+}
+
+/** Open FIFO layers of a position, oldest first, row-locked. */
+async function openLayers(tx: Tx, warehouseId: string, productId: string): Promise<Layer[]> {
+  const layers = await tx.$queryRaw<Array<{ id: string; remainingQty: Prisma.Decimal; unitCost: Prisma.Decimal; receivedAt: Date }>>`
+    SELECT "id","remainingQty","unitCost","receivedAt" FROM "FifoLayer"
+    WHERE "warehouseId" = ${warehouseId} AND "productId" = ${productId} AND "remainingQty" > 0
+    ORDER BY "receivedAt" ASC, "id" ASC FOR UPDATE`;
+  return layers.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
 }
 
 async function fallbackCost(tx: Tx, hotelId: string, productId: string): Promise<Decimal | null> {
@@ -142,22 +153,35 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       }
       if (input.exactTotal !== undefined) {
         total = toStorage(input.exactTotal); // negative
-        if (fifo && input.reverseLayerOfTxId) {
-          const layer = await tx.fifoLayer.findFirst({ where: { sourceTxId: input.reverseLayerOfTxId } });
-          if (!layer || D(layer.remainingQty.toString()).lt(outQty)) {
+        // the receipt's own layer(s) (a transfer-in has one per batch)
+        const own = fifo && input.reverseLayerOfTxId ? await tx.fifoLayer.findMany({ where: { sourceTxId: input.reverseLayerOfTxId, warehouseId: input.warehouseId, productId: input.productId }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] }) : [];
+        if (own.length) {
+          const ls: Layer[] = own.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
+          if (ls.reduce((a, l) => a.plus(l.remainingQty), ZERO).lt(outQty)) {
             throw new DomainError("INSUFFICIENT_STOCK", "Receipt layer has already been consumed; reverse the consumption first or post an adjustment");
           }
-          fifoDraws = [{ layerId: layer.id, quantity: outQty, unitCost: D(layer.unitCost.toString()) }];
+          fifoDraws = fifoIssue(ls, outQty).draws;
+        } else if (fifo) {
+          // a receipt posted before the product moved to FIFO has no layer of its own (its stock sits in the
+          // opening layer): the quantity leaves the oldest layers at what they hold, so the layers keep adding up to
+          // the balance (reverseMovement posts the difference to the receipt's cost as a revaluation). A receipt that
+          // only covered negative stock never reached a layer: nothing can be released for it.
+          const orig = input.reverseLayerOfTxId ? await tx.stockTransaction.findFirst({ where: { id: input.reverseLayerOfTxId }, select: { quantity: true, balanceQtyAfter: true } }) : null;
+          const landed = orig ? Decimal.min(D(orig.quantity.toString()), Decimal.max(D(orig.balanceQtyAfter.toString()), ZERO)) : outQty;
+          const ls = await openLayers(tx, input.warehouseId, input.productId);
+          const available = ls.reduce((a, l) => a.plus(l.remainingQty), ZERO);
+          if (landed.lt(outQty) || available.lt(outQty)) {
+            throw new DomainError("INSUFFICIENT_STOCK", "Receipt layer has already been consumed; reverse the consumption first or post an adjustment");
+          }
+          const r = fifoIssue(ls, outQty);
+          fifoDraws = r.draws;
+          total = toStorage(r.totalCost).neg();
         }
         // If this empties the position, release the whole remaining value (no residue).
         if (pos.quantity.minus(outQty).isZero()) total = pos.value.neg();
         unitCost = total.neg().div(outQty);
       } else if (fifo) {
-        const layers = await tx.$queryRaw<Array<{ id: string; remainingQty: Prisma.Decimal; unitCost: Prisma.Decimal; receivedAt: Date }>>`
-          SELECT "id","remainingQty","unitCost","receivedAt" FROM "FifoLayer"
-          WHERE "warehouseId" = ${input.warehouseId} AND "productId" = ${input.productId} AND "remainingQty" > 0
-          ORDER BY "receivedAt" ASC, "id" ASC FOR UPDATE`;
-        const ls: Layer[] = layers.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
+        const ls = await openLayers(tx, input.warehouseId, input.productId);
         const available = ls.reduce((a, l) => a.plus(l.remainingQty), ZERO);
         if (input.allowNegative && available.lt(outQty)) {
           // more out than the layers hold (e.g. sales deducted before a late receipt is booked): the layers are used
@@ -179,6 +203,18 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       }
     }
 
+    // FIFO inbound: the layers this movement opens (a transfer-in: the out leg's batches). Into negative stock only what
+    // is left after covering the shortfall becomes a layer.
+    const layerQty = pos.quantity.lt(0) ? qty.plus(pos.quantity) : qty;
+    let batches: Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> = [];
+    if (createLayer && layerQty.gt(0)) {
+      const drawn = input.layersFromTxId ? await tx.fifoConsumption.findMany({ where: { txId: input.layersFromTxId }, include: { layer: { select: { receivedAt: true } } }, orderBy: [{ layer: { receivedAt: "asc" } }, { layerId: "asc" }] }) : [];
+      batches = transferBatches(drawn.map((d) => ({ quantity: D(d.quantity.toString()), unitCost: D(d.unitCost.toString()), receivedAt: d.layer.receivedAt })), qty.minus(layerQty));
+      // whatever the batches do not cover (a plain receipt: all of it) is one layer at this movement's cost and date
+      const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
+      if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: input.txDate });
+    }
+
     const newQty = pos.quantity.plus(qty);
     let newValue = pos.value.plus(total);
     let newAvg: Decimal;
@@ -191,10 +227,11 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
         total = newValue.minus(pos.value);
       }
     } else {
-      if (fifo && qty.gt(0) && input.exactTotal === undefined && pos.quantity.lt(0)) {
-        // receipt into negative FIFO stock: the shortfall issued earlier is settled at this receipt's cost, and
-        // only what is left after it becomes a layer (layers always add up to the balance)
-        newValue = toStorage(newQty.times(unitCost));
+      if (fifo && qty.gt(0) && pos.quantity.lt(0)) {
+        // any inbound into negative FIFO stock (receipt at its landed total, transfer-in, reversal): the shortfall
+        // issued earlier is settled at this movement's cost and only what is left after it becomes a layer, so the
+        // balance value is exactly what the open layers hold (the difference is posted on this movement)
+        newValue = newQty.gt(0) ? toStorage(batches.reduce((a, b) => a.plus(toStorage(b.quantity).times(toStorage(b.unitCost))), ZERO)) : toStorage(newQty.times(unitCost));
         total = newValue.minus(pos.value);
       }
       newAvg = newQty.gt(0) ? newValue.div(newQty) : qty.gt(0) ? unitCost : pos.avgCost;
@@ -233,10 +270,9 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
       data: { quantity: toStorage(newQty).toString(), value: toStorage(newValue).toString(), avgCost: toStorage(newAvg).toString(), lastTxAt: input.txDate, version: { increment: 1 } },
     });
 
-    const layerQty = pos.quantity.lt(0) ? qty.plus(pos.quantity) : qty;
-    if (createLayer && layerQty.gt(0)) {
+    for (const b of batches) {
       await tx.fifoLayer.create({
-        data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: input.txDate, originalQty: toStorage(layerQty).toString(), remainingQty: toStorage(layerQty).toString(), unitCost: toStorage(unitCost).toString() },
+        data: { hotelId: input.hotelId, warehouseId: input.warehouseId, productId: input.productId, sourceTxId: stx.id, receivedAt: b.receivedAt, originalQty: toStorage(b.quantity).toString(), remainingQty: toStorage(b.quantity).toString(), unitCost: toStorage(b.unitCost).toString() },
       });
     }
     for (const d of fifoDraws) {
@@ -303,6 +339,7 @@ export async function transferStock(
       type: "TRANSFER_IN",
       quantity: q,
       exactTotal: D(out.totalCost.toString()).neg(),
+      layersFromTxId: out.id,
       txDate: input.txDate,
       sourceType: "TRANSFER",
       sourceId: group,
@@ -428,6 +465,19 @@ export async function currentUnitCosts(db: Db, hotelId: string, productIds?: str
     else if (r._max.avgCost && D(r._max.avgCost.toString()).gt(0)) out.set(r.productId, D(r._max.avgCost.toString()));
   }
   return out;
+}
+
+/**
+ * What the next consumption of each FIFO product costs, hotel-wide: the unit cost of the oldest open layer across
+ * the hotel's stores (stock unit). Products without open layers (no stock) are not in the map.
+ */
+export async function fifoNextCosts(db: Db, hotelId: string, productIds?: string[]): Promise<Map<string, Decimal>> {
+  const rows = await db.$queryRaw<Array<{ productId: string; unitCost: Prisma.Decimal }>>`
+    SELECT DISTINCT ON ("productId") "productId", "unitCost" FROM "FifoLayer"
+    WHERE "hotelId" = ${hotelId} AND "remainingQty" > 0
+    ORDER BY "productId", "receivedAt" ASC, "id" ASC`;
+  const want = productIds ? new Set(productIds) : null;
+  return new Map(rows.filter((r) => !want || want.has(r.productId)).map((r) => [r.productId, D(r.unitCost.toString())]));
 }
 
 export { ZERO };

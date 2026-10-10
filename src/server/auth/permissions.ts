@@ -17,6 +17,8 @@ export const PERMISSIONS = [
   "inventory:receive",
   "inventory:count",
   "inventory:adjust",
+  // soft-delete an unposted stock count: company administrator (general management) only
+  "count:delete",
   "recipe:view",
   "recipe:manage",
   "recipe:approve",
@@ -79,7 +81,7 @@ const OPERATIONAL: Permission[] = [
 
 export const ROLE_TEMPLATES: RoleTemplate[] = [
   { key: "admin", name: "Company Administrator", allDepartments: true, permissions: ALL },
-  { key: "cost_controller", name: "Cost Controller", allDepartments: true, permissions: ALL.filter((p) => p !== "admin:users" && p !== "admin:hotels") },
+  { key: "cost_controller", name: "Cost Controller", allDepartments: true, permissions: ALL.filter((p) => p !== "admin:users" && p !== "admin:hotels" && p !== "count:delete") },
   {
     key: "fb_manager",
     name: "F&B Manager",

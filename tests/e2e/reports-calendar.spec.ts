@@ -31,7 +31,7 @@ test("imports: product master preview from CSV flags duplicates and invalid rows
 test("control calendar: overdue control can be marked done; weekly review renders (spec 257–258)", async ({ page }) => {
   await login(page, "controller");
   await page.goto("/calendar");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost control calendar");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost control calendar", { ignoreCase: true }); // headings are shown in title case
   const overdue = page.getByRole("row").filter({ hasText: "OVERDUE" }).first();
   if (await overdue.count()) {
     answerDialogs(page, ["E2E check"]);

@@ -2,27 +2,34 @@ import { prisma } from "../../db";
 import { listRecipes, recipeCost } from "../../services/recipes";
 import type { CostedLine } from "@/domain/recipe-cost";
 import type { ReportDef, XValue } from "../types";
+import { localDay } from "@/lib/format";
 
-/** /recipes — the recipe list with the search and type filters. */
+/** /recipes — the recipe list with the search, type and created / updated date filters. */
 export const recipes: ReportDef = {
-  async load({ actor, hotelId, t, q }) {
+  async load({ actor, hotelId, hotel, t, q }) {
     const search = q.get("q") || undefined;
     const type = q.get("type") || undefined;
-    const rows = await listRecipes(prisma, actor, hotelId, { q: search, type });
+    const from = q.get("from") || undefined;
+    const to = q.get("to") || undefined;
+    const rows = await listRecipes(prisma, actor, hotelId, { q: search, type, from, to });
+    const fmt = (d: string | undefined) => (d ? d.split("-").reverse().join(".") : "…");
     return {
       title: t("Recipes"),
       fileName: "receteler",
-      filters: [[t("Search"), search ?? "—"], [t("Recipe type"), type ? t(type) : t("All types")]],
+      filters: [[t("Search"), search ?? "—"], [t("Recipe type"), type ? t(type) : t("All types")], [t("Created or updated"), from || to ? `${fmt(from)} – ${fmt(to)}` : "—"]],
       tables: [{
         columns: [
           { key: "name", header: t("Recipe") }, { key: "code", header: t("Code") }, { key: "pos", header: t("POS code") }, { key: "type", header: t("Type") }, { key: "dept", header: t("Department") },
           { key: "version", header: t("Version") }, { key: "portionCost", header: t("Portion cost"), type: "money" }, { key: "price", header: t("Price"), type: "money" },
           { key: "fc", header: t("Food cost %"), type: "pct" }, { key: "margin", header: t("Margin %"), type: "pct" }, { key: "status", header: t("Status") },
+          { key: "created", header: t("Created on"), type: "date" }, { key: "updated", header: t("Updated on"), type: "date" },
         ],
         rows: rows.map((r) => ({
           name: r.name, code: r.code, pos: r.posCode, type: t(r.type), dept: r.department, version: r.currentVersion ? `v${r.currentVersion}` : null,
           portionCost: r.portionCost, price: r.sellingPrice, fc: r.foodCostPct, margin: r.grossMarginPct,
           status: r.error ? t("error") : !r.currentVersion ? t("no approved version") : r.complete ? t("complete") : t("missing cost"),
+          // moments shown as the hotel's local day, as on the page
+          created: localDay(hotel.timezone, r.createdAt), updated: localDay(hotel.timezone, r.updatedAt),
         })),
       }],
     };
@@ -31,10 +38,10 @@ export const recipes: ReportDef = {
 
 /** /recipes/[id] — one recipe: cost lines (sub-recipes indented) and versions. */
 export const recipe: ReportDef = {
-  async load({ actor, hotelId, t, q }) {
+  async load({ actor, hotelId, hotel, t, q }) {
     const id = q.get("id") ?? "";
     const { result: c, version } = await recipeCost(prisma, actor, hotelId, id);
-    const r = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
+    const r = await prisma.recipe.findFirstOrThrow({ where: { id, hotelId, deletedAt: null }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
     const lines: Array<Record<string, XValue>> = [];
     const walk = (ls: CostedLine[], depth: number) => {
       for (const l of ls) {
@@ -45,7 +52,7 @@ export const recipe: ReportDef = {
     walk(c.lines, 0);
     return {
       title: r.name,
-      subtitle: `${r.code} · ${t(r.type)} · ${r.department?.name ?? "—"} · v${version.version} (${t(version.status)})`,
+      subtitle: `${r.code} · ${t(r.type)} · ${r.department?.name ?? "—"} · v${version.version} (${t(version.status)}) · ${t("Created on")} ${localDay(hotel.timezone, r.createdAt).split("-").reverse().join(".")} · ${t("Updated on")} ${localDay(hotel.timezone, r.updatedAt).split("-").reverse().join(".")}`,
       fileName: `recete-${r.code}`,
       tables: [
         {

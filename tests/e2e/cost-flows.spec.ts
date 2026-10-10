@@ -10,8 +10,8 @@ test.describe("authentication & navigation", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("alert").filter({ hasText: "Invalid" })).toContainText("Invalid email or password");
     await login(page, "controller");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence");
-    await expect(page.getByText("Actual cost (inventory)")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence", { ignoreCase: true }); // headings are shown in title case
+    await expect(page.getByText("Actual cost %")).toBeVisible();
     await expect(page.getByText("Unexplained variance")).toBeVisible();
   });
 });
@@ -30,6 +30,25 @@ test("purchase flow: receipt posts stock and appears in the ledger (spec §284)"
   await expect(page.getByRole("cell", { name: inv })).toBeVisible();
   await page.goto("/inventory/ledger?type=PURCHASE");
   await expect(page.getByRole("cell", { name: "Tomato" }).first()).toBeVisible();
+});
+
+test("order e-mail template: edited with a live preview, reset to the default (trial: every feature open)", async ({ page }) => {
+  page.on("dialog", (d) => void d.accept());
+  await login(page, "purchasing");
+  await page.goto("/purchasing/orders?tab=auto");
+  await expect(page.getByText("Premium · open (trial)")).toBeVisible();
+  await page.getByText("Order e-mail template").click();
+  const preview = page.getByTestId("order-email-preview");
+  await expect(preview).toContainText("için aşağıdaki ürünlere ihtiyacımız var"); // the built-in Turkish template
+  await expect(preview.locator("table")).toBeVisible();
+  const tag = uniq();
+  await page.getByLabel("E-mail text").fill(`Merhaba {supplier}, ${tag}\n{lines}`);
+  await expect(preview).toContainText(tag);
+  await page.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("Order e-mail template saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.getByText("The default template is back.")).toBeVisible();
+  await expect(preview).not.toContainText(tag);
 });
 
 test("recipe flow: create with live server-side cost, approve, view cost explosion (spec §279)", async ({ page }) => {
@@ -113,7 +132,7 @@ test("variance page reconciles and export is permission-gated (spec §243)", asy
 test("department isolation in the UI and API (spec §242, §274)", async ({ page }) => {
   await login(page, "pastry");
   await page.goto("/recipes");
-  await expect(page.getByRole("link", { name: "Tiramisu" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Tiramisu", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Classic Burger" })).toHaveCount(0);
   // nav does not offer purchasing; direct API call is refused server-side
   await expect(page.getByRole("link", { name: "Purchasing" })).toHaveCount(0);
@@ -130,7 +149,7 @@ test("department isolation in the UI and API (spec §242, §274)", async ({ page
 test("Excel export: page offers .xlsm download and one-time API token (spec 2, 102, 123)", async ({ page }) => {
   await login(page, "controller");
   await page.getByRole("link", { name: "Excel Export" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Excel full cost report");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Excel full cost report", { ignoreCase: true }); // headings are shown in title case
   await page.getByLabel("Start date").fill("2026-09-01");
   await page.getByLabel("End date").fill("2026-09-30");
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.getByRole("button", { name: "Download .xlsm" }).click()]);

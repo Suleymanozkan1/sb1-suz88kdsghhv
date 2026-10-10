@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { parseNum } from "@/lib/format";
-import { useT } from "@/i18n/client";
+import { parseNum, titleTr } from "@/lib/format";
+import { useT, useLocale } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 export function AddLine({ sessionId, recipes }: { sessionId: string; recipes: { id: string; name: string; unit: string }[] }) {
   const t = useT();
+  const locale = useLocale();
   const router = useRouter();
   const [mode, setMode] = useState<"product" | "recipe">("product");
   const [product, setProduct] = useState<PickedProduct | null>(null);
@@ -39,7 +41,7 @@ export function AddLine({ sessionId, recipes }: { sessionId: string; recipes: { 
       <div><Label htmlFor="bl-mode">{t("Item type")}</Label><Select id="bl-mode" value={mode} onChange={(e) => setMode(e.target.value as "product" | "recipe")}><option value="product">{t("Product")}</option><option value="recipe">{t("Dish (recipe)")}</option></Select></div>
       <div className="md:col-span-2">
         <Label htmlFor="bl-item">{mode === "product" ? t("Product") : t("Dish")}</Label>
-        {mode === "product" ? <ProductPicker id="bl-item" value={product} onChange={setProduct} /> : <Select id="bl-item" value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>{recipes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select>}
+        {mode === "product" ? <ProductPicker id="bl-item" value={product} onChange={setProduct} /> : <Select id="bl-item" value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>{recipes.map((r) => <option key={r.id} value={r.id}>{titleTr(r.name, locale)}</option>)}</Select>}
       </div>
       <div><Label htmlFor="bl-qty">{t("Quantity")}</Label><Input id="bl-qty" name="quantity" inputMode="decimal" required /></div>
       <div><Label htmlFor="bl-unit">{t("Unit")}</Label><Select id="bl-unit" name="unit" key={`${mode}-${product?.id}-${recipeId}`}>{(mode === "product" ? unitsFor(product) : [recipeUnit, ...(recipeUnit === "kg" ? ["g"] : recipeUnit === "l" ? ["ml"] : [])]).map((u) => <option key={u}>{u}</option>)}</Select></div>
@@ -90,7 +92,7 @@ export function CloseSession({ sessionId, items, expectedCovers, microsCovers }:
         <tbody className="divide-y divide-ink-100">
           {items.map((i) => (
             <tr key={i.key}>
-              <Td>{i.name}<span className="block text-xs text-ink-400">{i.isDish ? t("dish: reusable = carried value") : t("product: reusable returns to stock")}</span></Td>
+              <Td><Title>{i.name}</Title><span className="block text-xs text-ink-400">{i.isDish ? t("dish: reusable = carried value") : t("product: reusable returns to stock")}</span></Td>
               <Td align="right">{Number(i.input)} {i.unit}</Td>
               {CLASSES.map(([k, l]) => (
                 <Td key={k} align="right"><Input aria-label={`${t(l)} ${i.name}`} className="w-20 text-right" inputMode="decimal" value={vals[i.key]?.[k] ?? ""} onChange={(e) => setVals({ ...vals, [i.key]: { ...vals[i.key], [k]: e.target.value } })} /></Td>

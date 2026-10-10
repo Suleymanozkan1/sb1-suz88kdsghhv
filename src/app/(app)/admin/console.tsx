@@ -21,7 +21,7 @@ interface Props {
   users: User[];
   invites: Invite[];
   departments: Dept[];
-  warehouses: Array<{ id: string; code: string; name: string; active: boolean; department: string | null }>;
+  warehouses: Array<{ id: string; code: string; name: string; active: boolean; department: string | null; countApprovers: string[] }>;
   categories: Array<{ id: string; code: string; name: string; group: string; parentId: string | null }>;
   groups: string[];
 }
@@ -266,6 +266,26 @@ export function AdminConsole(p: Props) {
                 ))}
               </tbody>
             </Table>
+          </Card>
+          <Card title={t("Count approvers")} padded={false}>
+            <p className="px-4 pt-3 text-sm text-ink-500">{t("Which roles may approve the stock counts of each warehouse. No role ticked: every role with the approval right. Nobody can approve their own count.")}</p>
+            <ul className="divide-y divide-ink-100">
+              {p.warehouses.filter((w) => w.active).map((w) => (
+                <li key={w.id} className="px-4 py-3">
+                  <form className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/count-approvers", { warehouseId: w.id, roleKeys: multi(f, "roleKeys") }), "Count approvers saved"); }}>
+                    <fieldset className="min-w-0">
+                      <legend className="mb-1 text-sm font-medium text-ink-800">{w.name}</legend>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {p.roles.map((r) => (
+                          <label key={r.key} className="flex items-center gap-1.5 text-sm"><input type="checkbox" name="roleKeys" value={r.key} defaultChecked={w.countApprovers.includes(r.key)} /> {t(r.name)}</label>
+                        ))}
+                      </div>
+                    </fieldset>
+                    <Button type="submit" size="sm" variant="secondary" className="shrink-0">{t("Save")}</Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
           </Card>
         </>
       )}

@@ -13,8 +13,8 @@ const ROOT = path.join(process.cwd(), "src/app/(app)");
 const EXEMPT: Record<string, string> = {
   "forbidden/page.tsx": "error page",
   "recipes/new/page.tsx": "form only (the new recipe)",
+  "recipes/[id]/edit/page.tsx": "form only (edit a recipe)",
   "excel/page.tsx": "the workbook export page itself",
-  "rooms/page.tsx": "room cost — on hold until the next meeting (no code changes)",
   "operations/page.tsx": "operating costs — on hold until the next meeting (no code changes)",
 };
 

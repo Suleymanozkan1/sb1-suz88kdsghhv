@@ -55,13 +55,13 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
   const end = new Date(period.endDate.getTime() + 86400000);
   const range = { gte: period.startDate, lt: end };
   const days = Math.trunc((end.getTime() - period.startDate.getTime()) / 86400000 + 0.5);
-  const [pendingApprovals, unmappedSales, openPOs, counts, pendingWaste, draftCounts, openBuffets, minibarStore, minibarMoves, noInvoice, salesDays, outletSales, rooms, pmsDays, payroll, utilities, rules, allocRun, production] = await Promise.all([
+  const [pendingApprovals, unmappedSales, openPOs, counts, pendingWaste, draftCounts, openBuffets, minibarStore, minibarMoves, noInvoice, salesDays, outletSales, rooms, pmsDays, payroll, utilities, production] = await Promise.all([
     db.approval.count({ where: { hotelId, status: "PENDING" } }),
     db.saleLine.count({ where: { hotelId, saleDate: range, recipeVersionId: null } }),
     db.purchaseOrder.count({ where: { hotelId, status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] }, expectedDate: { lte: period.endDate } } }),
     db.stockCount.count({ where: { hotelId, status: "POSTED", countDate: { gte: new Date(period.endDate.getTime() - 7 * 86400000), lt: range.lt } } }),
     db.wasteRecord.count({ where: { hotelId, status: "PENDING", wasteDate: range } }),
-    db.stockCount.count({ where: { hotelId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, countDate: range } }),
+    db.stockCount.count({ where: { hotelId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, deletedAt: null, countDate: range } }),
     db.buffetSession.count({ where: { hotelId, status: "OPEN", serviceDate: range } }),
     db.warehouse.count({ where: { hotelId, code: "MINIBAR_ROOMS" } }),
     db.minibarMovement.count({ where: { hotelId, movedAt: range } }),
@@ -72,8 +72,6 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
     db.occupancyImport.count({ where: { hotelId, businessDate: range } }),
     db.expense.count({ where: { hotelId, status: "POSTED", categoryGroup: "LABOR", expenseDate: range } }),
     db.expense.count({ where: { hotelId, status: "POSTED", categoryGroup: "ENERGY", expenseDate: range } }),
-    db.costAllocationRule.count({ where: { hotelId, active: true } }),
-    db.allocationRun.count({ where: { hotelId, periodId: period.id, status: "POSTED" } }),
     db.productionBatch.count({ where: { hotelId, productionDate: range, status: { not: "POSTED" } } }),
   ]);
   const sd = Number(salesDays[0]?.n ?? 0);
@@ -94,7 +92,7 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
   if (rooms > 0) checks.push({ key: "pms", label: "PMS occupancy imported for every day", ok: pmsDays >= days, critical: false, detail: `${pmsDays} of ${days} days` });
   if (rooms > 0) checks.push({ key: "payroll", label: "Payroll posted", ok: payroll > 0, critical: false, detail: `${payroll} payroll lines` });
   if (rooms > 0) checks.push({ key: "utilities", label: "Utility invoices posted", ok: utilities > 0, critical: false, detail: `${utilities} utility lines` });
-  if (rules > 0) checks.push({ key: "allocation", label: "Cost allocation posted", ok: allocRun > 0, critical: false, detail: allocRun ? "posted" : "not posted" });
+  // no "cost allocation posted" check: the allocation screen was removed (feedback r2 §12)
   return checks;
 }
 

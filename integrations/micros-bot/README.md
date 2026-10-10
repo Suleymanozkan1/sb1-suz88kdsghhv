@@ -76,6 +76,7 @@ dosyalarında asla yer almaz. Tüm ayarlar `.env.example` içinde açıklamalıd
 npx tsx src/cli.ts run                                   # varsayılan iş günü, tüm veri türleri
 npx tsx src/cli.ts run --day=2026-10-06                  # belirli bir gün (tekrar göndermek güvenlidir)
 npx tsx src/cli.ts run --only=checks,covers              # yalnız bazı türler: checks, invoices, covers, minibar, occupancy
+npx tsx src/cli.ts run --only=products                   # Micros'taki tüm ürün kartları (gece çalışmasında okunmaz)
 npx tsx src/cli.ts run --day=2026-10-06 --dry-run        # HotelCost'a göndermez, JSON'u ekrana yazar
 npx tsx src/cli.ts daemon                                # sürekli mod: her gece RUN_AT + "Şimdi çalıştır" istekleri
 npx tsx src/cli.ts check-config [--login]                # ayar kontrolü
@@ -135,7 +136,9 @@ Sık görülen mesajlar:
 
 Her ekranın okunacak öğeleri ve oraya nasıl gidileceği iki JSON dosyasındadır; kodu değiştirmeye gerek yoktur:
 
-- `selectors/micros.json` — `login`, `checks` (çekler), `invoices` (satınalma faturaları), `covers`
+- `selectors/micros.json` — `login`, `checks` (çekler), `invoices` (satınalma faturaları), `covers`, `products`
+  (ürün kartları: HotelCost'ta **Ürünler → Ürünleri çek** ile istenir; son çekimden bu yana eklenenler okunur,
+  gece çalışmasında okunmaz)
 - `selectors/opera.json` — `login`, `statistics` (gece kapanışı istatistikleri, dolu odalar), `minibar`
 
 `TODO` ile başlayan her değer doldurulmalıdır; kullanılmayan alanlar `null` yapılır. `check-config` doldurulmamış
@@ -179,6 +182,7 @@ yaptığını izleyebilir, sonucu ekranda JSON olarak görebilirsiniz (HotelCost
 | `checks` | liste: `list`, `row`, `rowLink`, `noData`, `nextPage`; çek: `checkNo`, `outlet` (revenue center), `closedAt`; satırlar: `lineRow` + `itemCode`, `itemName`, `qty`, `amount` (indirim sonrası net, KDV hariç) |
 | `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`, `total` (KDV dahil genel toplam, isteğe bağlı — kalemler tutmazsa HotelCost faturayı reddeder); kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
 | `covers` | `table`, `row`, `columns.outlet`, `columns.meal` (yoksa `defaultMeal`), `columns.covers` |
+| `products` | `steps` (`{since}` = son çekim tarihi), `table`, `row`, `noData`, `columns.name`, `code`, `unit`, `packSize` + `packUnit` (kilo / gramaj, ör. 830 gr), `taxRatePct`, `category`, `createdAt` |
 | `statistics` (Opera) | `fields.availableRooms`, `occupiedRooms`, `guests`, `roomRevenue`, `outOfOrder`; `rooms` (dolu oda listesi, isteğe bağlı) |
 | `minibar` (Opera) | `table`, `row`, `columns.room`, `itemCode`, `itemName`, `qty`, `reference` (folyo/hareket no), `postedAt` |
 
@@ -240,7 +244,7 @@ src/runner.ts                 bir çalışma: giriş → ekranları oku → doğ
 src/daemon.ts                 gece zamanlaması + "Şimdi çalıştır" yoklaması
 src/config.ts                 .env / ortam değişkenleri
 src/hotelcost/client.ts       HotelCost API (parçalı gönderim, yeniden deneme)
-src/screens/micros/*.ts       login, checks, invoices, covers
+src/screens/micros/*.ts       login, checks, invoices, covers, products
 src/screens/opera/*.ts        statistics (doluluk), minibar
 src/invoices/                 fatura kaynağı arayüzü (web / file) ve CSV-XLSX okuyucu
 src/browser/                  tarayıcı, seçici dosyası, ortak ekran yardımcıları

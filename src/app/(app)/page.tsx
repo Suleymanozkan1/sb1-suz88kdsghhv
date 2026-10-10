@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
-import { homeDashboard } from "@/server/services/insights";
+import { homeDashboard, LEVEL_LABEL, STOCK_LEVELS } from "@/server/services/insights";
 import { BasicDashboard } from "./basic-dashboard";
+import { AlertList, PriceSummary } from "./dashboard-panels";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone, severityTone } from "@/components/ui";
+import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th, levelTone } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
-import { money, pct, qty, dateTime } from "@/lib/format";
+import { money, pct, qty } from "@/lib/format";
 import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
-import { getLocale, getT } from "@/i18n/server";
-import { translateMessage } from "@/i18n/core";
+import { getT } from "@/i18n/server";
 import { homeHref } from "@/components/nav";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Dashboard" };
 
@@ -28,7 +29,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     if (home && home !== "/") redirect(home);
     return <Empty title={t("Nothing to show for your role on this page")}>{t("Ask your company administrator if you need access.")}</Empty>;
   }
-  const locale = await getLocale();
   const range = monthRange(await searchParams);
   const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
@@ -37,6 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const d = res.data.data;
   const k = d.kpis;
   const cur = hotel.baseCurrency;
+  const qs = `from=${range.fromStr}&to=${range.toStr}`;
   const maxComp = Math.max(...d.breakdown.components.map((c) => Math.abs(Number(c.amount))), 1);
 
   return (
@@ -64,18 +65,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label={t("Actual cost (inventory)")} value={money(k.actualCost, cur, 0)} hint={t("Opening + purchases ± transfers − closing")} />
-        <Stat label={t("Theoretical cost")} value={money(k.theoreticalCost, cur, 0)} hint={t("Σ sold × recipe cost at time of sale")} />
+        {/* cost % cards lead with the amount; the % of revenue sits small under it (feedback r2 §2) */}
+        <Stat label={t("Actual cost %")} value={<>{money(k.actualCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.actualCostPct) })}</span></>} hint={t("Opening + purchases ± transfers − closing")} />
+        <Stat label={t("Theoretical cost %")} value={<>{money(k.theoreticalCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.theoreticalCostPct) })}</span></>} hint={t("Σ sold × recipe cost at time of sale")} />
         <Stat label={t("Variance")} value={money(k.variance, cur, 0)} tone={Number(k.variance) > 0 ? "bad" : "good"} hint={t("Actual − theoretical")} />
         <Stat label={t("Unexplained variance")} value={money(k.unexplained, cur, 0)} tone={Math.abs(Number(k.unexplained)) > 0 ? "warn" : "good"} hint={t("After price, waste, staff meal, comp")} />
-        <Stat label={t("Actual cost %")} value={pct(k.actualCostPct)} hint={t("Revenue {amount}", { amount: money(k.revenue, cur, 0) })} />
-        <Stat label={t("Theoretical cost %")} value={pct(k.theoreticalCostPct)} hint={t("Gap {gap} pts", { gap: pct(k.costPctVariancePts, 2) })} />
+        <Stat label={t("Revenue")} value={money(k.revenue, cur, 0)} hint={t("Gap {gap} pts", { gap: pct(k.costPctVariancePts, 2) })} />
         <Stat label={t("Waste cost")} value={money(k.wasteCost, cur, 0)} hint={t("{ofCost} of cost · {ofRevenue} of revenue", { ofCost: pct(k.wastePctOfCost), ofRevenue: pct(k.wastePctOfRevenue) })} />
-        <Stat label={t("Stock value")} value={money(k.stockValue, cur, 0)} hint={t("Purchases {amount} · {count} receipts", { amount: money(k.purchaseSpend, cur, 0), count: k.receipts })} />
+        <Stat label={t("Stock value")} value={money(k.stockValue, cur, 0)} hint={t("Current, from the stock ledger")} />
+        <Stat label={t("Purchases")} value={money(k.purchaseSpend, cur, 0)} hint={t("{count} receipts", { count: k.receipts })} />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card title={t("Why is actual different from theoretical?")} className="lg:col-span-2" actions={<Link href={`/variance?from=${range.fromStr}&to=${range.toStr}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("Drill down")} <ArrowRight className="h-3 w-3" /></Link>}>
+        <Card title={t("Why is actual different from theoretical?")} className="lg:col-span-2" actions={<Link href={`/variance?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("Drill down")} <ArrowRight className="h-3 w-3" /></Link>}>
           <ul className="space-y-3">
             {d.breakdown.components.map((c) => {
               const v = Number(c.amount);
@@ -103,7 +105,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <tbody className="divide-y divide-ink-100">
                 {d.topVariance.map((p) => (
                   <tr key={p.productId}>
-                    <Td>{p.name}</Td>
+                    <Td><Title>{p.name}</Title></Td>
                     <Td align="right">{qty(p.theoreticalQty, p.unit)}</Td>
                     <Td align="right">{qty(p.actual.qty, p.unit)}</Td>
                     <Td align="right">{qty(p.waste.qty, p.unit)}</Td>
@@ -117,11 +119,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
         <div className="space-y-4">
           <Card title={t("Stock status")}>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              {(["NORMAL", "LOW", "CRITICAL", "OUT_OF_STOCK", "OVERSTOCK", "DEAD"] as const).map((s) => (
-                <Link key={s} href="/inventory" className="rounded-lg border border-ink-100 p-2 hover:bg-ink-50">
+            <div className="grid grid-cols-2 gap-2 text-center">
+              {STOCK_LEVELS.map((s) => (
+                <Link key={s} href={`/inventory?level=${s}`} className="rounded-lg border border-ink-100 p-2 hover:bg-ink-50">
                   <p className="text-lg font-semibold tabular-nums">{d.stock[s]}</p>
-                  <p className="text-[11px] uppercase tracking-wide text-ink-500">{t(s.replace(/_/g, " ").toLowerCase())}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-ink-500">{t(LEVEL_LABEL[s]!)}</p>
                 </Link>
               ))}
             </div>
@@ -129,7 +131,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <ul className="mt-3 divide-y divide-ink-100 text-sm">
                 {d.critical.map((c) => (
                   <li key={c.productId} className="flex items-center justify-between py-1.5">
-                    <span className="truncate">{c.name}</span>
+                    <span className="truncate"><Title>{c.name}</Title></span>
                     <Badge tone={levelTone[c.level]}>{qty(c.quantity, c.unit)}</Badge>
                   </li>
                 ))}
@@ -147,42 +149,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card title={t("Top waste products")}>
+        <Card title={<Link href={`/insights/waste?${qs}`} className="hover:underline"><Title>{t("Top waste products")}</Title></Link>} actions={<Link href={`/insights/waste?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("Top 20")} <ArrowRight className="h-3 w-3" /></Link>}>
           {d.topWaste.length === 0 ? <Empty title={t("No waste recorded")} /> : (
             <ul className="divide-y divide-ink-100 text-sm">
               {d.topWaste.map((w) => (
-                <li key={w.productId} className="flex justify-between py-1.5"><span>{w.name}</span><span className="tabular-nums">{money(w.cost, cur, 0)}</span></li>
+                <li key={w.productId} className="flex justify-between gap-2 py-1.5"><span><Title>{w.name}</Title><span className="block text-xs text-ink-400">{qty(w.qty, w.unit)}</span></span><span className="tabular-nums">{money(w.cost, cur, 0)}</span></li>
               ))}
             </ul>
           )}
         </Card>
-        <Card title={t("Supplier price increases")}>
-          {d.priceIncreases.length === 0 ? <Empty title={t("No price increases")} /> : (
-            <ul className="divide-y divide-ink-100 text-sm">
-              {d.priceIncreases.map((p, i) => (
-                <li key={i} className="py-1.5">
-                  <div className="flex justify-between"><span className="font-medium">{p.product}</span><Badge tone="red">+{pct(p.changePct)}</Badge></div>
-                  <p className="text-xs text-ink-500">{p.supplier}: {money(p.previous, cur)} → {money(p.current, cur)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
+        <Card title={<Link href={`/insights/price-changes?${qs}`} className="hover:underline"><Title>{t("Supplier price increases / decreases")}</Title></Link>} actions={<Link href={`/insights/price-changes?${qs}`} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">{t("All changes")} <ArrowRight className="h-3 w-3" /></Link>}>
+          <PriceSummary p={d.prices} cur={cur} />
         </Card>
-        <Card title={t("Alerts")}>
-          {d.alerts.length === 0 ? <Empty title={t("No open alerts")} /> : (
-            <ul className="space-y-2 text-sm">
-              {d.alerts.map((a) => (
-                <li key={a.id} className="flex gap-2">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
-                  <div>
-                    <div className="flex items-center gap-2"><span className="font-medium">{translateMessage(locale, a.title)}</span><Badge tone={severityTone[a.severity]}>{t(a.severity)}</Badge></div>
-                    <p className="text-xs text-ink-500">{translateMessage(locale, a.message)}</p>
-                    <p className="text-[11px] text-ink-400">{dateTime(a.createdAt, hotel.timezone)}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+        <Card title={`${t("Alerts")} (${d.alerts.length})`}>
+          <AlertList alerts={d.alerts} timezone={hotel.timezone} />
         </Card>
       </div>
       <p className="mt-6 text-xs text-ink-400">{t("Signed in as {name} ({role}). All figures come from the shared cost engine and reconcile with the Theoretical vs Actual report.", { name: actor.name, role: t(actor.roleName) })}</p>

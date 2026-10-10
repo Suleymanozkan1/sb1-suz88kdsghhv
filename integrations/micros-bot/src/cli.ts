@@ -2,7 +2,7 @@
 /**
  * HotelCost Micros/Opera bot — command line.
  *
- *   run [--day=YYYY-MM-DD] [--only=checks,invoices,covers,minibar,occupancy] [--dry-run]
+ *   run [--day=YYYY-MM-DD] [--only=checks,invoices,covers,minibar,occupancy,products] [--dry-run]
  *   daemon                 nightly run at RUN_AT + "Şimdi çalıştır" polling
  *   check-config [--login] show the configuration (secrets masked), TODO selectors, reachability;
  *                          --login also tries to sign in to Micros / Opera

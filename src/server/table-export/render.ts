@@ -3,6 +3,7 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { csvSafe } from "../util/csv";
+import { autoFitColumns } from "../excel/autofit";
 import type { XCol, XReport, XTable, XType, XValue } from "./types";
 
 const FONT = path.join(process.cwd(), "assets", "fonts", "DejaVuSans.ttf");
@@ -96,14 +97,47 @@ function excelValue(v: XValue, type: XType | undefined): ExcelJS.CellValue {
   return safeText(s);
 }
 
-const sheetName = (s: string, used: Set<string>) => {
-  const base = s.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || "Rapor";
-  let n = 1;
+/** Excel's limit for a sheet (tab) name. */
+const SHEET_MAX = 31;
+
+/** Long titles with a shorter full name for the sheet tab (never a cut-off word). */
+const SHORT_SHEET: Record<string, string> = {
+  "Haftalık maliyet değerlendirmesi": "Haftalık maliyet incelemesi",
+  "Why is actual different from theoretical": "Actual vs theoretical",
+  "Gerçekleşen neden teorikten farklı": "Gerçekleşen ve teorik farkı",
+};
+
+/**
+ * A complete, readable sheet name within 31 characters: characters Excel forbids become spaces, then a long
+ * title loses its parenthesis ("Top 10 variance items (unexplained usage)" → "Top 10 variance items"), then its
+ * trailing " — / · / - " parts ("Cost intelligence — Grand Hotel" → "Cost intelligence"), and only as a last
+ * resort whole trailing words. Duplicates get " (2)", " (3)" ….
+ */
+export function sheetName(title: string, used: Set<string>): string {
+  const clean = title.replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim().replace(/^'+|'+$/g, "").trim();
+  const fit = (s: string, max: number): string => {
+    s = SHORT_SHEET[s] ?? s;
+    if (s.length <= max) return s;
+    const noParen = s.replace(/\s*\([^()]*\)/g, "").trim();
+    if (noParen && noParen !== s) return fit(noParen, max);
+    const parts = s.split(/(\s+[—–·|-]\s+)/); // [part, separator, part, …]
+    if (parts.length > 1 && parts[0]!.length <= max) {
+      let out = parts[0]!;
+      for (let i = 1; i + 1 < parts.length && (out + parts[i] + parts[i + 1]).length <= max; i += 2) out += parts[i]! + parts[i + 1]!;
+      return out;
+    }
+    const words = s.split(" ");
+    let out = "";
+    for (const w of words) if (`${out} ${w}`.trim().length <= max) out = `${out} ${w}`.trim();
+    else break;
+    return out || s.slice(0, max);
+  };
+  const base = fit(clean, SHEET_MAX) || "Rapor";
   let name = base;
-  while (used.has(name.toLowerCase())) name = `${base.slice(0, 26)} ${++n}`;
+  for (let n = 2; used.has(name.toLowerCase()); n++) name = `${fit(base, SHEET_MAX - ` (${n})`.length)} (${n})`;
   used.add(name.toLowerCase());
   return name;
-};
+}
 
 export async function renderXlsx(r: XReport, m: RenderMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -148,10 +182,8 @@ export async function renderXlsx(r: XReport, m: RenderMeta): Promise<Buffer> {
     if (!tb.rows.length) ws.getCell(header + 1, 1).value = m.labels.noRows;
     if (tb.columns.length && tb.rows.length) ws.autoFilter = { from: { row: header, column: 1 }, to: { row: header + tb.rows.length, column: tb.columns.length } };
     ws.views = [{ state: "frozen", ySplit: header }];
-    tb.columns.forEach((c, i) => {
-      const longest = Math.max(c.header.length, ...tb.rows.slice(0, 300).map((d) => displayValue(d[c.key], c.type, m.currency).length));
-      ws.getColumn(i + 1).width = Math.min(Math.max(longest + 2, 10), 60);
-    });
+    // widths from the header and the values as Excel shows them (number formats included); long text wraps
+    if (tb.columns.length) autoFitColumns(ws, { fromRow: header, header: { row: header }, min: 8, max: 60 });
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

@@ -9,19 +9,22 @@ const LABELS: Record<string, string> = { product: "Product", type: "Type", quant
 const MONEY = new Set(["totalCost", "estimatedValue", "varianceValue"]);
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
 
-/** Readable approval details: translated labels and enum codes, dd.mm.yyyy dates, money in the hotel currency. */
-export function approvalDetails(payload: unknown, t: T, currency: string): string {
+/** Readable approval details: translated labels and enum codes, dd.mm.yyyy dates, money in the hotel currency; `name` formats the product name for display. */
+export function approvalDetails(payload: unknown, t: T, currency: string, name: (s: string) => string = (s) => s): string {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
   return Object.entries(payload as Record<string, unknown>)
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .map(([k, v]) => {
       const s = String(v);
       const n = parseNum(s);
-      const val = MONEY.has(k) ? money(n, currency) : k === "quantity" && !Number.isNaN(n) ? qty(n) : k === "type" ? t(s) : ISO_DAY.test(s) ? date(s) : s;
+      const val = MONEY.has(k) ? money(n, currency) : k === "quantity" && !Number.isNaN(n) ? qty(n) : k === "type" ? t(s) : k === "product" ? name(s) : ISO_DAY.test(s) ? date(s) : s;
       return `${LABELS[k] ? t(LABELS[k]) : k}: ${val}`;
     })
     .join(" · ");
 }
+
+/** Action column text: every STOCK_ADJUSTMENT approval is a stock count waiting to be posted. */
+export const actionLabel = (action: string) => (action === "STOCK_ADJUSTMENT" ? "STOCK COUNT" : action.replace(/_/g, " "));
 
 /** /approvals — pending requests and the last 30 decisions (the user's departments only, as on screen). */
 export const approvals: ReportDef = {
@@ -36,12 +39,12 @@ export const approvals: ReportDef = {
         {
           title: t("Pending ({n})", { n: pending.length }),
           columns: [{ key: "requested", header: t("Requested"), type: "datetime" }, { key: "action", header: t("Action") }, { key: "by", header: t("Requested by") }, { key: "reason", header: t("Reason") }, { key: "details", header: t("Details") }],
-          rows: pending.map((a) => ({ requested: a.requestedAt, action: t(a.action.replace(/_/g, " ")), by: users.get(a.requestedById), reason: a.reason, details: approvalDetails(a.payload, t, hotel.baseCurrency) })),
+          rows: pending.map((a) => ({ requested: a.requestedAt, action: t(actionLabel(a.action)), by: users.get(a.requestedById), reason: a.reason, details: approvalDetails(a.payload, t, hotel.baseCurrency) })),
         },
         {
           title: t("Recent decisions"),
           columns: [{ key: "decided", header: t("Decided"), type: "datetime" }, { key: "action", header: t("Action") }, { key: "status", header: t("Status") }, { key: "by", header: t("Requested by") }, { key: "decidedBy", header: t("Decided by") }, { key: "note", header: t("Note") }],
-          rows: history.map((a) => ({ decided: a.decidedAt, action: t(a.action.replace(/_/g, " ")), status: t(a.status), by: users.get(a.requestedById), decidedBy: users.get(a.decidedById ?? ""), note: a.decisionNote })),
+          rows: history.map((a) => ({ decided: a.decidedAt, action: t(actionLabel(a.action)), status: t(a.status), by: users.get(a.requestedById), decidedBy: users.get(a.decidedById ?? ""), note: a.status === "CANCELLED" && a.decisionNote ? t(a.decisionNote) : a.decisionNote })),
         },
       ],
     };

@@ -4,12 +4,13 @@
  * screens, the export and Excel show the same figures.
  */
 import { D, Decimal, ZERO, sum, safeDiv } from "@/domain/money";
-import { ROOM_COMPONENTS, componentOfCategory, emptyComponents, roomCosts, rollup, channelReport, roomKpis, meterConsumption, laundryUnitCosts, stayInPeriod, type ComponentCosts, type RoomComponent } from "@/domain/rooms";
+import { ROOM_COMPONENTS, componentOfCategory, emptyComponents, roomCosts, rollup, roomKpis, roomRevenueKpis, meterConsumption, laundryUnitCosts, stayInPeriod, type ComponentCosts, type RoomComponent } from "@/domain/rooms";
 import type { Db } from "../db";
 import { type Actor, authorize, can } from "../auth/actor";
 import { occupancyStats, OCCUPYING, type OccupancyStats } from "./pms";
 import { BELOW_GOP, OPEX_CATEGORIES, UTILITIES } from "./opex";
 import { departmentRevenue, divisionIds, ROOMS_DIVISION } from "./revenue";
+import { monthlyRoomExpenses } from "./room-costs";
 
 export interface Range {
   from: Date;
@@ -38,10 +39,13 @@ export async function hotelOperatingCost(db: Db, hotelId: string, r: Range) {
   return { operating, belowGop };
 }
 
+/** Laundry department code: its sales (guest laundry) are shown as their own revenue line on the room cost page. */
+export const LAUNDRY_DEPT = "LAUN";
+
 export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: Range) {
   authorize(actor, "rooms:view", { hotelId });
-  const div = await divisionIds(db, hotelId, ROOMS_DIVISION);
-  const [depts, catName, costTx, roomExpenses, stays, rooms, occ, hotelCost, runs] = await Promise.all([
+  const [div, laundryDiv] = await Promise.all([divisionIds(db, hotelId, ROOMS_DIVISION), divisionIds(db, hotelId, LAUNDRY_DEPT)]);
+  const [depts, catName, costTx, roomExpenses, stays, rooms, occ, hotelCost, runs, monthly, laundrySales] = await Promise.all([
     db.department.findMany({ where: { hotelId } }),
     categoryNames(db, hotelId),
     db.costTransaction.findMany({ where: { hotelId, txDate: { gte: r.from, lt: r.to }, departmentId: { in: div } }, select: { kind: true, categoryGroup: true, categoryId: true, amount: true, departmentId: true, nature: true } }),
@@ -51,6 +55,8 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     occupancyStats(db, hotelId, r.from, r.to),
     hotelOperatingCost(db, hotelId, r),
     db.allocationRun.count({ where: { hotelId, status: "POSTED", toDate: { gt: r.from }, fromDate: { lt: r.to } } }),
+    monthlyRoomExpenses(db, hotelId, r.from, r.to),
+    db.saleLine.aggregate({ where: { hotelId, departmentId: { in: laundryDiv }, saleDate: { gte: r.from, lt: r.to } }, _sum: { netRevenue: true } }),
   ]);
   const code = new Map(depts.map((d) => [d.id, d.code]));
   const pool = emptyComponents();
@@ -64,6 +70,10 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     else direct = direct.plus(a);
   }
   const roomsDivisionCost = sum(ROOM_COMPONENTS.map((c) => pool[c]));
+  // payroll already posted to the Rooms division (expenses) AND monthly room expenses (which typically hold HK salaries)
+  // for the same period: both are added up, so the salaries may be counted twice - flagged, not silently netted
+  const laborOverlap = !pool.labor.isZero() && !monthly.total.isZero() ? { ledgerLabor: pool.labor, monthlyExpenses: monthly.total } : null;
+  pool.monthly = monthly.total; // entered monthly room expenses (HK salaries, meals, uniforms, supplies…) share the pool split
   // room-tagged expenses are direct to the room: take them out of the pool
   const directByRoom = new Map<string, Partial<ComponentCosts>>();
   for (const e of roomExpenses) {
@@ -81,17 +91,17 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     pool, stays: stayInputs, directByRoom, from: r.from, to: r.to,
   });
   const distribution = sum(stayInputs.map((s) => stayInPeriod(s, r.from, r.to).distribution));
-  const fullCost = roomsDivisionCost.plus(distribution);
+  const fullCost = roomsDivisionCost.plus(monthly.total).plus(distribution);
   const nights = res.basisNights;
   const costPerNight = nights ? fullCost.div(nights) : null;
-  const opCostPerNight = nights ? roomsDivisionCost.div(nights) : null;
   const totals = emptyComponents();
   for (const l of res.lines) for (const c of ROOM_COMPONENTS) totals[c] = totals[c].plus(l.components[c]);
   for (const c of ROOM_COMPONENTS) totals[c] = totals[c].plus(res.unassigned[c]);
   const revenue = sum(res.lines.map((l) => l.roomRevenue));
   const avgLos = stays.length ? stays.reduce((a, s) => a + s.nights, 0) / stays.length : null;
   const warnings: string[] = [];
-  if (!runs) warnings.push("No allocation is posted for this period: energy, maintenance and overhead of other departments are not yet in room cost.");
+  if (laborOverlap) warnings.push(`Payroll of ${laborOverlap.ledgerLabor.toFixed(2)} is already posted to the Rooms division and monthly room expenses of ${laborOverlap.monthlyExpenses.toFixed(2)} are added on top: if the monthly items include HK salaries, they are counted twice.`);
+  if (monthly.missingMonths.length) warnings.push(`No room cost expenses entered for ${monthly.missingMonths.join(", ")}.`);
   if (occ.source === "NONE") warnings.push("No occupancy data: import PMS statistics or reservations.");
   if (occ.source === "PMS_DAILY" && occ.reservationNights && Math.abs(occ.reservationNights - occ.occupiedRooms) > Math.max(1, occ.occupiedRooms * 0.02)) warnings.push(`Reservation room nights (${occ.reservationNights}) differ from PMS occupied rooms (${occ.occupiedRooms}) by more than 2%.`);
   if (!allSqm) warnings.push("Not every room has m²: pooled cost is split per occupied night (equal weight).");
@@ -99,6 +109,8 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
   if (!unassignedTotal.isZero()) warnings.push(`${unassignedTotal.toFixed(2)} could not be assigned to a room (stays without room number or no occupied nights).`);
   const kHotel = roomKpis({ cost: hotelCost.operating, occupiedRooms: occ.occupiedRooms, availableRooms: occ.availableRooms, guests: occ.guests });
   const kRooms = roomKpis({ cost: fullCost, occupiedRooms: occ.occupiedRooms, availableRooms: occ.availableRooms, guests: occ.guests });
+  const kpis = roomRevenueKpis({ roomRevenue: occ.roomRevenue, soldRooms: occ.occupiedRooms, sellableRooms: occ.sellableRooms, guests: occ.guests, fullCost });
+  if (occ.source === "PMS_DAILY" && occ.occupiedRooms > occ.sellableRooms) warnings.push("Occupied rooms exceed sellable rooms (available − out of order − out of service): check that available rooms include out-of-order rooms.");
   return {
     range: { from: r.from.toISOString(), to: r.to.toISOString() },
     occupancy: occ,
@@ -106,17 +118,20 @@ export async function roomCostReport(db: Db, actor: Actor, hotelId: string, r: R
     byType: rollup(res.lines, (l) => l.roomType),
     byFloor: rollup(res.lines, (l) => l.floor ?? "—"),
     byArea: rollup(res.lines, (l) => l.area ?? "—"),
-    channels: channelReport(stayInputs, opCostPerNight, r.from, r.to),
+    kpis,
+    monthly,
+    revenue: { rooms: occ.roomRevenue, laundry: D(laundrySales._sum.netRevenue?.toString() ?? 0), laundryDepartment: laundryDiv.length > 0 },
     components: totals,
     unassigned: res.unassigned,
     totals: {
-      roomsDivisionCost, direct, allocated, distribution, fullCost, roomRevenue: revenue, contribution: revenue.minus(fullCost),
-      occupiedNights: nights, costPerNight, operatingCostPerNight: opCostPerNight, avgLengthOfStay: avgLos, costPerStay: costPerNight && avgLos ? costPerNight.times(avgLos) : null,
+      roomsDivisionCost, direct, allocated, monthlyExpenses: monthly.total, distribution, fullCost, roomRevenue: revenue, contribution: revenue.minus(fullCost),
+      occupiedNights: nights, costPerNight, avgLengthOfStay: avgLos, costPerStay: costPerNight && avgLos ? costPerNight.times(avgLos) : null,
       roomsCpor: kRooms.costPerOccupiedRoom, roomsCpar: kRooms.costPerAvailableRoom,
       hotelOperatingCost: hotelCost.operating, belowGop: hotelCost.belowGop, hotelCpor: kHotel.costPerOccupiedRoom, hotelCpar: kHotel.costPerAvailableRoom, costPerGuest: kHotel.costPerGuest,
     },
     basis: allSqm ? "occupied nights × room m²" : "occupied nights",
     allocationPosted: runs > 0,
+    laborOverlap,
     warnings,
   };
 }

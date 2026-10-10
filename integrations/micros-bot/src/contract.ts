@@ -57,11 +57,25 @@ export const minibarSchema = z.object({
   postedAt: z.string().datetime({ offset: true }).optional(),
 });
 
-export type Kind = "checks" | "invoices" | "covers" | "minibar" | "occupancy";
-export const ALL_KINDS: Kind[] = ["checks", "invoices", "covers", "minibar", "occupancy"];
-export const ITEM_SCHEMAS = { checks: checkSchema, invoices: invoiceSchema, covers: coversSchema, minibar: minibarSchema, occupancy: occupancySchema } as const;
+/**
+ * A product card from the purchasing module ("Ürünleri çek" in HotelCost: products added since the last pull).
+ * unit = the unit it is bought in as printed; packSize / packUnit = what one unit holds (kilo / gramaj).
+ */
+export const productSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  code: z.string().trim().max(64).optional().nullable(),
+  unit: z.string().trim().min(1).max(20),
+  packSize: num.refine((n) => n > 0, "Pack size must be positive").optional().nullable(),
+  packUnit: z.string().trim().max(20).optional().nullable(),
+  taxRatePct: num.refine((n) => n >= 0 && n <= 100, "VAT % must be between 0 and 100").optional().nullable(),
+  category: z.string().trim().max(100).optional().nullable(),
+});
+
+export type Kind = "checks" | "invoices" | "covers" | "minibar" | "occupancy" | "products";
+export const ALL_KINDS: Kind[] = ["checks", "invoices", "covers", "minibar", "occupancy", "products"];
+export const ITEM_SCHEMAS = { checks: checkSchema, invoices: invoiceSchema, covers: coversSchema, minibar: minibarSchema, occupancy: occupancySchema, products: productSchema } as const;
 /** server-side maximum items per request */
-export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, minibar: 5000, occupancy: 1 };
+export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, minibar: 5000, occupancy: 1, products: 5000 };
 
 export interface CheckLine { itemCode?: string | null; itemName: string; qty: number; amount: number }
 export interface Check { checkNo: string; outlet: string; closedAt?: string; lines: CheckLine[] }
@@ -73,10 +87,12 @@ export interface Occupancy {
   roomRevenue?: number | null; outOfOrder?: number | null; occupiedRoomNumbers?: string[];
 }
 export interface MinibarCharge { room: string; itemCode?: string | null; itemName: string; qty: number; reference: string; postedAt?: string }
-export interface ItemsByKind { checks: Check; invoices: Invoice; covers: Covers; minibar: MinibarCharge; occupancy: Occupancy }
+export interface ProductCard { name: string; code?: string | null; unit: string; packSize?: number | null; packUnit?: string | null; taxRatePct?: number | null; category?: string | null }
+export interface ItemsByKind { checks: Check; invoices: Invoice; covers: Covers; minibar: MinibarCharge; occupancy: Occupancy; products: ProductCard }
 
 export type IngestSource = "MICROS" | "OPERA" | "OTHER";
-export interface IngestBody<K extends Kind = Kind> { kind: K; source: IngestSource; businessDay: string; runId?: string; items: ItemsByKind[K][] }
+/** businessDay: every kind but products (product cards are not tied to a day) */
+export interface IngestBody<K extends Kind = Kind> { kind: K; source: IngestSource; businessDay?: string; runId?: string; items: ItemsByKind[K][] }
 
 export type RunSource = "MICROS" | "OPERA" | "OTHER";
 export type RunStatus = "STARTED" | "SUCCEEDED" | "FAILED";
@@ -91,7 +107,11 @@ export interface IngestResult {
   errors: Array<{ item: number; message: string }>;
 }
 
-export interface RunRequest { id: string; source: RunSource; businessDay: string | null }
+/**
+ * A "run now" request made in HotelCost. kind DAY (default): the day's data; PRODUCTS ("Ürünleri çek" on the products
+ * page): the products added in Micros since `since` (ISO time of the last successful pull, null = never pulled).
+ */
+export interface RunRequest { id: string; source: RunSource; businessDay: string | null; kind?: "DAY" | "PRODUCTS"; since?: string | null }
 /** The hotel's own settings (Admin → business day ends at); the daemon follows them instead of its .env defaults. */
 export interface HotelSettings { businessDayCutoff?: string | null; timezone?: string | null }
 export interface NextRunResponse { request: RunRequest | null; settings?: HotelSettings | null }

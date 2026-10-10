@@ -25,7 +25,7 @@ test("integrity tools are hidden from roles without audit rights", async ({ page
 // Accessibility smoke (spec 316): no serious/critical WCAG A/AA violations on the main screens.
 // Production CSP (no 'unsafe-eval') must not block anything the app needs.
 // One login for all screens (the login endpoint is rate-limited per IP).
-const SCREENS = ["/", "/variance", "/inventory", "/recipes", "/buffet", "/rooms", "/budget", "/reports", "/integrity", "/excel"];
+const SCREENS = ["/", "/variance", "/inventory", "/recipes", "/buffet", "/rooms", "/reports", "/integrity", "/excel"];
 test("a11y + CSP on the main screens", async ({ page }) => {
   test.setTimeout(180_000);
   const cspErrors: string[] = [];

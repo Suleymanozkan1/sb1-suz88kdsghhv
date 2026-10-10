@@ -181,12 +181,10 @@ export async function weeklyReview(db: Db, actor: Actor, hotelId: string, weekEn
     topVariance = [...v.products].sort((a, b) => b.unexplainedValue.abs().comparedTo(a.unexplainedValue.abs())).slice(0, 10).map((p) => ({ product: p.name, unexplained: p.unexplainedValue, variance: p.varianceValue, actual: p.actual.value }));
   }
   let critical: Array<{ product: string; qty: Decimal; unit: string; level: string; openPo: Decimal }> = [];
-  let high: Array<{ product: string; value: Decimal; level: string; daysIdle: number | null }> = [];
   if (can(actor, "inventory:view")) {
     const inv = await inventoryStatus(db, actor, hotelId);
     critical = inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK").slice(0, 15).map((r) => ({ product: r.name, qty: r.quantity, unit: r.unit, level: r.level, openPo: r.openPo }));
-    high = inv.rows.filter((r) => r.level === "OVERSTOCK" || r.deadStock).sort((a, b) => b.value.comparedTo(a.value)).slice(0, 10).map((r) => ({ product: r.name, value: r.value, level: r.deadStock ? "DEAD" : r.level, daysIdle: r.daysSinceLastIssue }));
   }
   const recipeChanges = versions.map((v) => ({ recipe: v.recipe.name, version: v.version, approvedAt: v.approvedAt, portionCost: v.portionCost ? D(v.portionCost.toString()) : null }));
-  return { from, to, costIncreases, topWaste, topVariance, critical, high, priceChanges, recipeChanges, totals: { wasteCost: sum(topWaste.map((w) => w.cost)), costIncreaseImpact: sum(costIncreases.map((c) => c.impact)), unexplained: sum(topVariance.map((t) => (t.unexplained.gt(0) ? t.unexplained : ZERO))) } };
+  return { from, to, costIncreases, topWaste, topVariance, critical, priceChanges, recipeChanges, totals: { wasteCost: sum(topWaste.map((w) => w.cost)), costIncreaseImpact: sum(costIncreases.map((c) => c.impact)), unexplained: sum(topVariance.map((t) => (t.unexplained.gt(0) ? t.unexplained : ZERO))) } };
 }
