@@ -208,6 +208,20 @@ describe("recipes: dates, edit, delete, price update", () => {
     await expect(editRecipe(prisma, chef, h.hotel.id, burger, { ...input, version: { ...input.version, lines: [] } })).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
+  it("an edit keeps the version's standard portion (size / unit) unless the client changes it", async () => {
+    const soup = await createRecipe(prisma, chef, h.hotel.id, { name: "Soup", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { portions: 4, portionSize: 250, portionUnit: "ml", lines: [{ productId: beef, quantity: 100, unit: "g" }] } });
+    await approveVersion(prisma, cc, h.hotel.id, soup.versions[0]!.id);
+    const edit = (version: Record<string, unknown>) => editRecipe(prisma, chef, h.hotel.id, soup.id, { name: "Soup", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { portions: 4, lines: [{ productId: beef, quantity: 120, unit: "g" }], ...version } });
+    const portion = async (id: string) => {
+      const v = await prisma.recipeVersion.findUniqueOrThrow({ where: { id } });
+      return [v.portionSize?.toString() ?? null, v.portionUnit];
+    };
+    expect(await portion((await edit({})).versionId)).toEqual(["250", "ml"]); // the wizard has no portion fields: kept
+    expect(await portion((await edit({ portionSize: "300", portionUnit: "ml" })).versionId)).toEqual(["300", "ml"]);
+    expect(await portion((await edit({ portionSize: null, portionUnit: null })).versionId)).toEqual([null, null]); // cleared on purpose
+    await prisma.recipe.update({ where: { id: soup.id }, data: { deletedAt: new Date(), active: false } }); // out of the way of the price refresh
+  });
+
   it("update recipe prices: re-costed at today's FIFO cost, frozen costs refreshed, largest change first", async () => {
     // the 600 batch is used up; a dearer batch is next
     await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.restStore.id, productId: beef, type: "PURCHASE", quantity: 5, unitCost: 900, txDate: day("2026-09-10"), sourceType: "MANUAL" });

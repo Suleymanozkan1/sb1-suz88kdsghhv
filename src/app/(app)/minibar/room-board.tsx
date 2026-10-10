@@ -92,7 +92,7 @@ function RoomPanel({ room, canManage }: { room: Room; canManage: boolean }) {
             {type === "CONSUMED" && <div><Label htmlFor="mb-folio">{t("Folio")}</Label><Input id="mb-folio" value={folio} onChange={(e) => { setFolio(e.target.value); idem.current = crypto.randomUUID(); }} /></div>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={busy || !items.length} onClick={() => run(() => (type === "COUNT" ? call("POST", "/api/minibar/count", { roomId: room.id, countedAt: today, lines: items.map((i) => ({ productId: i.productId, countedQty: i.quantity })) }) : call("POST", "/api/minibar/movements", { roomId: room.id, type, movedAt: today, folioRef: folio || null, items, idempotencyKey: idem.current })), () => t("Posted"))}>{t("Post")}</Button>
+            <Button size="sm" disabled={busy || !items.length} onClick={() => run(() => (type === "COUNT" ? call("POST", "/api/minibar/count", { roomId: room.id, countedAt: today, lines: items.map((i) => ({ productId: i.productId, countedQty: i.quantity })), idempotencyKey: idem.current }) : call("POST", "/api/minibar/movements", { roomId: room.id, type, movedAt: today, folioRef: folio || null, items, idempotencyKey: idem.current })), () => t("Posted"))}>{t("Post")}</Button>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => call("POST", "/api/minibar/movements", { roomId: room.id, toPar: true, movedAt: today }), (r) => (Array.isArray(r) && !r.length ? t("Already at par — nothing to restock") : t("Restocked to par")))}>{t("Restock to par")}</Button>
           </div>
         </div>

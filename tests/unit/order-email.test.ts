@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_ORDER_EMAIL, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
+import { DEFAULT_ORDER_EMAIL, orderQty, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
 import { effectivePlan, planHas, trialAllFeatures } from "@/server/plans";
 
 const vars = { supplier: "Akdeniz Sebze", hotel: "Grand Otel", date: "09.10.2026", lines: [{ product: "Domates", qty: "20", unit: "kg" }, { product: "Zeytinyağı", qty: "2.5", unit: "l" }] };
@@ -17,6 +17,14 @@ describe("order e-mail template", () => {
     const m = renderOrderEmail(DEFAULT_ORDER_EMAIL, { ...vars, lines: [{ product: "ılık süt 24'lü", qty: "1", unit: "koli" }, { product: "dana incik KDV", qty: "2", unit: "kg" }] });
     expect(m.text).toContain("- Ilık Süt 24'lü: 1 koli\n- Dana İncik KDV: 2 kg");
     expect(m.html).toMatch(/<td[^>]*>Dana İncik KDV<\/td>/);
+  });
+
+  it("quantities are written exactly as ordered (no rounding), the same in text and HTML", () => {
+    expect(["0.0004", "1234.500", "2.5", "20", "0", "1e-7", "12,75"].map(orderQty)).toEqual(["0,0004", "1.234,5", "2,5", "20", "0", "0,0000001", "12,75"]);
+    const m = renderOrderEmail(DEFAULT_ORDER_EMAIL, { ...vars, lines: [{ product: "Safran", qty: "0.0004", unit: "kg" }, { product: "Un", qty: "1250.125", unit: "kg" }] });
+    expect(m.text).toContain("- Safran: 0,0004 kg\n- Un: 1.250,125 kg");
+    expect(m.html).toMatch(/<td[^>]*>Safran<\/td><td[^>]*>0,0004<\/td>/);
+    expect(m.html).toMatch(/<td[^>]*>Un<\/td><td[^>]*>1.250,125<\/td>/);
   });
 
   it("HTML escapes the user's text and names; only the table is markup", () => {

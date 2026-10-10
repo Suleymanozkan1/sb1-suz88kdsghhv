@@ -67,8 +67,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {/* cost % cards lead with the amount; the % of revenue sits small under it (feedback r2 §2) */}
-        <Stat label={t("Actual cost %")} value={<>{money(k.actualCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.actualCostPct) })}</span></>} hint={t("Opening + purchases ± transfers − closing")} />
-        <Stat label={t("Theoretical cost %")} value={<>{money(k.theoreticalCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.theoreticalCostPct) })}</span></>} hint={t("Σ sold × recipe cost at time of sale")} />
+        <Stat label={t("Actual cost")} value={<>{money(k.actualCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.actualCostPct) })}</span></>} hint={t("Opening + purchases ± transfers − closing")} />
+        <Stat label={t("Theoretical cost")} value={<>{money(k.theoreticalCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.theoreticalCostPct) })}</span></>} hint={t("Σ sold × recipe cost at time of sale")} />
         <Stat label={t("Variance")} value={money(k.variance, cur, 0)} tone={Number(k.variance) > 0 ? "bad" : "good"} hint={t("Actual − theoretical")} />
         <Stat label={t("Unexplained variance")} value={money(k.unexplained, cur, 0)} tone={Math.abs(Number(k.unexplained)) > 0 ? "warn" : "good"} hint={t("After price, waste, staff meal, comp")} />
         <Stat label={t("Revenue")} value={money(k.revenue, cur, 0)} hint={t("Gap {gap} pts", { gap: pct(k.costPctVariancePts, 2) })} />

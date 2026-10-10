@@ -235,6 +235,24 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     const nov = await roomCostItems(prisma, cc, h.hotel.id, "2026-11");
     expect([nov.saved, nov.defaults, nov.items.map((i) => [i.name, i.amount])]).toEqual([false, false, [["HK salaries", null], ["HK meals", null]]]);
 
+    // optimistic concurrency: a save over a month someone else saved since it was loaded is refused (409 CONFLICT)
+    const loadedA = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    const loadedB = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    expect(loadedA.revision).toBe(loadedB.revision);
+    const saved = await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedA.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: "3000" }] });
+    expect(saved.revision).not.toBe(loadedA.revision);
+    expect(saved.revision).toBe((await roomCostItems(prisma, cc, h.hotel.id, "2026-09")).revision);
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedB.revision, items: [{ name: "HK salaries", amount: "1" }] })).rejects.toMatchObject({ code: "CONFLICT", message: "This month was changed by someone else — reload and try again" });
+    // two saves from the same loaded state at once: exactly one wins
+    const race = await Promise.allSettled([1, 2].map((n) => saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: saved.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: n === 1 ? "3000" : "3000,00" }] })));
+    expect(race.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);
+    // an unsaved month has a revision too: someone saving it first makes a stale form fail
+    const dec = await roomCostItems(prisma, cc, h.hotel.id, "2026-12");
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", revision: dec.revision, items: [{ name: "HK meals", amount: "10" }] });
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", revision: dec.revision, items: [] })).rejects.toMatchObject({ code: "CONFLICT" });
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", items: [] });
+    expect((await prisma.auditLog.count({ where: { hotelId: h.hotel.id, action: "ROOM_COST_ITEMS_SAVE" } }))).toBe(7);
+
     const r = await roomCostReport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
     expect(r.totals.monthlyExpenses.toString()).toBe("33000");
     expect(r.components.monthly.toString()).toBe("33000");

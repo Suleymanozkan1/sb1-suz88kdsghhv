@@ -13,4 +13,11 @@ export const r2f: Record<string, string> = {
   "Operating-expense categories have no theoretical cost. Expense rows are hotel-wide only.": "İşletme gideri kategorilerinin teorik maliyeti yoktur. Gider satırları yalnızca otel geneli içindir.",
   // room cost export headers (no "allocation" wording)
   "Maintenance Cost": "Bakım maliyeti",
+  // review pass: room expense form
+  "Item {n} has an amount but no name: enter its name or clear the amount.": "{n}. kalemde tutar var ama ad yok: adını girin ya da tutarı silin.",
+};
+
+/** Server messages added in the review pass (r2f). */
+export const r2fMessages: Record<string, string> = {
+  "This month was changed by someone else — reload and try again": "Bu ay başka biri tarafından değiştirildi — sayfayı yenileyip tekrar deneyin",
 };

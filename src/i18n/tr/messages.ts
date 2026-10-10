@@ -9,11 +9,13 @@
 import { r2bMessages } from "./r2b";
 import { r2eMessages } from "./r2e";
 import { r2cMessages } from "./r2c";
+import { r2fMessages } from "./r2f";
 
 export const TR_MESSAGES: Record<string, string> = {
   ...r2cMessages,
   ...r2bMessages,
   ...r2eMessages,
+  ...r2fMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "{0}% price": "fiyat %{0}",
