@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
-import type { DashboardAlert, PriceChange, PriceSummaryData } from "@/server/services/insights";
+import { alertDisplayVars, type DashboardAlert, type PriceChange, type PriceSummaryData } from "@/server/services/insights";
 import { Badge, Empty, severityTone } from "@/components/ui";
 import { money, pct, dateTime } from "@/lib/format";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { Title } from "@/components/title";
 
 /** Dashboard panels shared by the full and the basic home page (feedback r2 §2). */
@@ -28,11 +28,11 @@ export async function PriceSummary({ p, cur }: { p: PriceSummaryData; cur: strin
 
 /** Alert list: supplier price increases above the hotel threshold, critical stock and other open alerts. */
 export async function AlertList({ alerts, timezone }: { alerts: DashboardAlert[]; timezone: string }) {
-  const t = await getT();
+  const [t, locale] = await Promise.all([getT(), getLocale()]);
   if (alerts.length === 0) return <Empty title={t("No open alerts")} />;
   return (
     <ul className="max-h-96 space-y-2 overflow-y-auto text-sm">
-      {alerts.map((a) => (
+      {alerts.map((a) => ({ ...a, vars: alertDisplayVars(a.vars, locale) })).map((a) => (
         <li key={a.id} className="flex gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
           <div>

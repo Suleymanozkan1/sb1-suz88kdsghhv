@@ -20,8 +20,8 @@ const GROUPS: Record<string, string[]> = {
   buffet: ["buffetCost", "buffetSummary", "buffetProduct"],
   minibar: ["minibarCost"],
   rooms: ["roomCost", "roomTypeCost", "roomFloorCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost"],
-  departments: ["departmentCost", "outletCost", "costCenter", "costAllocation"],
-  pnl: ["pnl", "budgetVariance", "forecast", "costSaving", "menuEngineering"],
+  departments: ["departmentCost", "outletCost", "costCenter"],
+  pnl: ["pnl", "costSaving", "menuEngineering"],
 };
 
 export const GET = api(async ({ actor, hotelId, query, params }) => {

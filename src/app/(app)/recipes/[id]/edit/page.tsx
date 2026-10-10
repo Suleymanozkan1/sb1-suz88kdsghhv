@@ -53,10 +53,12 @@ export default async function EditRecipePage({ params }: { params: Promise<{ id:
     portions: batch ? "1" : n(v?.portions) || "1",
     sellingPrice: n(v?.sellingPrice),
   };
+  // kept as it is: the standard portion converts "portion" where this recipe is a sub-recipe
+  const portion = { size: v?.portionSize ? v.portionSize.toString() : null, unit: v?.portionUnit ?? null };
   return (
     <>
       <PageHeader title={t("Edit recipe: {name}", { name: recipe.name })} subtitle={t("Change the recipe and save: the new version is in force at once (no separate approval). Earlier versions stay in the history.")} />
-      <RecipeWizard currency={hotel.baseCurrency} types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} edit={{ recipeId: recipe.id, head, lines }} />
+      <RecipeWizard currency={hotel.baseCurrency} types={[...RECIPE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} subRecipes={subs.map((s) => ({ id: s.id, name: s.name, unit: s.versions[0]?.yieldUnit ?? "kg" }))} edit={{ recipeId: recipe.id, head, lines, portion }} />
     </>
   );
 }

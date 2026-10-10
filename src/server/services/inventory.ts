@@ -127,8 +127,11 @@ export async function periodMovements(db: Db, hotelId: string, q: { from: Date; 
   for (const g of transfers) {
     const [x, v] = qv(g);
     const m = row(g.productId);
-    if (x.gt(0)) Object.assign(m, { inQty: m.inQty.plus(x), inValue: m.inValue.plus(v) });
-    else if (x.lt(0)) Object.assign(m, { outQty: m.outQty.minus(x), outValue: m.outValue.minus(v) });
+    // the net goes to in or out by its sign; with no net quantity a value difference (stock moved at another cost)
+    // still has to land somewhere, or the closing value drifts from the ledger
+    const inbound = x.gt(0) || (x.isZero() && v.gt(0));
+    if (inbound) Object.assign(m, { inQty: m.inQty.plus(x), inValue: m.inValue.plus(v) });
+    else if (x.lt(0) || !v.isZero()) Object.assign(m, { outQty: m.outQty.minus(x), outValue: m.outValue.minus(v) });
   }
   for (const m of out.values()) Object.assign(m, { closingQty: m.openingQty.plus(m.inQty).minus(m.outQty), closingValue: m.openingValue.plus(m.inValue).minus(m.outValue) });
   return out;
@@ -214,8 +217,16 @@ export async function summarizeSalesRows(db: Db, rows: LedgerRow[]): Promise<Det
   }
   const multi = [...groups.values()].filter((g) => g.length > 1);
   const imports = [...new Set(multi.flat().map((r) => r.sourceId!))];
-  const lines = imports.length ? await db.saleLine.findMany({ where: { importId: { in: imports }, consumptionPosted: true }, select: { importId: true, departmentId: true, saleDate: true, quantity: true, posCode: true, recipe: { select: { name: true } }, recipeVersion: { select: { costSnapshot: true } } } }) : [];
+  const lines = imports.length ? await db.saleLine.findMany({ where: { importId: { in: imports }, consumptionPosted: true }, select: { hotelId: true, importId: true, departmentId: true, saleDate: true, quantity: true, posCode: true, recipe: { select: { name: true } }, recipeVersion: { select: { costSnapshot: true } } } }) : [];
   const hotels = new Map((await db.hotel.findMany({ where: { id: { in: [...new Set(multi.map((g) => g[0]!.hotelId))] } }, select: { id: true, timezone: true, businessDayCutoff: true } })).map((h) => [h.id, h]));
+  // sale lines by import | department | business day, so each group reads only its own lines (not every line of the imports)
+  const byGroup = new Map<string, typeof lines>();
+  for (const l of lines) {
+    const h = hotels.get(l.hotelId);
+    if (!h) continue;
+    const key = `${l.importId}|${l.departmentId}|${businessDay(l.saleDate, h.timezone, h.businessDayCutoff)}`;
+    (byGroup.get(key) ?? byGroup.set(key, []).get(key)!).push(l);
+  }
   const out: DetailLine[] = [];
   const done = new Set<string>();
   for (const r of rows) {
@@ -227,13 +238,12 @@ export async function summarizeSalesRows(db: Db, rows: LedgerRow[]): Promise<Det
     }
     if (done.has(k)) continue;
     done.add(k);
-    const h = hotels.get(r.hotelId)!;
     const day = k.slice(0, 10);
-    const keys = new Set(g.map((x) => `${x.sourceId}|${x.departmentId}`));
+    const keys = new Set(g.map((x) => `${x.sourceId}|${x.departmentId}|${day}`));
     const dishes = new Map<string, Decimal>();
-    for (const l of lines) {
+    for (const l of [...keys].flatMap((key) => byGroup.get(key) ?? [])) {
       const snap = l.recipeVersion?.costSnapshot as { requirements?: Record<string, string> } | null;
-      if (!snap?.requirements?.[r.productId] || !keys.has(`${l.importId}|${l.departmentId}`) || businessDay(l.saleDate, h.timezone, h.businessDayCutoff) !== day) continue;
+      if (!snap?.requirements?.[r.productId]) continue;
       const dish = l.recipe?.name ?? l.posCode;
       dishes.set(dish, (dishes.get(dish) ?? ZERO).plus(D(l.quantity.toString())));
     }

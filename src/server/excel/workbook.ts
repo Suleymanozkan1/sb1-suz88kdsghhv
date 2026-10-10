@@ -10,7 +10,7 @@ import ExcelJS from "exceljs";
 import type { Column, FullCostExport, Section } from "../services/export";
 import { EXPORT_VERSION, APP_VERSION } from "../services/export";
 import type { Locale } from "@/i18n/core";
-import { colRef, localizeExport, xlLang, type XlLang } from "./i18n";
+import { colRef, displayNames, localizeExport, xlLang, type XlLang } from "./i18n";
 import { autoFitColumns } from "./autofit";
 
 /**
@@ -43,7 +43,7 @@ interface SheetSpec {
 export const SHEETS: SheetSpec[] = [
   { name: "02_EXECUTIVE_SUMMARY", title: "Executive Summary", sections: ["executiveSummary", "monthlySummary"], headerRow: 18, description: "Headline KPIs, monthly cost summary by category, data status of every figure", print: true },
   { name: "03_COST_DETAIL", title: "Cost Detail", sections: ["costDetail"], description: "Every cost ledger posting and purchase line with trace id" },
-  { name: "04_FOOD_COST", title: "Food Cost", sections: ["foodCost"], description: "Opening + purchases ± transfers − closing = actual food cost vs theoretical", print: true },
+  { name: "04_FOOD_COST", title: "Food Cost", sections: ["foodCost"], description: "Opening + purchases − transfers out (net) − closing = actual food cost vs theoretical", print: true },
   { name: "05_BEVERAGE_COST", title: "Beverage Cost", sections: ["beverageCost"], description: "Same statement for beverage", print: true },
   { name: "06_RECIPE_COST", title: "Recipe Cost", sections: ["recipeCost"], description: "Recipe cost explosion incl. sub-recipes: quantity (converted to the stock unit) × unit cost; a sub-recipe line costs its share of the sub-recipe batch" },
   { name: "07_THEORETICAL_CONSUMPTION", title: "Theoretical Consumption", sections: ["theoreticalConsumption"], description: "Sales × frozen recipe-version requirements" },
@@ -76,26 +76,23 @@ export const SHEETS: SheetSpec[] = [
   { name: "34_DEPARTMENT_COST", title: "Department Cost", sections: ["departmentCost"], description: "Revenue, direct / allocated cost, contribution", print: true },
   { name: "35_OUTLET_COST", title: "Outlet Cost", sections: ["outletCost"], description: "Outlets only" },
   { name: "36_COST_CENTER", title: "Cost Center", sections: ["costCenter"], description: "Cost centers" },
-  { name: "37_COST_ALLOCATION", title: "Cost Allocation", sections: ["costAllocation"], description: "Posted allocations: source, rule, driver, share, destination" },
-  { name: "38_PNL", title: "P&L Cost View", sections: ["pnl"], description: "Revenue (rooms, F&B, minibar) to GOP and EBITDA from the cost ledger", print: true },
-  { name: "39_BUDGET_VARIANCE", title: "Budget Variance", sections: ["budgetVariance"], description: "Approved budget vs actual by category, month and YTD", print: true },
-  { name: "40_FORECAST", title: "Forecast", sections: ["forecast"], description: "Month forecast: fixed + variable rate × expected volume, scenarios" },
-  { name: "41_COST_SAVING", title: "Cost Saving", sections: ["costSaving"], description: "Saving opportunities (formula + assumption) and actions (target vs realized)" },
-  { name: "42_TOP_COST_DRIVERS", title: "Top Cost Drivers", sections: ["topCostDrivers"], description: "Largest price-driven cost increases" },
-  { name: "43_TOP_WASTE", title: "Top Waste", sections: ["topWaste"], description: "Products causing most waste cost" },
-  { name: "44_TOP_VARIANCE", title: "Top Variance", sections: ["topVariance"], description: "Largest theoretical vs actual differences" },
-  { name: "45_UNEXPLAINED_VARIANCE", title: "Unexplained Variance", sections: ["unexplainedVariance"], description: "Usage not explained by recipes, waste, staff meals or complimentary", print: true },
-  { name: "46_RECONCILIATION", title: "Reconciliation", sections: [], description: "Server checks, workbook formula checks and VBA checks (PASS / WARNING / FAIL)", print: true },
-  { name: "47_MISSING_COST_DATA", title: "Missing Cost Data", sections: ["missingData"], description: "Products without cost, recipes with issues, unmapped sales ..." },
-  { name: "48_EXPORT_ERRORS", title: "Export Errors", sections: [], description: "Errors and warnings recorded by the macro" },
-  { name: "49_FORMULAS", title: "Formula Dictionary", sections: [], description: "Cost formulas (TR / EN)" },
-  { name: "50_SOURCE_MAP", title: "Source Map", sections: [], description: "Where every dataset comes from" },
-  { name: "51_README", title: "README", sections: [], description: "How to use and refresh this workbook" },
-  { name: "52_TRENDS", title: "Trends", sections: ["costTrend", "priceTrend", "recipeTrend"], description: "12-month cost, price and recipe cost trends" },
-  { name: "53_DASHBOARD_CHARTS", title: "Dashboard Charts", sections: [], description: "Charts rebuilt by the macro" },
-  { name: "54_PRODUCT_SALES", title: "Monthly Product Sales + Cost", sections: ["productSales", "menuEngineering"], description: "Every product sold: qty, revenue, recipe cost, contribution, margin; menu engineering classes", print: true },
-  { name: "55_PIVOTS", title: "Pivot Tables", sections: [], description: "Pivots rebuilt by the macro" },
-  { name: "56_RECIPE_SUMMARY", title: "Recipe Summary", sections: ["recipeSummary"], description: "One line per recipe" },
+  { name: "37_PNL", title: "P&L Cost View", sections: ["pnl"], description: "Revenue (rooms, F&B, minibar) to GOP and EBITDA from the cost ledger", print: true },
+  { name: "38_COST_SAVING", title: "Cost Saving", sections: ["costSaving"], description: "Saving opportunities (formula + assumption) and actions (target vs realized)" },
+  { name: "39_TOP_COST_DRIVERS", title: "Top Cost Drivers", sections: ["topCostDrivers"], description: "Largest price-driven cost increases" },
+  { name: "40_TOP_WASTE", title: "Top Waste", sections: ["topWaste"], description: "Products causing most waste cost" },
+  { name: "41_TOP_VARIANCE", title: "Top Variance", sections: ["topVariance"], description: "Largest theoretical vs actual differences" },
+  { name: "42_UNEXPLAINED_VARIANCE", title: "Unexplained Variance", sections: ["unexplainedVariance"], description: "Usage not explained by recipes, waste, staff meals or complimentary", print: true },
+  { name: "43_RECONCILIATION", title: "Reconciliation", sections: [], description: "Server checks, workbook formula checks and VBA checks (PASS / WARNING / FAIL)", print: true },
+  { name: "44_MISSING_COST_DATA", title: "Missing Cost Data", sections: ["missingData"], description: "Products without cost, recipes with issues, unmapped sales ..." },
+  { name: "45_EXPORT_ERRORS", title: "Export Errors", sections: [], description: "Errors and warnings recorded by the macro" },
+  { name: "46_FORMULAS", title: "Formula Dictionary", sections: [], description: "Cost formulas (TR / EN)" },
+  { name: "47_SOURCE_MAP", title: "Source Map", sections: [], description: "Where every dataset comes from" },
+  { name: "48_README", title: "README", sections: [], description: "How to use and refresh this workbook" },
+  { name: "49_TRENDS", title: "Trends", sections: ["costTrend", "priceTrend", "recipeTrend"], description: "12-month cost, price and recipe cost trends" },
+  { name: "50_DASHBOARD_CHARTS", title: "Dashboard Charts", sections: [], description: "Charts rebuilt by the macro" },
+  { name: "51_PRODUCT_SALES", title: "Monthly Product Sales + Cost", sections: ["productSales", "menuEngineering"], description: "Every product sold: qty, revenue, recipe cost, contribution, margin; menu engineering classes", print: true },
+  { name: "52_PIVOTS", title: "Pivot Tables", sections: [], description: "Pivots rebuilt by the macro" },
+  { name: "53_RECIPE_SUMMARY", title: "Recipe Summary", sections: ["recipeSummary"], description: "One line per recipe" },
   { name: "RAW_PRODUCTS", title: "RAW_PRODUCTS", sections: ["rawProducts"], hidden: true, description: "Product master (raw)" },
   { name: "RAW_STOCK_TRANSACTIONS", title: "RAW_STOCK_TRANSACTIONS", sections: ["rawStockTransactions"], hidden: true, description: "Stock ledger (raw)" },
   { name: "RAW_SALES", title: "RAW_SALES", sections: ["rawSales"], hidden: true, description: "Sales lines (raw)" },
@@ -270,7 +267,7 @@ function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, heade
 }
 
 const FORMULAS: Array<[string, string, string]> = [
-  ["Actual Cost / Gerçek Maliyet", "= Opening Inventory + Purchases + Transfers In − Transfers Out − Closing Inventory", "Açılış stoku + Alımlar + Gelen transfer − Giden transfer − Kapanış stoku"],
+  ["Actual Cost / Gerçek Maliyet", "= Opening Inventory + Purchases − Transfers Out (net of transfers in) − Closing Inventory", "Açılış stoku + Alımlar − Giden transferler (net) − Kapanış stoku"],
   ["Food Cost % / Yiyecek Maliyet %", "= Actual Food Cost / Food Revenue", "Gerçek yiyecek maliyeti / Yiyecek geliri"],
   ["Theoretical Cost / Teorik Maliyet", "= Σ (Quantity Sold × Recipe Cost of the version effective on the sale date)", "Σ (Satılan adet × satış tarihindeki reçete versiyonu maliyeti)"],
   ["Cost Variance / Maliyet Farkı", "= Actual Cost − Theoretical Cost", "Gerçek − Teorik"],
@@ -291,11 +288,8 @@ const FORMULAS: Array<[string, string, string]> = [
   ["Cost per Available Room / Mevcut Oda Başı Maliyet", "= Total Cost / Available Room Nights", "Toplam maliyet / Satılabilir oda gecesi"],
   ["Net Room Revenue / Net Oda Geliri", "= Gross Room Revenue − OTA Commission − Payment Fee − Other Distribution", "Brüt oda geliri − Acente komisyonu − Ödeme komisyonu − Diğer dağıtım"],
   ["Net Room Contribution / Net Oda Katkısı", "= Net Room Revenue − Full Room Cost", "Net oda geliri − Tam oda maliyeti"],
-  ["Allocated Amount / Dağıtılan Tutar", "= Source Cost × Destination Driver / Σ Drivers (exact, no rounding residue)", "Kaynak maliyet × Hedef sürücü / Σ Sürücüler"],
   ["Laundry Unit Cost / Çamaşır Birim Maliyeti", "= Laundry Cost / kg (or / piece, / occupied room)", "Çamaşırhane maliyeti / kg (veya / parça, / dolu oda)"],
   ["GOP / Brüt Faaliyet Karı", "= Total Revenue − Cost of Sales − Labor − Energy − Departmental Expenses − Administration − Sales & Marketing", "Toplam gelir − Satış maliyeti − Personel − Enerji − Departman giderleri − Yönetim − Satış & Pazarlama"],
-  ["Budget Variance / Bütçe Sapması", "= Actual − Budget (positive = over budget); Variance % = Variance / Budget", "Gerçekleşen − Bütçe (pozitif = bütçe aşımı); Sapma % = Sapma / Bütçe"],
-  ["Forecast / Tahmin", "= Fixed share × average monthly cost + Variable rate × expected volume × (1 + known price change); running month: actual to date + rate × remaining volume", "Sabit pay × aylık ortalama + Değişken oran × beklenen hacim × (1 + bilinen fiyat değişimi)"],
   ["Menu Engineering / Menü Mühendisliği", "High seller = menu mix ≥ 70 % × 1/n; High margin = contribution per unit ≥ weighted average → Star / Plowhorse / Puzzle / Dog", "Yüksek satış = menü payı ≥ %70 × 1/n; Yüksek marj = birim katkı ≥ ağırlıklı ortalama"],
   ["Saving / Tasarruf", "= Current Cost − Potential Cost; Gap = Target Saving − Realized Saving", "Mevcut maliyet − Potansiyel maliyet; Fark = Hedef tasarruf − Gerçekleşen tasarruf"],
   ["Recommended Order / Önerilen Sipariş", "= Expected Consumption + Safety Stock + Lead-time Demand − Current Stock − Open PO (rounded up to purchase units)", "Beklenen tüketim + Emniyet stoku + Tedarik süresi talebi − Mevcut stok − Açık sipariş"],
@@ -304,7 +298,7 @@ const FORMULAS: Array<[string, string, string]> = [
 export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: string; locale?: Locale; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
   const lg = xlLang(opts.locale ?? "en");
   const { t, val, hdr } = lg;
-  const e = localizeExport(source, lg);
+  const e = localizeExport(displayNames(source, lg.locale), lg);
   const CONTROL = lg.sheet(CONTROL_SHEET);
   const ALL = val("All");
   const bulk: BulkTable[] = [];
@@ -479,8 +473,8 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
   ex.getCell("A4").value = t("Data quality {dq}% · Reconciliation {recon} · Status column shows ACTUAL / THEORETICAL / ESTIMATED / NOT_AVAILABLE / INSUFFICIENT_DATA for every figure (no false precision).", { dq: e.score.dataQuality ?? "—", recon: e.score.reconciliation });
   ex.getCell("A4").font = { size: 9, italic: true, color: { argb: MUTED } };
 
-  // ── 46_RECONCILIATION ──
-  const rec = sheet("46_RECONCILIATION");
+  // ── 43_RECONCILIATION ──
+  const rec = sheet("43_RECONCILIATION");
   const chkCols = (withNote: boolean, type: Column["type"] = "money"): Column[] => [
     { key: "check", header: hdr("Check"), type: "text" }, { key: "expected", header: hdr("Expected"), type }, { key: "actual", header: hdr("Actual"), type },
     ...(type === "money" ? [{ key: "difference", header: hdr("Difference"), type } as Column] : []), { key: "status", header: hdr("Status"), type: "text" },
@@ -513,7 +507,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     [L("Executive Theoretical = Σ {ref}", { ref: ref("RAW_SALES", "Theoretical Cost") }), ES("theoreticalCost"), num("theoreticalCost"), `SUM(${C("tbl_rawSales", "Theoretical Cost")})`, sumCol("rawSales", "theoreticalCost"), "CATEGORY"],
     [L("Σ {ref} = Σ {sheet} (excl. purchases)", { ref: ref("34_DEPARTMENT_COST", "Total Cost"), sheet: lg.sheet("03_COST_DETAIL") }), `SUMIFS(${costDetailTotal},${TT},"<>${PURCHASE}")`, sumCol("costDetail", "totalCost", (x) => x.transactionType !== PURCHASE), `SUM(${C("tbl_departmentCost", "Total Cost")})`, sumCol("departmentCost", "totalCost")],
     [L("Σ {sheet} purchases = Σ {ref}", { sheet: lg.sheet("03_COST_DETAIL"), ref: ref("25_PURCHASE_COST", "Landed Value") }), `SUMIFS(${costDetailTotal},${TT},"${PURCHASE}")`, sumCol("costDetail", "totalCost", (x) => x.transactionType === PURCHASE), `SUM(${C("tbl_purchaseCost", "Landed Value")})`, sumCol("purchaseCost", "landedValue")],
-    [L("{sheet} Cost of Sales = Executive Actual Cost", { sheet: lg.sheet("38_PNL") }), ES("actualCost"), num("actualCost"), `INDEX(${C("tbl_pnl", "Value")},5)`, Number(e.sections.pnl?.rows[4]?.value ?? 0), "FILTER"],
+    [L("{sheet} Cost of Sales = Executive Actual Cost", { sheet: lg.sheet("37_PNL") }), ES("actualCost"), num("actualCost"), `INDEX(${C("tbl_pnl", "Value")},5)`, Number(e.sections.pnl?.rows[4]?.value ?? 0), "FILTER"],
   ];
   const exSec: Section = {
     key: "excelChecks", title: t("Workbook formula checks (live)"), status: "OK", source: "Excel formulas",
@@ -542,23 +536,23 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
   };
   writeTable(rec, vbaSec, rc, HEADER_ROW, cur, locations, undefined, lg);
 
-  // ── 48_EXPORT_ERRORS / RUN_LOG ──
-  writeTable(sheet("48_EXPORT_ERRORS"), { key: "errors", title: t("Export errors and warnings"), status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: hdr(h), type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations, undefined, lg);
+  // ── 45_EXPORT_ERRORS / RUN_LOG ──
+  writeTable(sheet("45_EXPORT_ERRORS"), { key: "errors", title: t("Export errors and warnings"), status: "OK", source: "modErrorHandling", columns: ["Time", "Run ID", "Module", "Record", "Error Type", "Description", "Severity"].map((h, i) => ({ key: `c${i}`, header: hdr(h), type: i === 0 ? "datetime" : "text" })), rows: [] }, 1, HEADER_ROW, cur, locations, undefined, lg);
   writeTable(sheet("RUN_LOG"), { key: "runLog", title: t("Run log"), status: "OK", source: "modErrorHandling", columns: ["Run ID", "Date", "User", "Hotel", "Period", "Start Time", "End Time", "Status", "Records Processed", "Errors", "Warnings"].map((h, i) => ({ key: `c${i}`, header: hdr(h), type: i === 1 ? "date" : i === 5 || i === 6 ? "datetime" : i >= 8 ? "int" : "text" })), rows: [{ c0: e.exportId, c1: e.meta.generatedAt.slice(0, 10), c2: e.meta.generatedBy, c3: e.meta.hotel.name, c4: e.meta.period.label, c5: e.meta.generatedAt, c6: e.meta.generatedAt, c7: `${val("SERVER PREFILL")} (${e.score.reconciliation})`, c8: String(Object.values(e.counts).reduce((a, b) => a + b, 0)), c9: String(e.score.errors), c10: String(e.score.warnings) }] }, 1, HEADER_ROW, cur, locations, undefined, lg);
 
-  // ── 49_FORMULAS / 50_SOURCE_MAP / 51_README ──
+  // ── 46_FORMULAS / 47_SOURCE_MAP / 48_README ──
   // Turkish workbook: Turkish names and formulas only; English keeps the bilingual dictionary
   const formulas: Section = lg.locale === "en"
     ? { key: "formulas", title: "Formula dictionary (EN / TR)", status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: "Metric", type: "text" }, { key: "b", header: "Formula (EN)", type: "text" }, { key: "c", header: "Formül (TR)", type: "text" }], rows: FORMULAS.map(([a, b, c]) => ({ a, b, c })) }
     : { key: "formulas", title: t("Formula dictionary"), status: "OK", source: "HotelCost domain engine", columns: [{ key: "a", header: hdr("Metric"), type: "text" }, { key: "c", header: hdr("Formula"), type: "text" }], rows: FORMULAS.map(([a, , c]) => ({ a: a.split(" / ").slice(1).join(" / ") || a, c: `= ${c}` })) };
-  writeTable(sheet("49_FORMULAS"), formulas, 1, HEADER_ROW, cur, locations, undefined, lg);
-  writeTable(sheet("50_SOURCE_MAP"), {
+  writeTable(sheet("46_FORMULAS"), formulas, 1, HEADER_ROW, cur, locations, undefined, lg);
+  writeTable(sheet("47_SOURCE_MAP"), {
     key: "sourceMap", title: t("Source map"), status: "OK", source: "export contract",
     // the source column names program modules: an English workbook only (the developers' map)
     columns: [{ key: "a", header: hdr("Excel Sheet"), type: "text" }, { key: "b", header: hdr("Excel Table"), type: "text" }, { key: "c", header: hdr("Dataset"), type: "text" }, ...(lg.locale === "en" ? [{ key: "d", header: "Source (module / table)", type: "text" } as Column] : []), { key: "e", header: hdr("Source API"), type: "text" }, { key: "f", header: hdr("Data Status"), type: "text" }, { key: "g", header: hdr("Rows"), type: "int" }],
     rows: Object.values(e.sections).map((s) => ({ a: sectionSheet[s.key] ?? val("(not placed)"), b: `tbl_${s.key}`, c: s.title, d: s.source, e: `GET /api/export/full-cost → sections.${s.key}`, f: s.status, g: String(s.rows.length) })),
   }, 1, HEADER_ROW, cur, locations, undefined, lg);
-  const readme = sheet("51_README");
+  const readme = sheet("48_README");
   const lines = [
     "WHAT THIS WORKBOOK IS",
     "The Excel reporting layer of HotelCost. Every figure is calculated by the HotelCost server with the same cost engine as the web application; Excel does not re-implement cost logic.",
@@ -591,7 +585,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     "Variance = Actual − Theoretical. Unexplained = Variance − Price/timing − Recorded waste − Staff meals − Complimentary. Unexplained usage is evidence for investigation, not an accusation.",
     "",
     "IF SOMETHING GOES WRONG",
-    "See 48_EXPORT_ERRORS and 46_RECONCILIATION. A failed or incomplete download is never written as a successful report (status 'EXPORT FAILED').",
+    "See 45_EXPORT_ERRORS and 43_RECONCILIATION. A failed or incomplete download is never written as a successful report (status 'EXPORT FAILED').",
     "HTTP 401/403: create a new token or check your export permission. Mac Excel cannot refresh (no MSXML); the prefilled data is still valid.",
     "",
     `Workbook ${WORKBOOK_VERSION} · Export schema ${EXPORT_VERSION} · Application ${APP_VERSION}`,
@@ -604,8 +598,8 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     if (line === line.toUpperCase() && line.length > 3 && !line.includes(" — ")) c.font = { bold: true, color: { argb: BRAND } };
   });
   readme.getColumn(1).width = 160;
-  sheet("53_DASHBOARD_CHARTS").getCell("A5").value = t("Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.");
-  sheet("55_PIVOTS").getCell("A5").value = t("Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.");
+  sheet("50_DASHBOARD_CHARTS").getCell("A5").value = t("Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.");
+  sheet("52_PIVOTS").getCell("A5").value = t("Pivot tables are (re)built by the macro: department, category, supplier, product, waste, stock, recipe, buffet and minibar cost.");
 
   // ── _LISTS ──
   const lst = sheet("_LISTS");
@@ -627,7 +621,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
 
   // ── column widths: every column fits its header and its values (spec: no cut-off text) ──
   for (const spec of SHEETS) {
-    if (spec.name === "51_README") continue; // one wide text column by design
+    if (spec.name === "48_README") continue; // one wide text column by design
     const ws = sheet(spec.name);
     const headerRow = spec.headerRow ?? HEADER_ROW;
     // rows streamed by the packager (large tables) are measured from the data

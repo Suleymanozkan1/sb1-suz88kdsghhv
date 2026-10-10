@@ -2,7 +2,7 @@
  * Dashboard, inventory status and data-quality center (spec §167–§178, §216–§222).
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
-import type { AlertSeverity, Prisma } from "@prisma/client";
+import { type AlertSeverity, Prisma } from "@prisma/client";
 import { defaultConverter } from "@/domain/uom";
 import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
@@ -12,9 +12,10 @@ import { costRecipe } from "@/domain/recipe-cost";
 import type { Db } from "../db";
 import { type Actor, authorize, can, departmentScope, requirePermission } from "../auth/actor";
 import { theoreticalVsActual } from "./variance";
-import { openPoQuantities } from "./purchasing";
+import { openPoQuantities, RECEIPT_SOURCES } from "./purchasing";
 import { buildResolver, versionToDef } from "./recipes";
 import { emptyMovement, periodMovements } from "./inventory";
+import { titleTr } from "@/lib/format";
 
 /** Stock statuses the app shows (feedback r2 §1): no "overstock" / "dead stock" - excess is a personal judgement. */
 export const STOCK_LEVELS = ["NORMAL", "LOW", "CRITICAL", "OUT_OF_STOCK"] as const;
@@ -206,7 +207,7 @@ export async function topWasteProducts(db: Db, actor: Actor, hotelId: string, q:
   return wasteByProduct(db, actor, hotelId, q, take);
 }
 
-export type PriceChange = { productId: string; product: string; unit: string; supplier: string; receiptNo: string; date: Date; previous: Decimal; previousDate: Date; previousSupplier: string; current: Decimal; change: Decimal; changePct: Decimal; quantity: Decimal; impact: Decimal; latest: boolean };
+export type PriceChange = { productId: string; product: string; unit: string; supplierId: string; supplier: string; source: string; receiptNo: string; date: Date; previous: Decimal; previousDate: Date; previousSupplier: string; current: Decimal; change: Decimal; changePct: Decimal; quantity: Decimal; impact: Decimal; latest: boolean };
 
 /**
  * Supplier price changes from our own goods receipts (feedback r2 §2): for every receipt of a product in [from, to) its
@@ -214,14 +215,18 @@ export type PriceChange = { productId: string; product: string; unit: string; su
  * the product's previous receipt, whenever before. Several lines of one product in one receipt (lots) are one price.
  * `latest` marks the product's last receipt before `to`, i.e. "last purchase price vs the one before".
  * Not market prices or imported price lists: only what we actually paid (reversed receipt lines are left out).
+ * A department-scoped user only sees receipts into warehouses they may access - both the current and the previous one.
  */
-async function priceChangeEvents(db: Db, hotelId: string, q: { from: Date; to: Date }): Promise<PriceChange[]> {
-  const rows = await db.$queryRaw<Array<{ productId: string; receiptId: string; number: string; supplierId: string; receiptDate: Date; qty: Prisma.Decimal; price: Prisma.Decimal; prev: Prisma.Decimal; prevDate: Date; prevSupplierId: string; rn: bigint }>>`
+async function priceChangeEvents(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }): Promise<PriceChange[]> {
+  const whIds = actor.departmentIds === "ALL" ? null : (await db.warehouse.findMany({ where: { hotelId, ...warehouseScope(actor) }, select: { id: true } })).map((w) => w.id);
+  if (whIds && !whIds.length) return [];
+  const inScope = (alias: "g" | "g2") => (whIds ? Prisma.sql`AND ${Prisma.raw(`${alias}."warehouseId"`)} IN (${Prisma.join(whIds)})` : Prisma.empty);
+  const rows = await db.$queryRaw<Array<{ productId: string; receiptId: string; number: string; supplierId: string; source: string; receiptDate: Date; qty: Prisma.Decimal; price: Prisma.Decimal; prev: Prisma.Decimal; prevDate: Date; prevSupplierId: string; rn: bigint }>>`
     WITH r AS (
-      SELECT i."productId", g.id AS "receiptId", g.number, g."supplierId", g."receiptDate", g."postedAt", SUM(i."stockQty") AS qty, SUM(i."netAmount") / SUM(i."stockQty") AS price
+      SELECT i."productId", g.id AS "receiptId", g.number, g."supplierId", g.source, g."receiptDate", g."postedAt", SUM(i."stockQty") AS qty, SUM(i."netAmount") / SUM(i."stockQty") AS price
       FROM "GoodsReceiptItem" i JOIN "GoodsReceipt" g ON g.id = i."receiptId"
-      WHERE g."hotelId" = ${hotelId} AND g."receiptDate" < ${q.to} AND i."productId" IN (
-        SELECT i2."productId" FROM "GoodsReceiptItem" i2 JOIN "GoodsReceipt" g2 ON g2.id = i2."receiptId" WHERE g2."hotelId" = ${hotelId} AND g2."receiptDate" >= ${q.from} AND g2."receiptDate" < ${q.to})
+      WHERE g."hotelId" = ${hotelId} AND g."receiptDate" < ${q.to} ${inScope("g")} AND i."productId" IN (
+        SELECT i2."productId" FROM "GoodsReceiptItem" i2 JOIN "GoodsReceipt" g2 ON g2.id = i2."receiptId" WHERE g2."hotelId" = ${hotelId} AND g2."receiptDate" >= ${q.from} AND g2."receiptDate" < ${q.to} ${inScope("g2")})
         -- a receipt line taken back by a stock correction (its movement reversed) was never a price we paid
         AND NOT EXISTS (SELECT 1 FROM "StockTransaction" s JOIN "StockTransaction" rv ON rv."reversesId" = s.id
           WHERE s."hotelId" = ${hotelId} AND s."sourceType" = 'GOODS_RECEIPT' AND s."sourceId" = i.id)
@@ -244,7 +249,7 @@ async function priceChangeEvents(db: Db, hotelId: string, q: { from: Date; to: D
     const previous = D(r.prev.toString());
     const quantity = D(r.qty.toString());
     const change = current.minus(previous);
-    return { productId: r.productId, product: pn.get(r.productId)?.name ?? r.productId, unit: pn.get(r.productId)?.stockUnit ?? "", supplier: sn.get(r.supplierId) ?? "", receiptNo: r.number, date: r.receiptDate, previous, previousDate: r.prevDate, previousSupplier: sn.get(r.prevSupplierId) ?? "", current, change, changePct: change.div(previous).times(100), quantity, impact: change.times(quantity), latest: Number(r.rn) === 1 };
+    return { productId: r.productId, product: pn.get(r.productId)?.name ?? r.productId, unit: pn.get(r.productId)?.stockUnit ?? "", supplierId: r.supplierId, supplier: sn.get(r.supplierId) ?? "", source: r.source, receiptNo: r.number, date: r.receiptDate, previous, previousDate: r.prevDate, previousSupplier: sn.get(r.prevSupplierId) ?? "", current, change, changePct: change.div(previous).times(100), quantity, impact: change.times(quantity), latest: Number(r.rn) === 1 };
   });
 }
 
@@ -255,8 +260,22 @@ const seesPrices = (actor: Actor) => can(actor, "purchase:view") || can(actor, "
 export async function supplierPriceChanges(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }) {
   authorize(actor, "dashboard:view", { hotelId });
   if (!seesPrices(actor)) requirePermission(actor, "purchase:view");
-  const all = await priceChangeEvents(db, hotelId, q);
+  const all = await priceChangeEvents(db, actor, hotelId, q);
   return { increases: all.filter((c) => c.change.gt(0)).sort((a, b) => b.changePct.comparedTo(a.changePct)), decreases: all.filter((c) => c.change.lt(0)).sort((a, b) => a.changePct.comparedTo(b.changePct)) };
+}
+
+/**
+ * Purchasing page "Supplier price changes" and its export (round 2): the price changes of our own receipts in the
+ * page's period, supplier and source (not imported price lists), newest first — the same events as the dashboard.
+ */
+export async function purchasePriceChanges(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date; supplierId?: string | null; source?: string | null }, take = 25): Promise<PriceChange[]> {
+  authorize(actor, "purchase:prices", { hotelId });
+  const all = await priceChangeEvents(db, actor, hotelId, q);
+  const source = q.source && (RECEIPT_SOURCES as readonly string[]).includes(q.source) ? q.source : null;
+  return all
+    .filter((c) => (!q.supplierId || c.supplierId === q.supplierId) && (!source || c.source === source))
+    .sort((a, b) => b.date.getTime() - a.date.getTime() || a.product.localeCompare(b.product))
+    .slice(0, take);
 }
 
 export type PriceSummaryData = ReturnType<typeof priceSummary>;
@@ -270,6 +289,10 @@ function priceSummary(events: PriceChange[], take = 5) {
 }
 
 export type DashboardAlert = { id: string; type: string; severity: AlertSeverity; title: string; message: string; vars?: Record<string, string>; createdAt: Date; href?: string };
+/** An alert's placeholders as shown: the product name in title case (Turkish rules unless English; display only). */
+export function alertDisplayVars(vars: Record<string, string> | undefined, locale: string): Record<string, string> | undefined {
+  return vars && (vars.product ? { ...vars, product: titleTr(vars.product, locale) } : vars);
+}
 const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, WARNING: 2, INFO: 3 };
 
 /**
@@ -309,7 +332,7 @@ export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from
     inventoryStatus(db, actor, hotelId),
     db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true, taxTotal: true }, _count: true }),
     wasteByProduct(db, actor, hotelId, q, 5),
-    priceChangeEvents(db, hotelId, q),
+    priceChangeEvents(db, actor, hotelId, q),
     dataQuality(db, actor, hotelId),
   ]);
   const alerts = await alertList(db, hotelId, { prices, stock: inv, ...q });
@@ -355,7 +378,7 @@ export async function basicDashboard(db: Db, actor: Actor, hotelId: string, q: {
   const [inv, purchases, prices] = await Promise.all([
     can(actor, "inventory:view") ? inventoryStatus(db, actor, hotelId) : Promise.resolve(null),
     can(actor, "purchase:view") ? db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true }, _count: true }) : Promise.resolve(null),
-    can(actor, "purchase:view") ? priceChangeEvents(db, hotelId, q) : Promise.resolve(null),
+    can(actor, "purchase:view") ? priceChangeEvents(db, actor, hotelId, q) : Promise.resolve(null),
   ]);
   const alerts = inv || prices ? await alertList(db, hotelId, { prices, stock: inv, ...q }) : [];
   return {

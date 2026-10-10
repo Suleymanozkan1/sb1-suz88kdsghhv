@@ -145,6 +145,15 @@ describe("cost engine safety (spec 300–303)", () => {
     expect((await reprocessUnmappedSales(prisma, cc, h.hotel.id)).stockMovements).toBe(0); // never twice
     await prisma.hotel.update({ where: { id: h.hotel.id }, data: { autoDeductSales: false } });
   });
+
+  it("reprocessing falls back to the POS item name kept on the line when the code matches no recipe", async () => {
+    await commitSales(prisma, cc, h.hotel.id, { rows: [{ externalId: "RP-2", saleDate: "2026-09-22T10:00:00Z", department: "REST", posCode: "4711", name: "Izgara Biftek", quantity: 2, netRevenue: 1200 }], source: "API" });
+    expect((await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "RP-2" } })).itemName).toBe("Izgara Biftek");
+    const r = await createRecipe(prisma, cc, h.hotel.id, { code: "BIFTEK", name: "ızgara biftek", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { batchYieldQty: 1, yieldUnit: "portion", portions: 1, sellingPrice: 600, lines: [{ productId: beef, quantity: 200, unit: "g" }] } });
+    await approveVersion(prisma, cc, h.hotel.id, r.versions[0]!.id, { effectiveFrom: day("2026-09-01") });
+    expect((await reprocessUnmappedSales(prisma, cc, h.hotel.id)).mapped).toBe(1);
+    expect((await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "RP-2" } })).recipeId).toBe(r.id);
+  });
 });
 
 describe("negative testing (spec 286)", () => {

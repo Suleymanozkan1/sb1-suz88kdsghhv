@@ -10,7 +10,7 @@ import { wasteRequiresApproval } from "@/domain/waste";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
-import { postMovement, currentUnitCosts } from "./ledger";
+import { postMovement, previewIssueCost } from "./ledger";
 import { toConversions } from "./products";
 import { decimalText } from "@/lib/format";
 
@@ -81,8 +81,8 @@ export async function recordWaste(db: Db, actor: Actor, hotelId: string, raw: un
     if (!bal || D(bal.quantity.toString()).lt(stockQty)) {
       throw new DomainError("INSUFFICIENT_STOCK", `Cannot waste more ${product.name} than is in ${wh.name} (${bal?.quantity.toString() ?? 0} ${product.stockUnit})`);
     }
-    const estCost = (await currentUnitCosts(tx, hotelId, [product.id])).get(product.id) ?? ZERO;
-    const estimatedValue = stockQty.times(estCost);
+    // the value the posting will use: issued from this store (FIFO products: its oldest layers)
+    const estimatedValue = await previewIssueCost(tx, hotelId, wh.id, product.id, stockQty);
     const record = await tx.wasteRecord.create({
       data: {
         hotelId,

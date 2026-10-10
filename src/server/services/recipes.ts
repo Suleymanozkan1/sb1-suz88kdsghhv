@@ -318,8 +318,14 @@ export async function editRecipe(db: Db, actor: Actor, hotelId: string, recipeId
     const header = { code, name: input.name, type: input.type, departmentId: input.departmentId ?? null, outputProductId: input.outputProductId ?? recipe.outputProductId, posCode: input.posCode ?? null };
     await tx.recipe.update({ where: { id: recipeId }, data: header });
     const reason = input.version.reason?.trim() || "Recipe updated";
-    const data = { ...versionData({ ...input.version, reason }), createdById: actor.userId };
     const open = recipe.versions.find((v) => ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(v.status));
+    // the standard portion (it converts "portion" for recipes using this one as a sub-recipe) is kept unless the client sends it
+    const base = open ?? recipe.versions.find((v) => v.status === "APPROVED") ?? recipe.versions[0];
+    const portion = {
+      portionSize: input.version.portionSize !== undefined ? input.version.portionSize : (base?.portionSize?.toString() ?? null),
+      portionUnit: input.version.portionUnit !== undefined ? input.version.portionUnit : (base?.portionUnit ?? null),
+    };
+    const data = { ...versionData({ ...input.version, ...portion, reason }), createdById: actor.userId };
     let versionId: string;
     if (open) {
       await tx.recipeIngredient.deleteMany({ where: { versionId: open.id } });
@@ -392,7 +398,9 @@ export async function refreshRecipePrices(db: Db, actor: Actor, hotelId: string)
         },
       };
       const cost = costRecipe(versionToDef(r, v), frozen);
-      await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      // only while the version is still the approved one: a version superseded meanwhile keeps its own snapshot
+      const written = await db.recipeVersion.updateMany({ where: { id: v.id, status: "APPROVED" }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      if (written.count !== 1) throw new DomainError("CONFLICT", "The recipe changed during the refresh: run it again");
       const before = v.portionCost ? D(v.portionCost.toString()) : null;
       const after = cost.portionCost;
       const change = before && after ? after.minus(before) : null;

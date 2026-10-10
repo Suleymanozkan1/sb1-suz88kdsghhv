@@ -19,8 +19,9 @@ const TABS = ["recommendations", "auto", "suppliers"] as const;
 type Tab = (typeof TABS)[number];
 const PLAN_LABEL = { BASIC: "Basic plan", STANDARD: "Standard plan", PREMIUM: "Premium plan" } as const;
 
-/** The preview of the order e-mail: the first supplier with due rules (else the first rule's), or sample rows. */
-function sampleOrder(rules: { supplier: string; product: string; orderQty: string; unit: string; due: boolean }[]) {
+/** The preview of the order e-mail: the first supplier with due rules (else the first active rule's), or sample rows. Inactive rules never order. */
+function sampleOrder(all: { supplier: string; product: string; orderQty: string; unit: string; due: boolean; active: boolean }[]) {
+  const rules = all.filter((r) => r.active);
   const first = rules.find((r) => r.due) ?? rules[0];
   if (!first) return { supplier: "Örnek Gıda A.Ş.", lines: [{ product: "Domates", qty: "20", unit: "kg" }, { product: "Zeytinyağı", qty: "10", unit: "l" }] };
   const mine = rules.filter((r) => r.supplier === first.supplier && (r.due || !first.due)).slice(0, 10);

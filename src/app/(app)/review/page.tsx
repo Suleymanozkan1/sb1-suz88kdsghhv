@@ -24,7 +24,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const box = (title: string, empty: string, body: React.ReactNode, has: boolean) => <Card title={t(title)} padded={false}>{has ? body : <div className="p-4"><Empty title={t(empty)} /></div>}</Card>;
   return (
     <>
-      <PageHeader title={t("Weekly cost review")} subtitle={t("{from} – {to}: top cost increases, waste, variance, critical and high stock, price and recipe changes.", { from: date(r.from), to: date(new Date(r.to.getTime() - 86400000)) })} actions={<form method="get" className="flex items-end gap-2"><div><Label htmlFor="wk">{t("Week ending")}</Label><Input id="wk" type="date" name="week" defaultValue={end.toISOString().slice(0, 10)} /></div><Button type="submit" variant="secondary">{t("Show")}</Button></form>} exportKey="review" />
+      <PageHeader title={t("Weekly cost review")} subtitle={t("{from} – {to}: top cost increases, waste, variance, critical stock, price and recipe changes.", { from: date(r.from), to: date(new Date(r.to.getTime() - 86400000)) })} actions={<form method="get" className="flex items-end gap-2"><div><Label htmlFor="wk">{t("Week ending")}</Label><Input id="wk" type="date" name="week" defaultValue={end.toISOString().slice(0, 10)} /></div><Button type="submit" variant="secondary">{t("Show")}</Button></form>} exportKey="review" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label={t("Cost increase impact")} value={money(r.totals.costIncreaseImpact, cur, 0)} tone={r.totals.costIncreaseImpact.gt(0) ? "bad" : "default"} hint={t("{n} price changes", { n: r.priceChanges })} />
         <Stat label={t("Waste (top 10)")} value={money(r.totals.wasteCost, cur, 0)} tone="warn" />

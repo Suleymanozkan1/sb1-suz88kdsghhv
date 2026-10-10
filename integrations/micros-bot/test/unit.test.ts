@@ -109,6 +109,8 @@ describe("selectors", () => {
     assert.ok(todos.includes("login.username"));
     assert.ok(todos.includes("checks.steps[0].goto"));
     assert.ok(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.json"))).includes("minibar.columns.reference"));
+    const opera = findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.json")));
+    assert.ok(opera.includes("statistics.fields.outOfOrder") && opera.includes("statistics.fields.outOfService"), "out of order and out of service rooms are read like the other statistics");
     assert.ok(todos.includes("products.columns.name") && todos.includes("products.steps[0].goto"), "the products screen ships as a TODO like the others");
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/micros.mock.json"))), []);
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.mock.json"))), []);
@@ -245,6 +247,13 @@ describe("HotelCost client", () => {
     ]);
     assert.equal(valid.length, 2);
     assert.deepEqual(invalid.map((e) => e.item), [2, 3]);
+  });
+
+  test("occupancy: out of order and out of service rooms are both carried (server contract)", () => {
+    const { valid, invalid } = validateItems("occupancy", [{ availableRooms: 248, occupiedRooms: 3, guests: 5, outOfOrder: 2, outOfService: 1 }, { availableRooms: 10, occupiedRooms: 1, guests: 1, outOfService: "x" as unknown as number }]);
+    assert.equal(valid[0]!.outOfService, 1);
+    assert.equal(valid[0]!.outOfOrder, 2);
+    assert.deepEqual(invalid.map((e) => e.item), [1]);
   });
 
   test("local validation drops invalid items with a reason", () => {

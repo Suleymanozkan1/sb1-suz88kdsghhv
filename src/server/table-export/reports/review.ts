@@ -15,7 +15,7 @@ export const review: ReportDef = {
     const r = await weeklyReview(prisma, actor, hotelId, end);
     return {
       title: t("Weekly cost review"),
-      subtitle: t("{from} – {to}: top cost increases, waste, variance, critical and high stock, price and recipe changes.", { from: date(r.from), to: date(new Date(r.to.getTime() - 86400000)) }),
+      subtitle: t("{from} – {to}: top cost increases, waste, variance, critical stock, price and recipe changes.", { from: date(r.from), to: date(new Date(r.to.getTime() - 86400000)) }),
       fileName: "haftalik-maliyet-incelemesi",
       filters: [[t("Week ending"), date(end)]],
       tables: [

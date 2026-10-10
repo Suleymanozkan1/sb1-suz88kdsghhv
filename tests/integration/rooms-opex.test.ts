@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postMovement } from "@/server/services/ledger";
 import { createExpense, reverseExpense, commitExpenseImport, previewExpenseImport, createMeter, recordReading, recordLaundry, createAsset } from "@/server/services/opex";
-import { commitOccupancy, commitReservations, previewReservations, occupancyStats } from "@/server/services/pms";
+import { commitOccupancy, commitReservations, previewOccupancy, previewReservations, occupancyStats } from "@/server/services/pms";
 import { createRule, previewPeriodAllocation, postAllocation, reverseAllocation } from "@/server/services/allocation";
 import { roomCostItems, saveRoomCostItems } from "@/server/services/room-costs";
 import { roomCostReport, laundryReport, energyReport, engineeringReport, laborReport, housekeepingReport } from "@/server/services/operations";
@@ -46,6 +46,12 @@ beforeAll(async () => {
 });
 
 describe("room cost E2E (spec 281 / scenario 330)", () => {
+  it("the PMS daily template's out_of_service column is read with out_of_order (round 2)", async () => {
+    const p = await previewOccupancy(prisma, cc, h.hotel.id, [{ business_date: "2026-08-01", available_rooms: "4", occupied_rooms: "2", out_of_order: "1", out_of_service: "1", guests: "3", room_revenue: "5000" }]);
+    expect(p.rows[0]!.status).toBe("VALID");
+    expect([p.rows[0]!.data!.outOfOrder, p.rows[0]!.data!.outOfService]).toEqual([1, 1]);
+  });
+
   it("imports occupancy and reservations with duplicate protection", async () => {
     const occRows = Array.from({ length: 30 }, (_, i) => ({ business_date: `2026-09-${String(i + 1).padStart(2, "0")}`, available_rooms: "4", occupied_rooms: i < 10 ? "3" : "1", guests: i < 10 ? "6" : "2", room_revenue: i < 10 ? "9000" : "2500" }));
     const r1 = await commitOccupancy(prisma, cc, h.hotel.id, "occupancy-sep.csv", occRows);
@@ -190,9 +196,9 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
 
   it("export: Phase 3 sections are filled and reconcile; P&L reaches GOP", async () => {
     const e = await buildFullCostExport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
-    for (const k of ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost", "costAllocation"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
+    for (const k of ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
     expect(e.sections.roomCost!.rows).toHaveLength(4);
-    expect(e.sections.costAllocation!.rows).toHaveLength(6);
+    expect(e.sections.costAllocation).toBeUndefined(); // allocation module removed from the exports (round 2)
     const failed = e.checks.filter((c) => c.status === "FAIL");
     expect(failed).toEqual([]);
     for (const name of ["Allocation: allocated postings net to zero for the hotel", "Expenses: Σ posted expenses = EXPENSE ledger", "Room cost: Σ rooms + unassigned = rooms-division cost + monthly room expenses + distribution", "Department totals = hotel cost total"]) expect(e.checks.find((c) => c.check === name)?.status).toBe("PASS");
@@ -228,6 +234,24 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     // a new month suggests the last month's item names, amounts blank
     const nov = await roomCostItems(prisma, cc, h.hotel.id, "2026-11");
     expect([nov.saved, nov.defaults, nov.items.map((i) => [i.name, i.amount])]).toEqual([false, false, [["HK salaries", null], ["HK meals", null]]]);
+
+    // optimistic concurrency: a save over a month someone else saved since it was loaded is refused (409 CONFLICT)
+    const loadedA = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    const loadedB = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    expect(loadedA.revision).toBe(loadedB.revision);
+    const saved = await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedA.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: "3000" }] });
+    expect(saved.revision).not.toBe(loadedA.revision);
+    expect(saved.revision).toBe((await roomCostItems(prisma, cc, h.hotel.id, "2026-09")).revision);
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedB.revision, items: [{ name: "HK salaries", amount: "1" }] })).rejects.toMatchObject({ code: "CONFLICT", message: "This month was changed by someone else — reload and try again" });
+    // two saves from the same loaded state at once: exactly one wins
+    const race = await Promise.allSettled([1, 2].map((n) => saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: saved.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: n === 1 ? "3000" : "3000,00" }] })));
+    expect(race.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);
+    // an unsaved month has a revision too: someone saving it first makes a stale form fail
+    const dec = await roomCostItems(prisma, cc, h.hotel.id, "2026-12");
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", revision: dec.revision, items: [{ name: "HK meals", amount: "10" }] });
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", revision: dec.revision, items: [] })).rejects.toMatchObject({ code: "CONFLICT" });
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-12", items: [] });
+    expect((await prisma.auditLog.count({ where: { hotelId: h.hotel.id, action: "ROOM_COST_ITEMS_SAVE" } }))).toBe(7);
 
     const r = await roomCostReport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
     expect(r.totals.monthlyExpenses.toString()).toBe("33000");
