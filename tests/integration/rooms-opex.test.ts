@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day } from "./fixtures";
 import { postMovement } from "@/server/services/ledger";
 import { createExpense, reverseExpense, commitExpenseImport, previewExpenseImport, createMeter, recordReading, recordLaundry, createAsset } from "@/server/services/opex";
-import { commitOccupancy, commitReservations, previewReservations, occupancyStats } from "@/server/services/pms";
+import { commitOccupancy, commitReservations, previewOccupancy, previewReservations, occupancyStats } from "@/server/services/pms";
 import { createRule, previewPeriodAllocation, postAllocation, reverseAllocation } from "@/server/services/allocation";
 import { roomCostItems, saveRoomCostItems } from "@/server/services/room-costs";
 import { roomCostReport, laundryReport, energyReport, engineeringReport, laborReport, housekeepingReport } from "@/server/services/operations";
@@ -46,6 +46,12 @@ beforeAll(async () => {
 });
 
 describe("room cost E2E (spec 281 / scenario 330)", () => {
+  it("the PMS daily template's out_of_service column is read with out_of_order (round 2)", async () => {
+    const p = await previewOccupancy(prisma, cc, h.hotel.id, [{ business_date: "2026-08-01", available_rooms: "4", occupied_rooms: "2", out_of_order: "1", out_of_service: "1", guests: "3", room_revenue: "5000" }]);
+    expect(p.rows[0]!.status).toBe("VALID");
+    expect([p.rows[0]!.data!.outOfOrder, p.rows[0]!.data!.outOfService]).toEqual([1, 1]);
+  });
+
   it("imports occupancy and reservations with duplicate protection", async () => {
     const occRows = Array.from({ length: 30 }, (_, i) => ({ business_date: `2026-09-${String(i + 1).padStart(2, "0")}`, available_rooms: "4", occupied_rooms: i < 10 ? "3" : "1", guests: i < 10 ? "6" : "2", room_revenue: i < 10 ? "9000" : "2500" }));
     const r1 = await commitOccupancy(prisma, cc, h.hotel.id, "occupancy-sep.csv", occRows);
@@ -190,9 +196,9 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
 
   it("export: Phase 3 sections are filled and reconcile; P&L reaches GOP", async () => {
     const e = await buildFullCostExport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
-    for (const k of ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost", "costAllocation"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
+    for (const k of ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
     expect(e.sections.roomCost!.rows).toHaveLength(4);
-    expect(e.sections.costAllocation!.rows).toHaveLength(6);
+    expect(e.sections.costAllocation).toBeUndefined(); // allocation module removed from the exports (round 2)
     const failed = e.checks.filter((c) => c.status === "FAIL");
     expect(failed).toEqual([]);
     for (const name of ["Allocation: allocated postings net to zero for the hotel", "Expenses: Σ posted expenses = EXPENSE ledger", "Room cost: Σ rooms + unassigned = rooms-division cost + monthly room expenses + distribution", "Department totals = hotel cost total"]) expect(e.checks.find((c) => c.check === name)?.status).toBe("PASS");

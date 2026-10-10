@@ -25,7 +25,8 @@ export const NAV = [
   { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
   { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
-  { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view" },
+  // also for approval:decide and count approvers without the dashboard: the layout computes the "approvals" flag
+  { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view", flag: "approvals" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
   { href: "/review", label: "Weekly Review", icon: ListChecks, perm: "report:view" },
   { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view" },
@@ -37,8 +38,14 @@ export const NAV = [
   { href: "/admin", label: "Administration", icon: Users, perm: "admin:users" },
 ];
 
-/** The role's start page: the dashboard, else the first menu entry it may open (null: none at all). */
-export function homeHref(permissions: Iterable<string>): string | null {
+/** Menu entries the user may open: by permission, or by a flag the server computed (e.g. "approvals" for count approvers). */
+export function navItems(permissions: Iterable<string>, flags: Iterable<string> = []) {
   const has = new Set(permissions);
-  return NAV.find((n) => has.has(n.perm))?.href ?? null;
+  const flag = new Set(flags);
+  return NAV.filter((n) => has.has(n.perm) || (n.flag !== undefined && flag.has(n.flag)));
+}
+
+/** The role's start page: the dashboard, else the first menu entry it may open (null: none at all). */
+export function homeHref(permissions: Iterable<string>, flags: Iterable<string> = []): string | null {
+  return navItems(permissions, flags)[0]?.href ?? null;
 }

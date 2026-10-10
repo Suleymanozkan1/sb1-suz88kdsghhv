@@ -157,7 +157,7 @@ export async function weeklyReview(db: Db, actor: Actor, hotelId: string, weekEn
   const [prices, waste, versions] = await Promise.all([
     can(actor, "purchase:prices") ? db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: from, lt: to }, previousUnitPrice: { not: null } }, include: { product: true, supplier: true } }) : Promise.resolve([]),
     db.wasteRecord.groupBy({ by: ["productId"], where: { hotelId, status: "APPROVED", wasteDate: { gte: from, lt: to }, ...(actor.departmentIds === "ALL" ? {} : { departmentId: { in: [...actor.departmentIds] } }) }, _sum: { costValue: true, stockQty: true }, _count: true }),
-    db.recipeVersion.findMany({ where: { recipe: { hotelId }, approvedAt: { gte: from, lt: to } }, include: { recipe: true }, orderBy: { approvedAt: "desc" } }),
+    db.recipeVersion.findMany({ where: { recipe: { hotelId, deletedAt: null }, approvedAt: { gte: from, lt: to } }, include: { recipe: true }, orderBy: { approvedAt: "desc" } }),
   ]);
   const products = new Map((await db.product.findMany({ where: { hotelId, id: { in: waste.map((w) => w.productId) } }, select: { id: true, name: true, stockUnit: true } })).map((p) => [p.id, p]));
   const costIncreases = prices

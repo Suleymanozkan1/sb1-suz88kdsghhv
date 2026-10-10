@@ -2,7 +2,7 @@
  * The order e-mail to a supplier: the built-in Turkish template, its placeholders and the rendering to plain text
  * and HTML. Pure (no server code): the auto-order run sends with it and the template editor previews with it.
  */
-import { qty } from "@/lib/format";
+import { qty, titleTr } from "@/lib/format";
 
 export const ORDER_EMAIL_PLACEHOLDERS = ["{supplier}", "{hotel}", "{date}", "{lines}"] as const;
 
@@ -56,7 +56,9 @@ const htmlTable = (lines: OrderLine[]) =>
   "</tbody></table>";
 
 /** Subject, plain text (fallback) and HTML (with the product / quantity / unit table) of one supplier's order. */
-export function renderOrderEmail(tpl: OrderEmailTemplate, v: OrderEmailVars): { subject: string; text: string; html: string } {
+export function renderOrderEmail(tpl: OrderEmailTemplate, vars: OrderEmailVars): { subject: string; text: string; html: string } {
+  // product names in title case like on screen (Turkish rules: the e-mail is Turkish); stored names stay as typed
+  const v = { ...vars, lines: vars.lines.map((l) => ({ ...l, product: titleTr(l.product) })) };
   const TABLE = "\u0000LINES\u0000";
   const html = esc(fill(tpl.body, v, TABLE))
     .split(TABLE)

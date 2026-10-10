@@ -73,16 +73,20 @@ describe("export contract", () => {
       expect(exp.sections[k]!.rows, k).toHaveLength(0); // no sessions / rooms in this scenario
     }
     // this hotel has no rooms division / housekeeping / laundry departments: not available, never zero-filled
-    for (const k of ["roomCost", "housekeepingCost", "laundryCost", "budgetVariance"]) {
+    for (const k of ["roomCost", "housekeepingCost", "laundryCost"]) {
       expect(exp.sections[k]!.status, k).toBe("NOT_AVAILABLE");
       expect(exp.sections[k]!.rows).toHaveLength(0);
     }
-    // planning works without a budget: forecast from history, savings from posted data
-    expect(exp.sections.forecast!.status).toBe("OK");
+    // savings from posted data; the removed modules (cost allocation, budget, forecast) are not exported (round 2)
     expect(exp.sections.costSaving!.status).toBe("OK");
-    expect(exp.sections.budgetVariance!.note).toMatch(/No budget/);
+    for (const k of ["costAllocation", "budgetVariance", "forecast"]) expect(exp.sections[k], k).toBeUndefined();
+    for (const k of ["monthlySummary", "departmentCost", "costCenter"]) expect(exp.sections[k]!.columns.map((c) => c.key), k).not.toContain("budget");
+    expect(exp.sections.monthlyStock!.columns.map((c) => c.key)).toEqual(expect.arrayContaining(["transferOutNet"]));
+    expect(exp.sections.monthlyStock!.columns.map((c) => c.key)).not.toContain("transferIn");
+    expect(exp.sections.foodCost!.rows.map((r) => r.line)).not.toContain("Transfers In");
+    expect(exp.sections.foodCost!.rows.map((r) => r.line)).toContain("Transfers Out (net)");
     // modules that exist but have no data in the period: PARTIAL with no rows
-    for (const k of ["laborCost", "energyCost", "engineeringCost", "costAllocation"]) {
+    for (const k of ["laborCost", "energyCost", "engineeringCost"]) {
       expect(exp.sections[k]!.status, k).toBe("PARTIAL");
       expect(exp.sections[k]!.rows, k).toHaveLength(0);
     }

@@ -10,7 +10,6 @@ import { createBudget, setBudgetLines, approveBudget, reviseBudget, budgetReport
 import { opportunities, createAction, updateAction, listActions } from "@/server/services/savings";
 import { recordWaste } from "@/server/services/waste";
 import { buildFullCostExport } from "@/server/services/export";
-import { D } from "@/domain/money";
 import type { Actor } from "@/server/auth/actor";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
@@ -146,13 +145,11 @@ describe("savings (spec 199–200, 255–256)", () => {
 });
 
 describe("export (Phase 4 sections)", () => {
-  it("budget variance, forecast and cost saving sections are filled", async () => {
+  it("cost saving and menu engineering are filled; budget and forecast are no longer exported (round 2)", async () => {
     const e = await buildFullCostExport(prisma, cc, h.hotel.id, SEP);
-    expect(e.sections.budgetVariance!.status).not.toBe("NOT_AVAILABLE");
-    const food = e.sections.budgetVariance!.rows.find((r) => r.category === "FOOD")!;
-    expect(D(food.budget!).toString()).toBe("10500"); // approved revision
-    expect(e.sections.departmentCost!.rows.find((r) => r.department === "Restaurant")!.budget).not.toBeNull();
-    expect(e.sections.forecast!.rows.length).toBeGreaterThan(0);
+    expect(e.sections.budgetVariance).toBeUndefined();
+    expect(e.sections.forecast).toBeUndefined();
+    expect(e.sections.departmentCost!.rows.find((r) => r.department === "Restaurant")!.budget).toBeUndefined();
     expect(e.sections.costSaving!.rows.some((r) => r.status === "DONE")).toBe(true);
     expect(e.sections.menuEngineering!.rows).toHaveLength(2);
     expect(e.checks.filter((c) => c.status === "FAIL")).toEqual([]);

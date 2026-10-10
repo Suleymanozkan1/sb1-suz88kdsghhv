@@ -13,6 +13,12 @@ describe("order e-mail template", () => {
     expect(m.html).toMatch(/<td[^>]*>Zeytinyağı<\/td><td[^>]*>2,5<\/td><td[^>]*>l<\/td>/);
   });
 
+  it("product lines are in Turkish title case (display only)", () => {
+    const m = renderOrderEmail(DEFAULT_ORDER_EMAIL, { ...vars, lines: [{ product: "ılık süt 24'lü", qty: "1", unit: "koli" }, { product: "dana incik KDV", qty: "2", unit: "kg" }] });
+    expect(m.text).toContain("- Ilık Süt 24'lü: 1 koli\n- Dana İncik KDV: 2 kg");
+    expect(m.html).toMatch(/<td[^>]*>Dana İncik KDV<\/td>/);
+  });
+
   it("HTML escapes the user's text and names; only the table is markup", () => {
     const m = renderOrderEmail({ subject: "{hotel}", body: "<b>{supplier}</b>\n{lines}" }, { ...vars, supplier: "A & B <x>" });
     expect(m.html).toContain("&lt;b&gt;A &amp; B &lt;x&gt;&lt;/b&gt;<br><table");

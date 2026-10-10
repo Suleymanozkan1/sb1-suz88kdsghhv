@@ -20,7 +20,8 @@
       "occupiedRooms": "#occRooms",
       "guests": "#inHouseGuests",
       "roomRevenue": "#roomRevenue",
-      "outOfOrder": "#ooo"
+      "outOfOrder": "#ooo",
+      "outOfService": "#oos"
     },
     "rooms": {
       "steps": [{ "goto": "/rooms?date={date}" }],

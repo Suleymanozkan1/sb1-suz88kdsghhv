@@ -14,6 +14,10 @@ import { approveVersion, createRecipe, deleteRecipe, editRecipe, listRecipes, re
 import { previewSales } from "@/server/services/sales";
 import { createIntegrationKey, ingest, integrationActor, nextRequest, productPullStatus, productUnits, reportRun, requestRun } from "@/server/integrations/ingest";
 import { checkIntegrity } from "@/server/services/integrity";
+import { weeklyReview } from "@/server/services/calendar";
+import { enterCount, startCount, deleteCount } from "@/server/services/counts";
+import { recordWaste } from "@/server/services/waste";
+import { decideApproval } from "@/server/services/approvals";
 import type { Actor } from "@/server/auth/actor";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
@@ -47,6 +51,27 @@ describe("FIFO for every product", () => {
     expect(Number(use.totalCost)).toBe(-(3 * 700 + 800));
     expect(await layers(h.wh.main.id, mince.id)).toEqual(["4@800"]);
     expect(Number((await productCostTable(prisma, h.hotel.id)).get(mince.id)!.unitCost)).toBe(800);
+  });
+
+  it("values shown before posting use the FIFO cost the posting will use: count shortage, waste approval (round 2)", async () => {
+    const fish = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "SEABASS", name: "Levrek", stockUnit: "kg", costingMethod: "FIFO" });
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: fish.id, type: "PURCHASE", quantity: 2, unitCost: 100, txDate: day("2026-09-01"), sourceType: "MANUAL" });
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: fish.id, type: "PURCHASE", quantity: 3, unitCost: 400, txDate: day("2026-09-02"), sourceType: "MANUAL" });
+    // average 280/kg; a 3 kg shortage leaves the oldest batches: 2 × 100 + 1 × 400 = 600 (not 3 × 280 = 840)
+    const c = await startCount(prisma, cc, h.hotel.id, { warehouseId: h.wh.main.id, countDate: day("2026-09-03"), productIds: [fish.id] });
+    const short = await enterCount(prisma, cc, h.hotel.id, c.id, { lines: [{ productId: fish.id, countedQty: 2 }] });
+    expect(Number(short.lines[0]!.varianceValue)).toBe(-600);
+    // a surplus comes in at the store's average, as the posting does
+    const over = await enterCount(prisma, cc, h.hotel.id, c.id, { lines: [{ productId: fish.id, countedQty: 6 }] });
+    expect(Number(over.lines[0]!.varianceValue)).toBe(280);
+    await deleteCount(prisma, await h.actor("admin"), h.hotel.id, c.id);
+    // waste of 4.5 kg: estimate 2 × 100 + 2.5 × 400 = 1200 (above the 1000 approval limit), posted at exactly that
+    const w = await recordWaste(prisma, cc, h.hotel.id, { departmentId: h.depts.kitchen.id, warehouseId: h.wh.main.id, productId: fish.id, wasteType: "SPOILED", wasteDate: day("2026-09-03"), quantity: 4.5, unit: "kg" });
+    expect(w.status).toBe("PENDING_APPROVAL");
+    const ap = await prisma.approval.findUniqueOrThrow({ where: { id: w.approvalId! } });
+    expect(Number((ap.payload as { estimatedValue: string }).estimatedValue)).toBe(1200);
+    await decideApproval(prisma, await h.actor("admin"), h.hotel.id, { approvalId: w.approvalId!, decision: "APPROVE" });
+    expect(Number((await prisma.wasteRecord.findUniqueOrThrow({ where: { id: w.record.id } })).costValue)).toBe(1200);
   });
 
   it("a transfer carries its batches with their dates and prices to the receiving store", async () => {
@@ -231,6 +256,11 @@ describe("recipes: dates, edit, delete, price update", () => {
     expect(preview.rows[0]!.data!.recipeId).toBeNull();
     expect(await prisma.auditLog.count({ where: { hotelId: h.hotel.id, action: "RECIPE_DELETE" } })).toBe(2);
     await expect(deleteRecipe(prisma, chef, h.hotel.id, burger)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // the weekly review no longer lists versions of deleted recipes (round 2)
+    const week = await weeklyReview(prisma, cc, h.hotel.id, new Date());
+    expect(await prisma.recipeVersion.count({ where: { recipe: { hotelId: h.hotel.id, deletedAt: { not: null } }, approvedAt: { gte: week.from, lt: week.to } } })).toBeGreaterThan(0);
+    const deleted = (await prisma.recipe.findMany({ where: { hotelId: h.hotel.id, deletedAt: { not: null } }, select: { name: true } })).map((x) => x.name);
+    expect(week.recipeChanges.filter((x) => deleted.includes(x.recipe))).toEqual([]);
   });
 });
 

@@ -10,7 +10,7 @@ import ExcelJS from "exceljs";
 import type { Column, FullCostExport, Section } from "../services/export";
 import { EXPORT_VERSION, APP_VERSION } from "../services/export";
 import type { Locale } from "@/i18n/core";
-import { colRef, localizeExport, xlLang, type XlLang } from "./i18n";
+import { colRef, displayNames, localizeExport, xlLang, type XlLang } from "./i18n";
 import { autoFitColumns } from "./autofit";
 
 /**
@@ -298,7 +298,7 @@ const FORMULAS: Array<[string, string, string]> = [
 export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: string; locale?: Locale; lists: { departments: { id: string; name: string; outlet: boolean }[]; warehouses: { id: string; name: string }[] } }): Promise<BuiltWorkbook> {
   const lg = xlLang(opts.locale ?? "en");
   const { t, val, hdr } = lg;
-  const e = localizeExport(source, lg);
+  const e = localizeExport(displayNames(source, lg.locale), lg);
   const CONTROL = lg.sheet(CONTROL_SHEET);
   const ALL = val("All");
   const bulk: BulkTable[] = [];

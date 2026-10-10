@@ -27,7 +27,8 @@
       "occupiedRooms": "TODO: dolu oda sayısı",
       "guests": "TODO: konaklayan kişi sayısı",
       "roomRevenue": "TODO: oda geliri (yoksa null)",
-      "outOfOrder": "TODO: arızalı (OOO) oda sayısı (yoksa null)"
+      "outOfOrder": "TODO: arızalı (OOO) oda sayısı (yoksa null)",
+      "outOfService": "TODO: hizmet dışı (OOS) oda sayısı (yoksa null)"
     },
     "rooms": {
       "_info": "Dolu oda numaraları listesi (minibar kontrolü için). Okunmayacaksa bu bloğun tamamını null yapın.",

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { homeDashboard, LEVEL_LABEL, STOCK_LEVELS } from "@/server/services/insights";
+import { canOpenApprovals } from "@/server/services/approvals";
 import { BasicDashboard } from "./basic-dashboard";
 import { AlertList, PriceSummary } from "./dashboard-panels";
 import { prisma } from "@/server/db";
@@ -25,7 +26,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const t = await getT();
   // roles without the dashboard (e.g. warehouse user) start on the first page their menu offers
   if (!actor.permissions.has("dashboard:view")) {
-    const home = homeHref(actor.permissions);
+    const home = homeHref(actor.permissions, (await canOpenApprovals(prisma, actor, hotelId)) ? ["approvals"] : []);
     if (home && home !== "/") redirect(home);
     return <Empty title={t("Nothing to show for your role on this page")}>{t("Ask your company administrator if you need access.")}</Empty>;
   }

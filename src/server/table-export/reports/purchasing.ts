@@ -2,6 +2,7 @@ import { prisma } from "../../db";
 import { can, requirePermission } from "../../auth/actor";
 import { orderRecommendations } from "../../services/inventory";
 import { autoOrderOverview } from "../../services/auto-order";
+import { purchasePriceChanges } from "../../services/insights";
 import { listReceipts, RECEIPT_SOURCE, RECEIPT_STATUS } from "../../services/purchasing";
 import { monthRange } from "../../page";
 import { filterRules } from "@/app/(app)/purchasing/orders/filter-rules";
@@ -16,7 +17,8 @@ export const purchasing: ReportDef = {
     const source = q.get("source") || null;
     const receipts = await listReceipts(prisma, hotelId, { ...range, supplierId, source }, 5000);
     const supplier = supplierId ? await prisma.supplier.findFirst({ where: { id: supplierId, hotelId }, select: { name: true } }) : null;
-    const prices = can(actor, "purchase:prices") ? await prisma.supplierPrice.findMany({ where: { hotelId, changePct: { not: null } }, include: { product: true, supplier: true }, orderBy: { priceDate: "desc" }, take: 25 }) : [];
+    // price changes of our own receipts in the period / supplier / source, as on screen (the export lists all of them)
+    const prices = can(actor, "purchase:prices") ? await purchasePriceChanges(prisma, actor, hotelId, { ...range, supplierId, source }, 5000) : [];
     return {
       title: t("Purchasing & receiving"),
       fileName: "satin-alma",
@@ -35,7 +37,7 @@ export const purchasing: ReportDef = {
         ...(prices.length ? [{
           title: t("Supplier price changes"),
           columns: [{ key: "date", header: t("Date"), type: "date" as const }, { key: "product", header: t("Product") }, { key: "supplier", header: t("Supplier") }, { key: "old", header: t("Old"), type: "unitcost" as const }, { key: "new", header: t("New"), type: "unitcost" as const }, { key: "unit", header: t("Unit") }, { key: "ch", header: t("Change"), type: "pct" as const }],
-          rows: prices.map((p) => ({ date: p.priceDate, product: p.product.name, supplier: p.supplier.name, old: p.previousUnitPrice?.toString() ?? null, new: p.unitPrice.toString(), unit: p.product.stockUnit, ch: p.changePct?.toString() ?? null })),
+          rows: prices.map((p) => ({ date: p.date, product: p.product, supplier: p.supplier, old: p.previous.toString(), new: p.current.toString(), unit: p.unit, ch: p.changePct.toString() })),
         }] : []),
       ],
     };

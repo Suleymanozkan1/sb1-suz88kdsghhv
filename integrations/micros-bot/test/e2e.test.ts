@@ -121,7 +121,7 @@ describe("end-to-end against the mock Micros / Opera", () => {
     assert.deepEqual(minibar[0]!.items.map((m: any) => `${m.room}:${m.itemName}:${m.qty}:${m.reference}`), ["101:Su 0,5 lt:2:F-88121", "101:Çikolata:1:F-88122", "214:Kola 33cl:3:F-88140"]);
     assert.equal(minibar[0]!.items[0].postedAt, "2026-10-06T09:12:00+03:00");
     const occ = hc.ingests("occupancy");
-    assert.deepEqual(occ[0]!.items, [{ availableRooms: 248, occupiedRooms: 3, guests: 5, roomRevenue: 123456.78, outOfOrder: 2, occupiedRoomNumbers: ["101", "214", "305"] }]);
+    assert.deepEqual(occ[0]!.items, [{ availableRooms: 248, occupiedRooms: 3, guests: 5, roomRevenue: 123456.78, outOfOrder: 2, outOfService: 1, occupiedRoomNumbers: ["101", "214", "305"] }]);
 
     // run reports: one run per system, same runId as the data
     const runs = hc.runs();

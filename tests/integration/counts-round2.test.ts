@@ -6,7 +6,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma, makeHotel, makeProduct, day, ledgerInvariant } from "./fixtures";
 import { postMovement, transferStock } from "@/server/services/ledger";
-import { approvalsOverview, decideApproval } from "@/server/services/approvals";
+import { approvalsOverview, canOpenApprovals, decideApproval } from "@/server/services/approvals";
+import { navItems } from "@/components/nav";
 import { countSummary, countWarehouses, deleteCount, enterCount, listCounts, startCount, submitCount } from "@/server/services/counts";
 import { setCountApprovers } from "@/server/services/admin";
 import { theoreticalVsActual } from "@/server/services/variance";
@@ -91,6 +92,24 @@ describe("approval flow", () => {
     await expect(decideApproval(prisma, cc, h.hotel.id, { approvalId: dup2.id, decision: "APPROVE" })).rejects.toMatchObject({ code: "CONFLICT" });
     expect((await ledgerInvariant(h.wh.main.id, rice.id)).balanceQty).toBe("57");
     await prisma.approval.update({ where: { id: dup2.id }, data: { status: "CANCELLED" } });
+  });
+
+  it("a count approver without the dashboard opens the approvals page and menu entry (round 2)", async () => {
+    // warehouse users have no dashboard:view and no approval:decide
+    expect(await canOpenApprovals(prisma, wh, h.hotel.id)).toBe(false);
+    await expect(approvalsOverview(prisma, wh, h.hotel.id)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(navItems(wh.permissions).map((n) => n.href)).not.toContain("/approvals");
+    await setCountApprovers(prisma, admin, h.hotel.id, { warehouseId: h.wh.restStore.id, roleKeys: ["warehouse"] });
+    try {
+      expect(await canOpenApprovals(prisma, wh, h.hotel.id)).toBe(true);
+      await expect(approvalsOverview(prisma, wh, h.hotel.id)).resolves.toHaveProperty("pending");
+      expect(navItems(wh.permissions, ["approvals"]).map((n) => n.href)).toContain("/approvals");
+      // approval:decide alone (no dashboard) opens it too; another hotel never
+      expect(await canOpenApprovals(prisma, { ...viewerLike(wh), permissions: new Set(["approval:decide"]) }, h.hotel.id)).toBe(true);
+      expect(await canOpenApprovals(prisma, wh, "other-hotel")).toBe(false);
+    } finally {
+      await setCountApprovers(prisma, admin, h.hotel.id, { warehouseId: h.wh.restStore.id, roleKeys: [] });
+    }
   });
 
   it("approvers per warehouse (Admin): only the configured roles decide and see the request", async () => {
@@ -194,3 +213,8 @@ describe("variance reconciliation without a transfers-in row (§3)", () => {
     }
   });
 });
+
+/** The same user with another role key (permissions set by the caller). */
+function viewerLike(a: Actor): Actor {
+  return { ...a, roleKey: "custom-no-rules" };
+}
