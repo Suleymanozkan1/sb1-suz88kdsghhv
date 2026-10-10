@@ -225,10 +225,8 @@ export const stock: Record<string, string> = {
   "Purchase → stock → recipe units with explicit conversions. Costs come from the ledger.": "Satın alma → stok → reçete birimleri, açık dönüşüm katsayılarıyla. Maliyetler stok hareketlerinden gelir.",
   "New product": "Yeni ürün",
   "{n} products": "{n} ürün",
-  "Name, SKU, barcode, brand, category": "Ad, stok kodu, barkod, marka, kategori",
   "Search products": "Ürün ara",
   "Units (purchase → stock → recipe)": "Birimler (satın alma → stok → reçete)",
-  "Costing": "Maliyetlendirme",
   "Current cost": "Güncel maliyet",
   "Cost source": "Maliyet kaynağı",
   "missing": "eksik",
@@ -236,7 +234,6 @@ export const stock: Record<string, string> = {
   "inactive": "pasif",
   "{name} created": "{name} oluşturuldu",
   "SKU": "Stok kodu",
-  "Barcode": "Barkod",
   "Brand": "Marka",
   "Purchase unit": "Satın alma birimi",
   "1 purchase unit =": "1 satın alma birimi =",
@@ -419,4 +416,9 @@ export const stock: Record<string, string> = {
   "other": "diğer",
   "lost": "kayıp",
   "discarded": "imha",
+  // ── counts / approvals ──
+  "Starting…": "Başlatılıyor…",
+  "Estimated value": "Tahmini değer",
+  "Micros: {n}": "Micros: {n}",
+  "The summary covers the latest {n} movements; narrow the date range to see older ones.": "Özet son {n} hareketi kapsar; daha eskileri görmek için tarih aralığını daraltın.",
 };

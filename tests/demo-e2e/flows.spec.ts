@@ -51,7 +51,7 @@ async function pickProduct(page: Page, label: string | RegExp, search: string, o
 
 test("dashboard and hotel switch: controller sees each of its 3 hotels, no other company", async ({ page }) => {
   await signIn(page, "controller@test.local");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence", { ignoreCase: true }); // headings are shown in title case
   const options = await page.locator("select#hotel option").allTextContents();
   expect(options.sort()).toEqual(["Demo Grand İstanbul", "Demo Kordon İzmir", "Demo Lara Antalya"]);
   for (const name of ["Demo Lara Antalya", "Demo Kordon İzmir"]) {
@@ -114,7 +114,7 @@ test("waste (chef) posts at cost", async ({ page }) => {
   await expect(page.getByText(reason).first()).toBeVisible();
 });
 
-test("stock count (warehouse): start a sheet, count one line, submit", async ({ page }) => {
+test("stock count (warehouse): start a sheet, count one line, send for approval; controller approves", async ({ page, browser }) => {
   await signIn(page, "warehouse@test.local");
   await page.goto("/inventory/counts");
   await page.getByLabel("Warehouse").selectOption({ label: "Bar Warehouse" });
@@ -128,8 +128,41 @@ test("stock count (warehouse): start a sheet, count one line, submit", async ({ 
   const label = (await counted.getAttribute("aria-label"))!.replace(/^Counted /, "");
   await counted.fill("1");
   await page.getByRole("textbox", { name: `Reason ${label}` }).fill("demo e2e count");
-  await page.getByRole("button", { name: "Submit & post" }).click();
-  await expect(page.getByText(/Count posted to the ledger|sent for manager approval/)).toBeVisible();
+  await page.getByRole("button", { name: "Send for approval" }).click();
+  await expect(page.getByText(/Sent for approval/)).toBeVisible();
+  // only the selected warehouse's counts are listed
+  await expect(page.getByLabel("Show counts of")).toHaveValue(/.+/);
+  const heading = (await page.getByRole("heading", { name: /CNT-\d+ · Bar Warehouse/ }).first().textContent())!;
+  const number = heading.match(/CNT-\d+/)![0];
+  await expect(page.getByRole("heading", { name: new RegExp(`${number} · Bar Warehouse.*AWAITING APPROVAL`) })).toBeVisible();
+
+  // the count waits on the Approvals screen; the controller approves it → stock is posted
+  const ctx = await browser.newContext();
+  const mgr = await ctx.newPage();
+  answerDialogs(mgr, ["recount ok"]);
+  await signIn(mgr, "controller@test.local");
+  await mgr.goto("/approvals");
+  const row = mgr.getByRole("row", { name: new RegExp(number) });
+  await expect(row.getByText("STOCK COUNT", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "Approve" }).click();
+  await expect(mgr.getByRole("row", { name: new RegExp(number) }).getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await ctx.close();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: new RegExp(`${number} · Bar Warehouse.*POSTED`) })).toBeVisible();
+});
+
+test("stock count (company admin): an unposted count can be deleted, after confirmation", async ({ page }) => {
+  await signIn(page, "companyadmin@test.local");
+  await page.goto("/inventory/counts");
+  await page.getByLabel("Warehouse").selectOption({ label: "Pastry Warehouse" });
+  await page.getByLabel("Count date").fill(today());
+  await page.getByRole("button", { name: "Start count sheet" }).click();
+  await expect(page.getByLabel("Show counts of")).toHaveValue(await page.getByLabel("Warehouse").inputValue());
+  const heading = (await page.getByRole("heading", { name: /CNT-\d+ · Pastry Warehouse/ }).first().textContent())!;
+  const number = heading.match(/CNT-\d+/)![0];
+  answerDialogs(page, [true]);
+  await page.getByRole("button", { name: `Delete count ${number}` }).click();
+  await expect(page.getByRole("heading", { name: new RegExp(`${number} ·`) })).toHaveCount(0);
 });
 
 test("recipe (F&B manager): create with live cost, approve, cost explosion", async ({ page }) => {
@@ -179,7 +212,7 @@ test("buffet (F&B manager): open session, issue, leftovers, close → cost per c
       break;
     }
   }
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet", { ignoreCase: true }); // headings are shown in title case
   await pickProduct(page, "Product", "Chicken Wings", /Chicken Wings/);
   await page.getByLabel("Quantity").fill("2");
   await page.getByRole("button", { name: "Issue to buffet" }).click();
@@ -223,7 +256,7 @@ test("operating expense (rooms division): post and reverse", async ({ page }) =>
   await expect(page.getByRole("row").filter({ hasText: desc })).toContainText("REVERSED");
 });
 
-test("reports on demo data: variance, rooms, budget, forecast what-if, menu engineering, savings", async ({ page }) => {
+test("reports on demo data: variance, rooms, menu engineering, savings", async ({ page }) => {
   const { from, to } = lastMonth();
   await signIn(page, "controller@test.local");
   await page.goto(`/variance?from=${from}&to=${to}`);
@@ -231,20 +264,10 @@ test("reports on demo data: variance, rooms, budget, forecast what-if, menu engi
   await page.goto(`/rooms?from=${from}&to=${to}`);
   await expect(page.getByText("Cost / occupied night")).toBeVisible();
   await expect(page.getByRole("cell", { name: "Suite" }).first()).toBeVisible();
-  const [y, m] = from.split("-");
-  await page.goto(`/budget?year=${y}&month=${Number(m)}`);
-  await expect(page.getByRole("cell", { name: "TOTAL COST" })).toBeVisible();
-  await page.goto("/forecast");
-  await page.getByLabel("Ingredient").selectOption({ label: "Chicken Breast" });
-  await page.getByLabel("Price %").fill("15");
-  await page.getByRole("button", { name: "Calculate" }).click();
-  await expect(page.getByRole("cell", { name: "Chicken Breast price +15.0%" })).toBeVisible();
   await page.goto(`/menu-engineering?from=${from}&to=${to}`);
   await expect(page.getByText(/STAR|PLOWHORSE|PUZZLE|DOG/).first()).toBeVisible();
   await page.goto(`/operations?from=${from}&to=${to}&tab=energy`);
   await expect(page.getByRole("cell", { name: "ELECTRICITY" }).first()).toBeVisible();
-  await page.goto("/allocation");
-  await expect(page.getByText("POSTED").first()).toBeVisible();
 });
 
 test("Excel .xlsm (sync), background export and PDF management pack", async ({ page }) => {

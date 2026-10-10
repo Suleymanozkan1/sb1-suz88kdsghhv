@@ -20,6 +20,7 @@ import { createRecipe, approveVersion } from "@/server/services/recipes";
 import { commitSales } from "@/server/services/sales";
 import { recordWaste } from "@/server/services/waste";
 import { startCount, enterCount, submitCount } from "@/server/services/counts";
+import { decideApproval } from "@/server/services/approvals";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { createSession, addLine, closeSession } from "@/server/services/buffet";
 import { setPar, restockToParLevels, recordMovement } from "@/server/services/minibar";
@@ -81,11 +82,14 @@ describe("full flow on a new tenant", () => {
     const count = await startCount(prisma, admin, H, { warehouseId: wh.KITCH!, countDate: day(8, 23) });
     await enterCount(prisma, admin, H, count.id, { lines: count.lines.map((l) => ({ productId: l.productId, countedQty: D(l.systemQty.toString()).times(0.98).toDecimalPlaces(3).toString(), reason: "Month-end" })) });
     const sub = await submitCount(prisma, admin, H, count.id);
-    expect(["POSTED", "PENDING_APPROVAL"]).toContain(sub.status);
+    expect(sub.status).toBe("PENDING_APPROVAL"); // every count goes to approval
+    await decideApproval(prisma, cc, H, { approvalId: sub.approvalId, decision: "APPROVE" });
+    expect((await prisma.stockCount.findUniqueOrThrow({ where: { id: count.id } })).status).toBe("POSTED");
 
-    // buffet and minibar
-    await postTransfer(prisma, admin, H, { fromWarehouseId: wh.MAIN, toWarehouseId: wh.BRKF, productId: eggs.id, quantity: 400, unit: "pc", txDate: day(9, 6) });
-    const s = await createSession(prisma, admin, H, { departmentId: dept.BRKF, warehouseId: wh.BRKF, type: "BREAKFAST", serviceDate: day(10, 0), expectedCovers: 120 });
+    // buffet and minibar (breakfast is issued from the kitchen store: there is no breakfast store)
+    expect(wh.BRKF).toBeUndefined();
+    await postTransfer(prisma, admin, H, { fromWarehouseId: wh.MAIN, toWarehouseId: wh.KITCH, productId: eggs.id, quantity: 400, unit: "pc", txDate: day(9, 6) });
+    const s = await createSession(prisma, admin, H, { departmentId: dept.BRKF, warehouseId: wh.KITCH, type: "BREAKFAST", serviceDate: day(10, 0), expectedCovers: 120 });
     await addLine(prisma, admin, H, s.id, { kind: "PRODUCTION", productId: eggs.id, quantity: 150, unit: "pc" });
     await addLine(prisma, admin, H, s.id, { kind: "REFILL", productId: eggs.id, quantity: 40, unit: "pc" });
     await closeSession(prisma, admin, H, s.id, { actualCovers: 110, leftovers: [{ key: eggs.id, quantity: "12", class: "WASTE" }] });

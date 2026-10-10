@@ -63,7 +63,8 @@ export async function makeProduct(hotelId: string, categoryId: string, p: { sku:
       stockUnit: p.stockUnit ?? "kg",
       recipeUnit: p.stockUnit === "pc" ? "pc" : p.stockUnit === "l" ? "ml" : "g",
       yieldPct: p.yieldPct ?? "100",
-      costingMethod: p.costingMethod ?? "WEIGHTED_AVERAGE",
+      // FIFO like every product in the application (schema default); weighted average only when a test asks for it
+      costingMethod: p.costingMethod ?? "FIFO",
       defaultSupplierId: p.supplierId ?? null,
       conversions: p.caseKg ? { create: [{ fromUnit: "case", toUnit: p.stockUnit ?? "kg", factor: p.caseKg }] } : undefined,
     },

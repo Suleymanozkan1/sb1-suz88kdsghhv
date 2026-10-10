@@ -294,59 +294,64 @@ model Hotel {
   autoDeductSales         Boolean      @default(true)
   /// the hotel day ends at night audit, not at midnight: "HH:MM" (local time); data before it belongs to the previous day
   businessDayCutoff       String       @default("03:30")
+  /// last "Pull products" from Micros that delivered: the next pull asks only for products added since
+  productsPulledAt        DateTime?
   active                  Boolean      @default(true)
   createdAt               DateTime     @default(now())
 
-  departments       Department[]
-  costCenters       CostCenter[]
-  warehouses        Warehouse[]
-  products          Product[]
-  suppliers         Supplier[]
-  periods           CostPeriod[]
-  recipes           Recipe[]
-  stockTxs          StockTransaction[]
-  costTxs           CostTransaction[]
-  userAccess        UserHotelAccess[]
-  categories        ProductCategory[]
-  purchaseOrders    PurchaseOrder[]
-  goodsReceipts     GoodsReceipt[]
-  invoices          Invoice[]
-  wasteRecords      WasteRecord[]
-  stockCounts       StockCount[]
-  sales             SaleLine[]
-  approvals         Approval[]
-  auditLogs         AuditLog[]
-  alerts            Alert[]
-  rooms             Room[]
-  purchaseRequests  PurchaseRequest[]
-  productionBatches ProductionBatch[]
-  yieldRecords      YieldRecord[]
-  supplierPrices    SupplierPrice[]
-  balances          StockBalance[]
-  fifoLayers        FifoLayer[]
-  salesImports      SalesImport[]
-  costSnapshots     CostSnapshot[]
-  calcRuns          CalculationRun[]
-  exportJobs        ExportJob[]
-  employees         Employee[]
-  buffetSessions    BuffetSession[]
-  minibarPars       MinibarPar[]
-  minibarMovements  MinibarMovement[]
-  expenses          Expense[]
-  budgets           Budget[]
-  allocationRules   CostAllocationRule[]
-  occupancy         OccupancyImport[]
-  reports           Report[]
-  assets            Asset[]
-  meters            Meter[]
-  laundryLogs       LaundryLog[]
-  reservations      Reservation[]
-  importBatches     ImportBatch[]
-  allocationRuns    AllocationRun[]
-  costTargets       CostTarget[]
-  savingActions     SavingAction[]
-  calendarTasks     CalendarTask[]
-  autoOrderRules    AutoOrderRule[]
+  departments        Department[]
+  costCenters        CostCenter[]
+  warehouses         Warehouse[]
+  products           Product[]
+  suppliers          Supplier[]
+  periods            CostPeriod[]
+  recipes            Recipe[]
+  stockTxs           StockTransaction[]
+  costTxs            CostTransaction[]
+  userAccess         UserHotelAccess[]
+  categories         ProductCategory[]
+  purchaseOrders     PurchaseOrder[]
+  goodsReceipts      GoodsReceipt[]
+  invoices           Invoice[]
+  wasteRecords       WasteRecord[]
+  stockCounts        StockCount[]
+  sales              SaleLine[]
+  approvals          Approval[]
+  auditLogs          AuditLog[]
+  alerts             Alert[]
+  rooms              Room[]
+  purchaseRequests   PurchaseRequest[]
+  productionBatches  ProductionBatch[]
+  yieldRecords       YieldRecord[]
+  supplierPrices     SupplierPrice[]
+  balances           StockBalance[]
+  fifoLayers         FifoLayer[]
+  salesImports       SalesImport[]
+  costSnapshots      CostSnapshot[]
+  calcRuns           CalculationRun[]
+  exportJobs         ExportJob[]
+  employees          Employee[]
+  buffetSessions     BuffetSession[]
+  minibarPars        MinibarPar[]
+  minibarMovements   MinibarMovement[]
+  expenses           Expense[]
+  budgets            Budget[]
+  allocationRules    CostAllocationRule[]
+  occupancy          OccupancyImport[]
+  roomCostItems      RoomCostItem[]
+  reports            Report[]
+  assets             Asset[]
+  meters             Meter[]
+  laundryLogs        LaundryLog[]
+  reservations       Reservation[]
+  importBatches      ImportBatch[]
+  allocationRuns     AllocationRun[]
+  costTargets        CostTarget[]
+  savingActions      SavingAction[]
+  calendarTasks      CalendarTask[]
+  autoOrderRules     AutoOrderRule[]
+  countApprovers     CountApprover[]
+  orderEmailTemplate OrderEmailTemplate?
 
   @@unique([organizationId, code])
 }
@@ -536,6 +541,8 @@ model ProductCategory {
   children ProductCategory[] @relation("CatTree")
   // top-level group used by reports: FOOD, BEVERAGE, PACKAGING, HOUSEKEEPING ...
   group    String
+  // chart-of-accounts code the accounting tracks this stock under (e.g. 150.01); optional
+  accountCode String?
   products Product[]
 
   @@unique([hotelId, code])
@@ -558,7 +565,7 @@ model Product {
   recipeUnit        String
   taxRatePct        Decimal         @default(0) @db.Decimal(20, 6)
   currency          String          @default("TRY")
-  costingMethod     CostingMethod   @default(WEIGHTED_AVERAGE)
+  costingMethod     CostingMethod   @default(FIFO)
   standardCost      Decimal?        @db.Decimal(20, 6) // per stock unit
   minStock          Decimal?        @db.Decimal(20, 6)
   maxStock          Decimal?        @db.Decimal(20, 6)
@@ -627,44 +634,55 @@ model Supplier {
 /// Automatic ordering (premium plan): when stock falls below the reorder point, the order goes to the supplier by
 /// e-mail. Basic plans see the products that reached their reorder point without sending anything.
 model AutoOrderRule {
-  id           String    @id @default(cuid())
-  hotelId      String
-  hotel        Hotel     @relation(fields: [hotelId], references: [id])
-  supplierId   String
-  supplier     Supplier  @relation(fields: [supplierId], references: [id])
-  productId    String
-  product      Product   @relation(fields: [productId], references: [id])
+  id            String          @id @default(cuid())
+  hotelId       String
+  hotel         Hotel           @relation(fields: [hotelId], references: [id])
+  supplierId    String
+  supplier      Supplier        @relation(fields: [supplierId], references: [id])
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id])
   /// in the product's stock unit
-  reorderPoint Decimal   @db.Decimal(20, 6)
-  safetyStock  Decimal?  @db.Decimal(20, 6)
-  orderQty     Decimal   @db.Decimal(20, 6)
+  reorderPoint  Decimal         @db.Decimal(20, 6)
+  safetyStock   Decimal?        @db.Decimal(20, 6)
+  orderQty      Decimal         @db.Decimal(20, 6)
   /// where the order is sent (defaults to the supplier's e-mail)
-  email        String?
+  email         String?
   /// paused rules wait as they are (e.g. a product not bought in the low season)
-  active       Boolean   @default(true)
+  active        Boolean         @default(true)
   lastOrderedAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  sends        AutoOrderSend[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  sends         AutoOrderSend[]
 
   @@unique([hotelId, productId])
   @@index([hotelId, active])
 }
 
 model AutoOrderSend {
-  id        String        @id @default(cuid())
-  hotelId   String
-  ruleId    String
-  rule      AutoOrderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  sentAt    DateTime      @default(now())
-  quantity  Decimal       @db.Decimal(20, 6)
-  stockQty  Decimal       @db.Decimal(20, 6)
-  email     String
+  id       String        @id @default(cuid())
+  hotelId  String
+  ruleId   String
+  rule     AutoOrderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  sentAt   DateTime      @default(now())
+  quantity Decimal       @db.Decimal(20, 6)
+  stockQty Decimal       @db.Decimal(20, 6)
+  email    String
   /// SENT | FAILED | SKIPPED (no mail server configured)
-  status    String
-  error     String?
+  status   String
+  error    String?
 
   @@index([hotelId, sentAt])
+}
+
+/// The hotel's own order e-mail to suppliers (no row = the built-in Turkish template).
+/// Placeholders: {supplier} {hotel} {date} {lines} (the product / quantity / unit table).
+model OrderEmailTemplate {
+  hotelId     String   @id
+  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  subject     String
+  body        String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
 }
 
 // Immutable price history. One row per observed price (receipt, contract, quote).
@@ -864,6 +882,7 @@ model Warehouse {
   counts         StockCount[]
   wasteRecords   WasteRecord[]
   buffetSessions BuffetSession[]
+  countApprovers CountApprover[]
 
   @@unique([hotelId, code])
 }
@@ -959,21 +978,40 @@ model FifoConsumption {
 }
 
 model StockCount {
-  id           String           @id @default(cuid())
-  hotelId      String
-  hotel        Hotel            @relation(fields: [hotelId], references: [id])
-  warehouseId  String
-  warehouse    Warehouse        @relation(fields: [warehouseId], references: [id])
-  number       String
-  countDate    DateTime
-  status       CountStatus      @default(DRAFT)
-  countedById  String
-  approvedById String?
-  postedAt     DateTime?
-  note         String?
-  lines        StockCountLine[]
+  id            String           @id @default(cuid())
+  hotelId       String
+  hotel         Hotel            @relation(fields: [hotelId], references: [id])
+  warehouseId   String
+  warehouse     Warehouse        @relation(fields: [warehouseId], references: [id])
+  number        String
+  countDate     DateTime
+  status        CountStatus      @default(DRAFT)
+  countedById   String
+  approvedById  String?
+  postedAt      DateTime?
+  note          String?
+  // last approver's rejection note: the count is back in DRAFT for a recount
+  rejectionNote String?
+  // soft delete (never shown, kept for audit); only unposted counts can be deleted
+  deletedAt     DateTime?
+  deletedById   String?
+  lines         StockCountLine[]
 
   @@unique([hotelId, number])
+}
+
+// Which roles may approve the counts of a warehouse. No row for a warehouse = any role with approval:decide.
+model CountApprover {
+  id          String    @id @default(cuid())
+  hotelId     String
+  hotel       Hotel     @relation(fields: [hotelId], references: [id])
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  roleKey     String
+  createdAt   DateTime  @default(now())
+
+  @@unique([warehouseId, roleKey])
+  @@index([hotelId])
 }
 
 model StockCountLine {
@@ -1073,6 +1111,10 @@ model Recipe {
   posCode         String? // sales mapping key
   active          Boolean            @default(true)
   createdAt       DateTime           @default(now())
+  // last change of the recipe or one of its versions
+  updatedAt       DateTime           @default(now()) @updatedAt
+  // soft delete: hidden everywhere, kept for the sales history that references it
+  deletedAt       DateTime?
   versions        RecipeVersion[]
   usedAsSub       RecipeIngredient[] @relation("SubRecipe")
   sales           SaleLine[]
@@ -1786,21 +1828,41 @@ model SavingAction {
 }
 
 model OccupancyImport {
-  id             String       @id @default(cuid())
-  hotelId        String
-  hotel          Hotel        @relation(fields: [hotelId], references: [id])
-  businessDate   DateTime     @db.Date
-  availableRooms Int
-  occupiedRooms  Int
-  guests         Int
-  roomRevenue    Decimal      @db.Decimal(20, 6)
-  outOfOrder     Int          @default(0)
-  source         String
-  importId       String?
-  import         ImportBatch? @relation(fields: [importId], references: [id])
-  sourceRow      Int?
+  id                  String       @id @default(cuid())
+  hotelId             String
+  hotel               Hotel        @relation(fields: [hotelId], references: [id])
+  businessDate        DateTime     @db.Date
+  availableRooms      Int
+  occupiedRooms       Int
+  guests              Int
+  roomRevenue         Decimal      @db.Decimal(20, 6)
+  outOfOrder          Int          @default(0)
+  /// rooms out of service that night (Opera OOS); with outOfOrder they are not sellable
+  outOfService        Int          @default(0)
+  /// room numbers sold that night as Opera lists them (string[]; null = not sent); the minibar board marks them
+  occupiedRoomNumbers Json?
+  source              String
+  importId            String?
+  import              ImportBatch? @relation(fields: [importId], references: [id])
+  sourceRow           Int?
 
   @@unique([hotelId, businessDate])
+}
+
+/// Monthly room cost expenses entered by the hotel (HK salaries incl. SGK, staff meals, uniforms, room supplies…).
+/// month = 'YYYY-MM'; room cost prorates each month by the days of the selected period.
+model RoomCostItem {
+  id        String   @id @default(cuid())
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  month     String
+  name      String
+  amount    Decimal  @db.Decimal(20, 6)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hotelId, month])
 }
 
 /**
@@ -1983,21 +2045,21 @@ model IntegrationKey {
 
 /// One automation run (Micros / Opera bot) and what it delivered: the import log screen.
 model IntegrationRun {
-  id           String    @id @default(cuid())
-  hotelId      String
+  id          String    @id @default(cuid())
+  hotelId     String
   /// the bot's run id
-  runId        String
-  source       String
-  businessDay  String?
+  runId       String
+  source      String
+  businessDay String?
   /// STARTED | SUCCEEDED | FAILED
-  status       String
-  message      String?
+  status      String
+  message     String?
   /// per kind: { checks: { received, accepted, duplicates, errors }, ... }
-  stats        Json?
-  requestId    String?
-  startedAt    DateTime  @default(now())
-  finishedAt   DateTime?
-  updatedAt    DateTime  @updatedAt
+  stats       Json?
+  requestId   String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  updatedAt   DateTime  @updatedAt
 
   @@unique([hotelId, runId])
   @@index([hotelId, startedAt])
@@ -2008,6 +2070,8 @@ model IntegrationRequest {
   id            String    @id @default(cuid())
   hotelId       String
   source        String
+  /// what to fetch: DAY (the business day's data) or PRODUCTS (products added in Micros since the last pull)
+  kind          String    @default("DAY")
   businessDay   String?
   requestedById String
   createdAt     DateTime  @default(now())

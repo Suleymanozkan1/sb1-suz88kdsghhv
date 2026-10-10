@@ -3,7 +3,7 @@
  * HTML, cookie sessions. Selectors for it: selectors/micros.mock.json and selectors/opera.mock.json.
  *
  *   Micros  /login  /home  /checks?date=DD.MM.YYYY[&page=N]  /checks/view?id=  /purchasing/invoices?date=
- *           /purchasing/invoice?id=  /reports/covers?date=YYYY-MM-DD
+ *           /purchasing/invoice?id=  /reports/covers?date=YYYY-MM-DD  /purchasing/items?since=DD.MM.YYYY
  *   Opera   /opera/login  /opera/home  /opera/stats?date=  /opera/rooms?date=  /opera/minibar?date=
  *
  * `state` can be changed while the server runs: wrong passwords, removed elements (to simulate a changed
@@ -12,7 +12,7 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { checksFor, coversFor, invoicesFor, minibarFor, statsFor, trDate, trNum } from "./data";
+import { checksFor, coversFor, invoicesFor, minibarFor, productsAll, statsFor, trDate, trNum } from "./data";
 
 export interface MockMicrosState {
   micros: { username: string; password: string };
@@ -175,6 +175,18 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
         <table id="invoiceLines"><thead><tr><th>Kod</th><th>Ürün</th><th>Miktar</th><th>Birim</th><th>Birim Fiyat</th><th>KDV</th></tr></thead><tbody>${inv.lines
           .map((l) => `<tr><td>${esc(l.code)}</td><td>${esc(l.name)}</td><td>${trNum(l.qty, l.qty % 1 ? 2 : 0)}</td><td>${esc(l.unit)}</td><td>${trNum(l.price)}</td><td>%${l.vat}</td></tr>`)
           .join("")}</tbody></table>`));
+    }
+    if (p === "/purchasing/items") {
+      // product cards created on or after `since` (a day); the list is not filtered without it
+      const sinceParam = url.searchParams.get("since");
+      const since = isoDay(sinceParam);
+      const form = `<form method="get" action="/purchasing/items"><input name="since" value="${esc(sinceParam ?? "")}" placeholder="GG.AA.YYYY"></form>`;
+      if (!since) return send(200, page("Stok Kartları", form));
+      const rows = productsAll().filter((x) => x.created >= since);
+      if (!rows.length) return send(200, page("Stok Kartları", `${form}<p id="noItems">Yeni ürün yok</p>`));
+      return send(200, page("Stok Kartları", `${form}${has("itemList") ? `<table id="itemList"><thead><tr><th>Kod</th><th>Ürün</th><th>Birim</th><th>İçerik</th><th></th><th>KDV</th><th>Grup</th><th>Oluşturma</th></tr></thead><tbody>${rows
+        .map((x) => `<tr><td class="code">${esc(x.code)}</td><td class="name">${esc(x.name)}</td><td class="unit">${esc(x.unit)}</td><td class="pack">${x.pack === null ? "" : trNum(x.pack, x.pack % 1 ? 2 : 0)}</td><td class="packUnit">${esc(x.packUnit)}</td><td class="vat">%${x.vat}</td><td class="group">${esc(x.group)}</td><td class="created">${trDate(x.created)}</td></tr>`)
+        .join("")}</tbody></table>` : `<div>layout changed</div>`}`));
     }
     if (p === "/reports/covers") {
       const day = isoDay(url.searchParams.get("date"));

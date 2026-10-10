@@ -9,6 +9,7 @@ import { postMovement } from "@/server/services/ledger";
 import { createExpense, reverseExpense, commitExpenseImport, previewExpenseImport, createMeter, recordReading, recordLaundry, createAsset } from "@/server/services/opex";
 import { commitOccupancy, commitReservations, previewReservations, occupancyStats } from "@/server/services/pms";
 import { createRule, previewPeriodAllocation, postAllocation, reverseAllocation } from "@/server/services/allocation";
+import { roomCostItems, saveRoomCostItems } from "@/server/services/room-costs";
 import { roomCostReport, laundryReport, energyReport, engineeringReport, laborReport, housekeepingReport } from "@/server/services/operations";
 import { rollbackBatch } from "@/server/services/imports";
 import { reverseExpenseTx } from "@/server/services/opex";
@@ -125,7 +126,7 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     await postAllocation(prisma, cc, h.hotel.id, period.id);
   });
 
-  it("room cost: full cost, per room / type / channel, cost per occupied room", async () => {
+  it("room cost: full cost, per room / type, KPIs over sellable rooms, cost per occupied room", async () => {
     const r = await roomCostReport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
     // rooms division = HK chemicals 3000 + amenities 600 + HK labor 20000 + laundry 6000 + AC repair 1500 + electricity 7500 + engineering 857.142857 + engineering labor 4285.714286
     expect(r.totals.roomsDivisionCost.toString()).toBe("43742.857143");
@@ -143,8 +144,17 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     expect(r201.components.distribution.toString()).toBe("4800");
     expect(r.lines.find((l) => l.number === "102")!.fullCost.toString()).toBe("0"); // never occupied
     expect(r.byType.map((t) => t.key).sort()).toEqual(["Deluxe", "Standard", "Suite"]);
-    const ota = r.channels.find((c) => c.channel === "OTA")!;
-    expect(ota.net.toString()).toBe("25200");
+    // nothing entered on the monthly room cost expenses screen yet
+    expect(r.totals.monthlyExpenses.toString()).toBe("0");
+    expect(r.warnings).toContain("No room cost expenses entered for 2026-09.");
+    expect(r.laborOverlap).toBeNull(); // payroll in the ledger only: nothing counted twice
+    // revenue KPIs over sellable room nights (no OOO / OOS here: sellable = available = 4 rooms × 30)
+    expect(r.occupancy.sellableRooms).toBe(120);
+    expect(r.kpis.adr!.toString()).toBe("2800"); // 140000 / 50 sold
+    expect(r.kpis.revpar!.toFixed(2)).toBe("1166.67"); // 140000 / 120 sellable
+    expect(r.kpis.revenuePerGuest!.toString()).toBe("1400"); // 140000 / 100 guest nights
+    expect(r.kpis.unsoldRooms).toBe(70);
+    expect(r.kpis.unsoldCost!.toFixed(2)).toBe(D("48542.857143").div(120).times(70).toFixed(2));
     // hotel operating cost excludes below-GOP rent: 3000+600+1500+20000+6000+10000+5000+1000 = 47100 → / 50 occupied rooms
     expect(r.totals.hotelOperatingCost.toString()).toBe("47100");
     expect(r.totals.hotelCpor!.toString()).toBe("942");
@@ -180,12 +190,12 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
 
   it("export: Phase 3 sections are filled and reconcile; P&L reaches GOP", async () => {
     const e = await buildFullCostExport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
-    for (const k of ["roomCost", "roomTypeCost", "roomChannelCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost", "costAllocation"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
+    for (const k of ["roomCost", "roomTypeCost", "housekeepingCost", "laundryCost", "laborCost", "energyCost", "engineeringCost", "assetCost", "costAllocation"]) expect([k, e.sections[k]!.status]).not.toEqual([k, "NOT_AVAILABLE"]);
     expect(e.sections.roomCost!.rows).toHaveLength(4);
     expect(e.sections.costAllocation!.rows).toHaveLength(6);
     const failed = e.checks.filter((c) => c.status === "FAIL");
     expect(failed).toEqual([]);
-    for (const name of ["Allocation: allocated postings net to zero for the hotel", "Expenses: Σ posted expenses = EXPENSE ledger", "Room cost: Σ rooms + unassigned = rooms-division cost + distribution", "Department totals = hotel cost total"]) expect(e.checks.find((c) => c.check === name)?.status).toBe("PASS");
+    for (const name of ["Allocation: allocated postings net to zero for the hotel", "Expenses: Σ posted expenses = EXPENSE ledger", "Room cost: Σ rooms + unassigned = rooms-division cost + monthly room expenses + distribution", "Department totals = hotel cost total"]) expect(e.checks.find((c) => c.check === name)?.status).toBe("PASS");
     const pnl = Object.fromEntries(e.sections.pnl!.rows.map((r) => [r.line, r.value]));
     expect(D(pnl["Revenue — Rooms"]!).toString()).toBe("140000"); // PMS: 10 × 9000 + 20 × 2500
     expect(e.summary.costPerOccupiedRoom!.status).toBe("ACTUAL");
@@ -198,5 +208,50 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     await setPeriodStatus(prisma, cc, { hotelId: h.hotel.id, periodId: period.id, status: "CLOSED", overrideReason: "test close" });
     await expect(rollbackBatch(prisma, cc, h.hotel.id, batch.id, "wrong file", reverseExpenseTx)).rejects.toThrow(/CLOSED/);
     await expect(reverseExpense(prisma, cc, h.hotel.id, (await prisma.expense.findFirstOrThrow({ where: { hotelId: h.hotel.id, status: "POSTED" } })).id, "x")).rejects.toThrow(/CLOSED/);
+  });
+
+  it("monthly room cost expenses: entered per month, prorated into room cost, items added / removed", async () => {
+    const chef = await h.actor("chef", [dept.REST!]);
+    await expect(saveRoomCostItems(prisma, chef, h.hotel.id, { month: "2026-09", items: [] })).rejects.toThrow(/opex:manage/);
+    const empty = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    expect([empty.saved, empty.defaults, empty.items.length]).toEqual([false, true, 4]);
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-9", items: [] })).rejects.toThrow(/YYYY-MM/);
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", items: [{ name: "A", amount: "1" }, { name: "a", amount: "2" }] })).rejects.toThrow(/only once/);
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", items: [{ name: "A", amount: "-1" }] })).rejects.toThrow(/non-negative/);
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: "3000" }, { name: "Uniforms", amount: "500" }] });
+    // back to a past month and update it: an item removed, an amount changed (Turkish decimal comma accepted)
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: "3000,00" }] });
+    await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-10", items: [{ name: "HK salaries", amount: "31000" }, { name: "HK meals", amount: "3100" }] });
+    const sep = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
+    expect(sep.items.map((i) => [i.name, i.amount!.toString()])).toEqual([["HK salaries", "30000"], ["HK meals", "3000"]]);
+    expect((await prisma.auditLog.count({ where: { hotelId: h.hotel.id, action: "ROOM_COST_ITEMS_SAVE" } }))).toBe(3);
+    // a new month suggests the last month's item names, amounts blank
+    const nov = await roomCostItems(prisma, cc, h.hotel.id, "2026-11");
+    expect([nov.saved, nov.defaults, nov.items.map((i) => [i.name, i.amount])]).toEqual([false, false, [["HK salaries", null], ["HK meals", null]]]);
+
+    const r = await roomCostReport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
+    expect(r.totals.monthlyExpenses.toString()).toBe("33000");
+    expect(r.components.monthly.toString()).toBe("33000");
+    expect(r.totals.fullCost.toString()).toBe("81542.857143");
+    expect(sum(r.lines.map((l) => l.fullCost)).plus(sum(Object.values(r.unassigned))).toString()).toBe("81542.857143");
+    expect(r.warnings.some((w) => w.startsWith("No room cost expenses"))).toBe(false);
+    // HK payroll is already an expense of the Rooms division AND "HK salaries" are entered monthly: flagged
+    expect(r.laborOverlap).not.toBeNull();
+    expect(r.laborOverlap!.ledgerLabor.gt(0)).toBe(true);
+    expect(r.laborOverlap!.monthlyExpenses.toString()).toBe("33000");
+    expect(r.warnings.some((w) => w.startsWith("Payroll of ") && w.includes("counted twice"))).toBe(true);
+    // 16 Sep – 15 Oct: 15/30 of September + 15/31 of October
+    const cross = await roomCostReport(prisma, cc, h.hotel.id, { from: new Date("2026-09-16T00:00:00Z"), to: new Date("2026-10-16T00:00:00Z") });
+    expect(cross.monthly.items.map((i) => [i.name, i.share.toFixed(2)])).toEqual([["HK salaries", "30000.00"], ["HK meals", "3000.00"]]);
+    expect(cross.totals.monthlyExpenses.toFixed(2)).toBe("33000.00");
+
+    // out of order / out of service nights are not sellable: RevPAR and cost per sellable room use the rest
+    await prisma.occupancyImport.updateMany({ where: { hotelId: h.hotel.id, businessDate: new Date("2026-09-30T00:00:00Z") }, data: { outOfOrder: 1, outOfService: 1 } });
+    const occ = await occupancyStats(prisma, h.hotel.id, FROM, TO);
+    expect([occ.availableRooms, occ.outOfOrder, occ.outOfService, occ.sellableRooms]).toEqual([120, 1, 1, 118]);
+    expect(occ.revpar!.toFixed(4)).toBe(D(140000).div(118).toFixed(4));
+    const r2 = await roomCostReport(prisma, cc, h.hotel.id, { from: FROM, to: TO });
+    expect(r2.kpis.unsoldRooms).toBe(68);
+    expect(r2.kpis.costPerSellableRoom!.toFixed(4)).toBe(D("81542.857143").div(118).toFixed(4));
   });
 });

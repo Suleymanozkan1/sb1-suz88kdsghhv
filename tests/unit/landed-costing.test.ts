@@ -102,7 +102,7 @@ describe("stock metrics", () => {
     expect(stockLevel(5, cfg)).toBe("CRITICAL");
     expect(stockLevel(10, cfg)).toBe("LOW");
     expect(stockLevel(50, cfg)).toBe("NORMAL");
-    expect(stockLevel(150, cfg)).toBe("OVERSTOCK");
+    expect(stockLevel(150, cfg)).toBe("NORMAL"); // no overstock status (r2 §1)
   });
   it("turnover and days of stock", () => {
     expect(inventoryTurnover(12000, 1000, 3000)!.toString()).toBe("6");

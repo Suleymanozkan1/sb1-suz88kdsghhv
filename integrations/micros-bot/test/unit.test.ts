@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { addDays, defaultBusinessDay, formatDay, parseDateTime, zonedIso, isValidDay } from "../src/util/time";
 import { parseNumber } from "../src/util/numbers";
-import { buildConfig, maskedConfig, parseDotEnv, validateConfig } from "../src/config";
+import { buildConfig, maskedConfig, parseDotEnv, runAtAfter, validateConfig } from "../src/config";
 import { configureLogger, redact } from "../src/logger";
 import { summarize, makeRunId } from "../src/runner";
 import { parseCsv, readInvoiceFile, rowsToInvoices, normalizeHeader, decodeText } from "../src/invoices/fileReader";
@@ -89,6 +89,12 @@ describe("config & secrets", () => {
     assert.ok(!printed.includes("topsecret") && !printed.includes("hc_key_abcdef"));
     assert.ok(validateConfig(buildConfig({ RUN_AT: "4:15pm" })).some((p) => p.includes("RUN_AT")));
   });
+  test("RUN_AT defaults to cut-off + 45 min unless set", () => {
+    assert.equal(runAtAfter("03:30"), "04:15");
+    assert.equal(runAtAfter("23:30"), "00:15");
+    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAt, buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAtFixed], ["05:45", false]);
+    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00", RUN_AT: "06:30" }).runAt, buildConfig({ RUN_AT: "06:30" }).runAtFixed], ["06:30", true]);
+  });
   test("redaction of secrets and bearer tokens", () => {
     configureLogger({ secrets: ["topsecret"], silent: true });
     assert.equal(redact("password topsecret was rejected"), "password *** was rejected");
@@ -103,6 +109,7 @@ describe("selectors", () => {
     assert.ok(todos.includes("login.username"));
     assert.ok(todos.includes("checks.steps[0].goto"));
     assert.ok(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.json"))).includes("minibar.columns.reference"));
+    assert.ok(todos.includes("products.columns.name") && todos.includes("products.steps[0].goto"), "the products screen ships as a TODO like the others");
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/micros.mock.json"))), []);
     assert.deepEqual(findTodos(loadSelectors(path.join(import.meta.dirname, "../selectors/opera.mock.json"))), []);
   });
@@ -227,6 +234,17 @@ describe("HotelCost client", () => {
     const client = new HotelCostClient({ baseUrl: "http://127.0.0.1:1", apiKey: "k", retries: 2, retryBaseMs: 1 });
     await assert.rejects(client.nextRequest(), /network error calling HotelCost/);
     assert.equal(await client.reportRun({ runId: "x", source: "MICROS", status: "STARTED" }), false);
+  });
+
+  test("product cards: validated like the server contract", () => {
+    const { valid, invalid } = validateItems("products", [
+      { name: "Domates Salçası 830 gr", code: "ST-31", unit: "adet", packSize: 830, packUnit: "gr", taxRatePct: 1, category: "Kuru Gıda" },
+      { name: "Dana Antrikot", unit: "kg" },
+      { name: "", unit: "kg" },
+      { name: "Bozuk KDV", unit: "kg", taxRatePct: 120 },
+    ]);
+    assert.equal(valid.length, 2);
+    assert.deepEqual(invalid.map((e) => e.item), [2, 3]);
   });
 
   test("local validation drops invalid items with a reason", () => {

@@ -22,6 +22,7 @@ import { requestStockDelete } from "../src/server/services/approvals";
 import { createSession, addLine, closeSession } from "../src/server/services/buffet";
 import { minibarSetup, setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../src/server/services/minibar";
 import { createAsset, createMeter, recordReading, recordLaundry, commitExpenseImport, createExpense } from "../src/server/services/opex";
+import { saveRoomCostItems } from "../src/server/services/room-costs";
 import { commitOccupancy, commitReservations } from "../src/server/services/pms";
 import { createRule, postAllocation } from "../src/server/services/allocation";
 import { periodFor } from "../src/server/services/period";
@@ -53,12 +54,12 @@ const CATEGORY_TREE: Record<string, string[]> = {
   LINEN: ["Bed linen", "Towels", "Bathrobes"],
 };
 
-type P = { sku: string; name: string; cat: string; unit: string; purchaseUnit?: string; caseSize?: string; price: number; yieldPct?: number; supplier: number; reorder?: number; safety?: number; max?: number; fifo?: boolean };
+type P = { sku: string; name: string; cat: string; unit: string; purchaseUnit?: string; caseSize?: string; price: number; yieldPct?: number; supplier: number; reorder?: number; safety?: number; max?: number };
 const PRODUCTS: P[] = [
   { sku: "MEAT-BEEF-GR", name: "Ground Beef", cat: "Meat", unit: "kg", price: 640, yieldPct: 95, supplier: 0, reorder: 20, safety: 10, max: 120 },
   { sku: "CHK-BREAST", name: "Chicken Breast", cat: "Chicken", unit: "kg", purchaseUnit: "case", caseSize: "10", price: 190, yieldPct: 92, supplier: 0, reorder: 25, safety: 15, max: 150 },
   { sku: "CHK-WHOLE", name: "Whole Chicken", cat: "Chicken", unit: "kg", price: 120, yieldPct: 80, supplier: 0, reorder: 10, safety: 5 },
-  { sku: "FISH-SALMON", name: "Salmon Fillet", cat: "Fish", unit: "kg", price: 820, yieldPct: 90, supplier: 1, reorder: 5, safety: 3, fifo: true },
+  { sku: "FISH-SALMON", name: "Salmon Fillet", cat: "Fish", unit: "kg", price: 820, yieldPct: 90, supplier: 1, reorder: 5, safety: 3 },
   { sku: "VEG-TOMATO", name: "Tomato", cat: "Vegetables", unit: "kg", price: 38, yieldPct: 89, supplier: 2, reorder: 20, safety: 10 },
   { sku: "VEG-ONION", name: "Onion", cat: "Vegetables", unit: "kg", price: 22, yieldPct: 88, supplier: 2, reorder: 15, safety: 8 },
   { sku: "VEG-LETTUCE", name: "Iceberg Lettuce", cat: "Vegetables", unit: "kg", price: 45, yieldPct: 75, supplier: 2, reorder: 10, safety: 5 },
@@ -92,8 +93,8 @@ const PRODUCTS: P[] = [
   { sku: "BEV-COLA", name: "Cola 330ml", cat: "Soft drinks", unit: "pc", purchaseUnit: "case", caseSize: "24", price: 22, supplier: 4, reorder: 48, safety: 24 },
   { sku: "BEV-TONIC", name: "Tonic Water 200ml", cat: "Soft drinks", unit: "pc", price: 28, supplier: 4 },
   { sku: "BEV-SODA", name: "Soda Water 200ml", cat: "Soft drinks", unit: "pc", price: 14, supplier: 4 },
-  { sku: "SPR-GIN", name: "London Dry Gin", cat: "Spirits", unit: "l", purchaseUnit: "bottle", caseSize: "0.7", price: 1300, supplier: 4, fifo: true },
-  { sku: "SPR-RUM", name: "White Rum", cat: "Spirits", unit: "l", purchaseUnit: "bottle", caseSize: "0.7", price: 1100, supplier: 4, fifo: true },
+  { sku: "SPR-GIN", name: "London Dry Gin", cat: "Spirits", unit: "l", purchaseUnit: "bottle", caseSize: "0.7", price: 1300, supplier: 4 },
+  { sku: "SPR-RUM", name: "White Rum", cat: "Spirits", unit: "l", purchaseUnit: "bottle", caseSize: "0.7", price: 1100, supplier: 4 },
   { sku: "BAR-MINT", name: "Fresh Mint", cat: "Garnishes", unit: "kg", price: 150, yieldPct: 70, supplier: 2 },
   { sku: "SYR-SUGAR", name: "Sugar Syrup", cat: "Syrups", unit: "l", price: 95, supplier: 4 },
   { sku: "PKG-BOX", name: "Burger Takeaway Box", cat: "Boxes", unit: "pc", price: 3.5, supplier: 3 },
@@ -155,8 +156,9 @@ async function main() {
   for (const [code, name] of deptDefs) await prisma.costCenter.create({ data: { hotelId: H, departmentId: dept[code], code: `CC-${code}`, name, kind: "DEPARTMENT" } });
   await prisma.department.create({ data: { hotelId: hotel2.id, code: "REST", name: "Restaurant", isOutlet: true } });
 
+  // no breakfast store: breakfast is issued from the kitchen store (feedback round 2)
   const wh: Record<string, string> = {};
-  for (const [code, name, d] of [["MAIN", "Main Store", null], ["KITCH", "Kitchen Store", "KITCH"], ["REST", "Restaurant Store", "REST"], ["CAFE", "Cafe Store", "CAFE"], ["BAR", "Bar Store", "BAR"], ["BRKF", "Breakfast Store", "BRKF"], ["PAST", "Pastry Store", "PAST"]] as const) {
+  for (const [code, name, d] of [["MAIN", "Main Store", null], ["KITCH", "Kitchen Store", "KITCH"], ["REST", "Restaurant Store", "REST"], ["CAFE", "Cafe Store", "CAFE"], ["BAR", "Bar Store", "BAR"], ["PAST", "Pastry Store", "PAST"]] as const) {
     wh[code] = (await prisma.warehouse.create({ data: { hotelId: H, code, name, departmentId: d ? dept[d] : null } })).id;
   }
   await prisma.warehouse.create({ data: { hotelId: hotel2.id, code: "MAIN", name: "Main Store" } });
@@ -178,7 +180,7 @@ async function main() {
     ["controller", "Selin Kaya (Cost Controller)", "cost_controller", null, true],
     ["fb", "Murat Demir (F&B Manager)", "fb_manager", ["FB", "REST", "CAFE", "BAR", "BRKF", "BANQ", "KITCH", "PAST"], false],
     ["chef", "Ahmet Yılmaz (Executive Chef)", "chef", ["KITCH", "REST", "BANQ"], false],
-    ["breakfast", "Elif Şahin (Breakfast Chef)", "breakfast_chef", ["BRKF"], false],
+    ["breakfast", "Elif Şahin (Breakfast Chef)", "breakfast_chef", ["BRKF", "KITCH"], false],
     ["pastry", "Deniz Aydın (Pastry Chef)", "pastry_chef", ["PAST"], false],
     ["purchasing", "Burak Çelik (Purchasing)", "purchasing_manager", null, false],
     ["accounting", "Zeynep Arslan (Accounting)", "accounting_manager", null, true],
@@ -205,13 +207,16 @@ async function main() {
     const created = await prisma.product.create({
       data: {
         hotelId: H, sku: p.sku, name: p.name, categoryId: cat[p.cat]!, defaultSupplierId: suppliers[p.supplier], purchaseUnit: p.purchaseUnit ?? p.unit, stockUnit: p.unit,
-        recipeUnit: p.unit === "kg" ? "g" : p.unit === "l" ? "ml" : p.unit, yieldPct: String(p.yieldPct ?? 100), costingMethod: p.fifo ? "FIFO" : "WEIGHTED_AVERAGE",
-        reorderPoint: p.reorder != null ? String(p.reorder) : null, safetyStock: p.safety != null ? String(p.safety) : null, maxStock: p.max != null ? String(p.max) : null, minStock: p.safety != null ? String(p.safety) : null,
+        recipeUnit: p.unit === "kg" ? "g" : p.unit === "l" ? "ml" : p.unit, yieldPct: String(p.yieldPct ?? 100), costingMethod: "FIFO",
+        maxStock: p.max != null ? String(p.max) : null, minStock: p.safety != null ? String(p.safety) : null,
         taxRatePct: p.cat === "Spirits" ? "20" : "1", shelfLifeDays: ["Vegetables", "Fruits", "Fish", "Chicken", "Meat", "Milk"].includes(p.cat) ? 7 : 180,
         conversions: p.caseSize ? { create: [{ fromUnit: p.purchaseUnit!, toUnit: p.unit, factor: p.caseSize }] } : undefined,
       },
     });
     pid[p.sku] = created.id;
+    // reorder point / safety stock live on the automatic-ordering rules (paused: the seed never e-mails an order)
+    const rp = p.reorder ?? p.safety;
+    if (rp != null) await prisma.autoOrderRule.create({ data: { hotelId: H, productId: created.id, supplierId: suppliers[p.supplier]!, reorderPoint: String(rp), safetyStock: p.safety != null ? String(p.safety) : null, orderQty: String(p.max != null && p.max > rp ? p.max - rp : Math.max(rp, 1)), active: false } });
   }
 
   // ── Opening stock (first day) ──
@@ -262,7 +267,7 @@ async function main() {
   // Sales are planned first; purchases are received at the start of each week for that week's
   // need (+ buffer); outlets receive daily transfers and issue what they used that day (with some
   // real-world over-use on tomato and cheddar so the variance report has something to explain).
-  const deptWh: Record<string, string> = { REST: wh.REST!, CAFE: wh.CAFE!, BAR: wh.BAR!, BRKF: wh.BRKF!, PAST: wh.PAST! };
+  const deptWh: Record<string, string> = { REST: wh.REST!, CAFE: wh.CAFE!, BAR: wh.BAR!, BRKF: wh.KITCH!, PAST: wh.PAST! };
   const priceBump = new Date(start.getTime() + 14 * 86400000);
   const plan = days.map((d) => {
     const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
@@ -509,6 +514,11 @@ async function main() {
   await commitReservations(prisma, admin, H, "pms-reservations.csv", resRows);
   const occRows = days.map((d) => { const k = d.toISOString().slice(0, 10); const v = nightly.get(k) ?? { occ: 0, guests: 0, rev: 0 }; return { business_date: k, available_rooms: String(allRooms.length), occupied_rooms: String(v.occ), out_of_order: "0", guests: String(v.guests), room_revenue: v.rev.toFixed(2) }; });
   await commitOccupancy(prisma, pmsUser, H, "pms-daily-statistics.csv", occRows);
+  // monthly room cost expenses (Room cost → Room cost expenses): HK payroll is posted as expenses below, so only meals, uniforms and supplies here
+  for (const month of [...new Set(days.map((d) => d.toISOString().slice(0, 7)))]) {
+    const g = days.filter((d) => d.toISOString().startsWith(month)).reduce((a, d) => a + (nightly.get(d.toISOString().slice(0, 10))?.guests ?? 0), 0);
+    await saveRoomCostItems(prisma, pmsUser, H, { month, items: [{ name: "Housekeeping staff meals", amount: "61600" }, { name: "Staff uniforms / laundry (estimate)", amount: "9900" }, { name: "Room supplies (estimate: paper products, water, detergent…)", amount: String(g * 22) }] });
+  }
 
   // housekeeping store (amenities issued per occupied room) and linen room
   const hkProducts: Array<[string, string, string, string, number]> = [["HK-SOAP", "Guest Soap 25g", "Amenities", "pc", 4.2], ["HK-SLIPPER", "Guest Slippers", "Guest supplies", "pc", 18], ["HK-CHEM", "Multi-surface Cleaner", "Chemicals", "l", 85], ["LIN-SHEET", "Bed Sheet", "Bed linen", "pc", 420], ["LIN-TOWEL", "Bath Towel", "Towels", "pc", 260], ["LIN-ROBE", "Bathrobe", "Bathrobes", "pc", 780]];

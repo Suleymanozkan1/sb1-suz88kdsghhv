@@ -6,7 +6,14 @@
  * must come before a more general one that could also match it. The most general templates ("Line {0}: {1}",
  * "{0} is inactive", "PO is {0}" …) are therefore collected in the last section — keep them there.
  */
+import { r2bMessages } from "./r2b";
+import { r2eMessages } from "./r2e";
+import { r2cMessages } from "./r2c";
+
 export const TR_MESSAGES: Record<string, string> = {
+  ...r2cMessages,
+  ...r2bMessages,
+  ...r2eMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "{0}% price": "fiyat %{0}",
@@ -122,6 +129,8 @@ export const TR_MESSAGES: Record<string, string> = {
   "{0}: unknown unit '{1}' — create the product card first": "{0}: bilinmeyen birim '{1}' — önce ürün kartını oluşturun",
   "{0} error(s)": "{0} hata",
   "Use HH:MM": "SS:DD biçiminde girin",
+  "Unknown currency code (use ISO 4217, e.g. TRY, EUR)": "Bilinmeyen para birimi kodu (ISO 4217 kullanın, ör. TRY, EUR)",
+  "Unknown time zone (use an IANA name, e.g. Europe/Istanbul)": "Bilinmeyen saat dilimi (IANA adı kullanın, ör. Europe/Istanbul)",
   "No mail server configured (SMTP_URL)": "E-posta sunucusu tanımlı değil (SMTP_URL)",
   "Supplier has no e-mail address": "Tedarikçinin e-posta adresi yok",
   "Order quantity must be positive": "Sipariş miktarı sıfırdan büyük olmalı",
@@ -369,6 +378,9 @@ export const TR_MESSAGES: Record<string, string> = {
   "PO line not found": "Sipariş satırı bulunamadı",
   "PO line product mismatch": "Sipariş satırındaki ürün uyuşmuyor",
   "Must be a number": "Sayı olmalıdır",
+  "Revision factor must be a number above 0 and at most 10": "Revizyon katsayısı 0'dan büyük ve en fazla 10 olan bir sayı olmalıdır",
+  "An open saving action already exists for this opportunity": "Bu fırsat için zaten açık bir tasarruf aksiyonu var",
+  "Owner role must be one of the organization's roles": "Sorumlu rol, kuruluşun rollerinden biri olmalıdır",
 
   // ── recipes ──
   "Unknown product in recipe lines": "Reçete satırlarında bilinmeyen ürün",
@@ -422,6 +434,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Report not found": "Rapor bulunamadı",
   "This report has no reproducibility fingerprint (generated before archiving was introduced)": "Bu raporun yeniden üretilebilirlik parmak izi yok (arşivleme eklenmeden önce oluşturulmuş)",
   "The management pack is hotel-wide: needs an all-department role": "Yönetim raporu paketi otel geneli içindir: tüm departmanları kapsayan bir rol gerekir",
+  "Verifying a report rebuilds the whole hotel: needs an all-department role": "Rapor doğrulaması tüm oteli yeniden hesaplar: tüm departmanları kapsayan bir rol gerekir",
   "Unknown report {0}": "Bilinmeyen rapor: {0}",
 
   // ── sales ──

@@ -6,6 +6,7 @@ export interface MockInvoiceLine { code: string; name: string; qty: number; unit
 export interface MockInvoice { id: string; supplier: string; invoiceNo: string; date: string /* YYYY-MM-DD */; store: string; lines: MockInvoiceLine[] }
 export interface MockCovers { outlet: string; meal: string; covers: number }
 export interface MockMinibar { room: string; code: string; item: string; qty: number; ref: string; time: string }
+export interface MockProduct { code: string; name: string; unit: string; pack: number | null; packUnit: string; vat: number; group: string; created: string /* YYYY-MM-DD */ }
 export interface MockStats { available: number; occupied: number; guests: number; revenue: number; ooo: number; rooms: string[] }
 
 const OUTLETS = ["Lobby Bar", "A la Carte Restoran", "Havuz Bar"];
@@ -69,6 +70,16 @@ export function minibarFor(day: string): MockMinibar[] {
     { room: "101", code: "MB07", item: "Çikolata", qty: 1, ref: "F-88122", time: `${d} 09:12` },
     { room: "214", code: "MB03", item: "Kola 33cl", qty: 3, ref: "F-88140", time: `${d} 11:40` },
     { room: "305", code: "MB01", item: "Su 0,5 lt", qty: -1, ref: "F-88141", time: `${d} 12:02` }, // correction: ignored by the bot
+  ];
+}
+
+/** Product cards of the purchasing module, with the day each was created. */
+export function productsAll(): MockProduct[] {
+  return [
+    { code: "ST-01", name: "Un 50 kg", unit: "çuval", pack: 50, packUnit: "kg", vat: 1, group: "Kuru Gıda", created: "2026-09-20" },
+    { code: "ST-31", name: "Domates Salçası 830 gr", unit: "adet", pack: 830, packUnit: "gr", vat: 1, group: "Kuru Gıda", created: "2026-10-02" },
+    { code: "B-40", name: "Maden Suyu 200 ml", unit: "koli", pack: 24, packUnit: "adet", vat: 20, group: "İçecek", created: "2026-10-05" },
+    { code: "", name: "Dana Antrikot", unit: "kg", pack: null, packUnit: "", vat: 1, group: "Et", created: "2026-10-06" },
   ];
 }
 

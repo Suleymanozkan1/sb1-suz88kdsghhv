@@ -41,4 +41,5 @@ export const setup: Record<string, string> = {
   "Your password": "Şifreniz",
   "Load demo data": "Demo veriyi yükle",
   "Go to the dashboard": "Gösterge paneline git",
+  "Retry": "Tekrar dene",
 };

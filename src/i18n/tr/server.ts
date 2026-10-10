@@ -37,7 +37,7 @@ export const server: Record<string, string> = {
 
   // ── integrity checks (integrity.ts) ──
   "Stock balances = Σ stock ledger (quantity and value)": "Stok bakiyeleri = Σ stok defteri (miktar ve değer)",
-  "FIFO layers remaining = balance quantity": "Kalan FIFO katmanları = bakiye miktarı",
+  "FIFO layers remaining = balance quantity and value": "Kalan FIFO katmanları = bakiye miktarı ve değeri",
   "Every usage movement has its cost-ledger row": "Her kullanım hareketinin maliyet defterinde kaydı var",
   "Cost-ledger amounts mirror stock movements": "Maliyet defteri tutarları stok hareketleriyle uyumlu",
   "Expenses ↔ cost ledger (posted = amount, reversed = 0)": "Giderler ↔ maliyet defteri (kayıtlı = tutar, ters kayıt = 0)",

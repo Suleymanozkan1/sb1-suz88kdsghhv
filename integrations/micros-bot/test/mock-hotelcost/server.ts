@@ -21,7 +21,7 @@ export interface MockHotelCostState {
   requests: RecordedRequest[];
   /** answer the next N ingest calls with 503 (retry test) */
   failNextIngest: number;
-  queue: Array<{ id: string; source: string; businessDay: string | null }>;
+  queue: Array<{ id: string; source: string; businessDay: string | null; kind?: "DAY" | "PRODUCTS"; since?: string | null }>;
   /** what HotelCost answers as the hotel's settings (Admin → business day ends at) */
   settings?: { businessDayCutoff: string; timezone: string };
   seen: Set<string>;
@@ -31,7 +31,7 @@ export interface MockHotelCost {
   state: MockHotelCostState;
   /** which contract validated the bodies */
   contract: "hotelcost-repo" | "bot-copy";
-  ingests(kind?: string): Array<{ kind: string; source: string; businessDay: string; runId: string; items: any[] }>;
+  ingests(kind?: string): Array<{ kind: string; source: string; businessDay?: string; runId: string; items: any[] }>;
   runs(): Array<{ runId: string; source: string; status: string; businessDay?: string; message?: string; requestId?: string }>;
   close(): Promise<void>;
 }
@@ -50,7 +50,7 @@ async function loadContract(): Promise<{ ingest: ZodTypeAny; run: ZodTypeAny; fr
   const { z } = await import("zod");
   const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
   const kinds = Object.keys(local.ITEM_SCHEMAS) as Array<keyof typeof local.ITEM_SCHEMAS>;
-  const ingest = z.union(kinds.map((k) => z.object({ kind: z.literal(k), source: z.string(), businessDay: day, runId: z.string().max(64).optional(), items: z.array(local.ITEM_SCHEMAS[k]) })) as unknown as [ZodTypeAny, ZodTypeAny]);
+  const ingest = z.union(kinds.map((k) => z.object({ kind: z.literal(k), source: z.string(), businessDay: k === "products" ? day.optional() : day, runId: z.string().max(64).optional(), items: z.array(local.ITEM_SCHEMAS[k]) })) as unknown as [ZodTypeAny, ZodTypeAny]);
   const run = z.object({ runId: z.string().min(1).max(64), source: z.enum(["MICROS", "OPERA", "OTHER"]), status: z.enum(["STARTED", "SUCCEEDED", "FAILED"]), businessDay: day.optional(), message: z.string().max(2000).optional(), requestId: z.string().optional() });
   return { ingest, run, from: "bot-copy" };
 }
@@ -61,6 +61,7 @@ function keyOf(kind: string, day: string, item: any): string {
     case "invoices": return `i|${String(item.supplierName).toLowerCase()}|${item.invoiceNo}`;
     case "minibar": return `m|${item.reference}`;
     case "covers": return `v|${day}|${item.outlet}|${item.meal}`;
+    case "products": return `p|${String(item.name).toLocaleLowerCase("tr")}`;
     default: return `o|${day}`;
   }
 }
@@ -101,7 +102,7 @@ export async function startMockHotelCost(apiKey = "hc_test_key_123456"): Promise
         let duplicates = 0;
         for (const item of b.items) {
           const k = keyOf(b.kind, b.businessDay, item);
-          if (state.seen.has(k) && (b.kind === "checks" || b.kind === "invoices" || b.kind === "minibar")) duplicates++;
+          if (state.seen.has(k) && (b.kind === "checks" || b.kind === "invoices" || b.kind === "minibar" || b.kind === "products")) duplicates++;
           else {
             state.seen.add(k);
             accepted++;

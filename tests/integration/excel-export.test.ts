@@ -13,6 +13,7 @@ import { createRecipe, approveVersion, recipeCost } from "@/server/services/reci
 import { commitSales } from "@/server/services/sales";
 import { recordWaste } from "@/server/services/waste";
 import { startCount, enterCount, submitCount } from "@/server/services/counts";
+import { decideApproval } from "@/server/services/approvals";
 import { setPeriodStatus, periodFor } from "@/server/services/period";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { buildFullCostExport, toTsv, type FullCostExport } from "@/server/services/export";
@@ -49,7 +50,9 @@ beforeAll(async () => {
   await recordWaste(prisma, cc, h.hotel.id, { departmentId: h.depts.restaurant.id, warehouseId: h.wh.restStore.id, productId: chicken.id, wasteType: "BURNED", wasteDate: day("2026-08-16"), quantity: 1.5, unit: "kg" });
   const count = await startCount(prisma, cc, h.hotel.id, { warehouseId: h.wh.restStore.id, countDate: new Date("2026-08-31T22:00:00Z"), productIds: [chicken.id, bun.id] });
   await enterCount(prisma, cc, h.hotel.id, count.id, { lines: [{ productId: chicken.id, countedQty: "20" }, { productId: bun.id, countedQty: "100" }] });
-  await submitCount(prisma, cc, h.hotel.id, count.id);
+  // every count is approved by someone else before it is posted
+  const sub = await submitCount(prisma, cc, h.hotel.id, count.id);
+  await decideApproval(prisma, await h.actor("admin"), h.hotel.id, { approvalId: sub.approvalId, decision: "APPROVE" });
   // month close (checklist must pass without override)
   const aug = await periodFor(prisma, h.hotel.id, day("2026-08-15"));
   await setPeriodStatus(prisma, cc, { hotelId: h.hotel.id, periodId: aug.id, status: "CLOSED" });

@@ -99,5 +99,30 @@
     },
     "defaultMeal": null,
     "skipOutletPattern": "^(Toplam|Total|Genel Toplam)\\b"
+  },
+
+  "products": {
+    "_info": "Satınalma modülündeki ürün (stok) kartları — HotelCost'ta Ürünler > 'Ürünleri çek' ile istenir; son çekimden bu yana eklenen ürünler okunur. {since} = son çekim tarihi dateFormat biçiminde ({sinceDay} = YYYY-MM-DD). row ve columns.*, table'a göre. Bu ekran kullanılmayacaksa bloğun yerine null yazın.",
+    "steps": [
+      { "goto": "TODO: ürün / stok kartları listesinin yolu" },
+      { "fill": "TODO: 'oluşturulma tarihi şundan sonra' kutusu (yoksa bu adımı silin)", "value": "{since}" },
+      { "click": "TODO: Listele düğmesi" }
+    ],
+    "table": "TODO: ürün listesi tablosu",
+    "row": "TODO: tek ürün satırı (table'a göre), ör. tbody tr",
+    "noData": "TODO: yeni ürün yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "columns": {
+      "name": "TODO: ürün adı hücresi",
+      "code": "TODO: stok kodu hücresi (yoksa null)",
+      "unit": "TODO: birim hücresi (kg, lt, adet, koli …)",
+      "packSize": "TODO: ambalaj içeriği / gramaj miktarı hücresi, ör. 830 (yoksa null)",
+      "packUnit": "TODO: ambalaj içeriğinin birimi hücresi, ör. gr (yoksa null)",
+      "taxRatePct": "TODO: KDV % hücresi (yoksa null)",
+      "category": "TODO: ürün grubu / kategori hücresi (yoksa null)",
+      "createdAt": "TODO: oluşturulma tarihi hücresi (yoksa null)"
+    },
+    "createdAtFormat": null,
+    "skipNamePattern": "^(Toplam|Total)\\b"
   }
 }
