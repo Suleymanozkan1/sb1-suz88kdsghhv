@@ -15,7 +15,7 @@ import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
-import { applyHotelDefaults, createTenantRoles } from "./admin";
+import { applyHotelDefaults, createTenantRoles, currencyCode, timeZone } from "./admin";
 import type { Plan } from "@prisma/client";
 
 const INVITE_DAYS = 7;
@@ -39,7 +39,7 @@ const tenantInput = z.object({
   hotelCode: code,
   hotelName: z.string().trim().min(2).max(120),
   totalRooms: z.coerce.number().int().min(0).max(100_000).default(0),
-  baseCurrency: z.string().trim().length(3).toUpperCase().default("TRY"),
+  baseCurrency: currencyCode.default("TRY"),
   adminEmail: z.string().trim().toLowerCase().email(),
   adminName: z.string().trim().min(2).max(120),
   withDefaults: z.boolean().default(true),
@@ -98,9 +98,11 @@ const hotelInput = z.object({
   code,
   name: z.string().trim().min(2).max(120),
   totalRooms: z.coerce.number().int().min(0).max(100_000).default(0),
-  baseCurrency: z.string().trim().length(3).toUpperCase().default("TRY"),
-  timezone: z.string().trim().min(3).max(64).default("Europe/Istanbul"),
+  baseCurrency: currencyCode.default("TRY"),
+  timezone: timeZone.default("Europe/Istanbul"),
   withDefaults: z.boolean().default(true),
+  /** language of the default department / warehouse / category names (the creating user's UI language) */
+  locale: z.enum(["tr", "en"]).default("en"),
 });
 
 /** A new hotel in the administrator's own organization; the creator gets access to it (spec 30). */
@@ -113,7 +115,7 @@ export async function createHotel(db: Db, actor: Actor, currentHotelId: string, 
     async (tx) => {
       await tx.currency.upsert({ where: { code: p.baseCurrency }, create: { code: p.baseCurrency, organizationId: actor.organizationId, name: p.baseCurrency }, update: {} });
       const hotel = await tx.hotel.create({ data: { organizationId: actor.organizationId, code: p.code, name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone } });
-      if (p.withDefaults) await applyHotelDefaults(tx, hotel.id);
+      if (p.withDefaults) await applyHotelDefaults(tx, hotel.id, p.locale);
       await tx.userHotelAccess.create({ data: { userId: actor.userId, hotelId: hotel.id } });
       await audit(tx, actor, { hotelId: hotel.id, action: "HOTEL_CREATE", entityType: "Hotel", entityId: hotel.id, after: { code: p.code, name: p.name, withDefaults: p.withDefaults } });
       return hotel;
@@ -124,8 +126,11 @@ export async function createHotel(db: Db, actor: Actor, currentHotelId: string, 
 
 export async function setHotelActive(db: Db, actor: Actor, currentHotelId: string, hotelId: string, active: boolean) {
   authorize(actor, "admin:hotels", { hotelId: currentHotelId });
+  // a suspended hotel is no longer in actor.hotelIds: it is found through the administrator's own
+  // (kept) access row instead, and only ever inside their organization
   const h = await db.hotel.findFirst({ where: { id: hotelId, organizationId: actor.organizationId } });
-  if (!h || !actor.hotelIds.includes(hotelId)) throw new DomainError("NOT_FOUND", "Hotel not found");
+  const reachable = h && (actor.hotelIds.includes(hotelId) || (!h.active && (await db.userHotelAccess.count({ where: { userId: actor.userId, hotelId } })) > 0));
+  if (!h || !reachable) throw new DomainError("NOT_FOUND", "Hotel not found");
   if (!active && hotelId === currentHotelId) throw new DomainError("CONFLICT", "Switch to another hotel before suspending this one");
   return inTx(db, async (tx) => {
     const r = await tx.hotel.update({ where: { id: hotelId }, data: { active } });

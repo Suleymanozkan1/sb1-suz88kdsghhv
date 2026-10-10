@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { D, Decimal, ZERO, toStorage } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
-import { nightsInRange } from "@/domain/rooms";
+import { nightsInRange, roomRevenueKpis } from "@/domain/rooms";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
@@ -21,8 +21,9 @@ const int = z.coerce.number().int().min(0);
 const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 export const occupancyRow = z
-  .object({ businessDate: z.coerce.date(), availableRooms: int, occupiedRooms: int, outOfOrder: int.default(0), guests: int, roomRevenue: money })
-  .refine((v) => v.occupiedRooms <= v.availableRooms, { message: "Occupied rooms exceed available rooms", path: ["occupiedRooms"] });
+  .object({ businessDate: z.coerce.date(), availableRooms: int, occupiedRooms: int, outOfOrder: int.default(0), outOfService: int.default(0), guests: int, roomRevenue: money })
+  .refine((v) => v.occupiedRooms <= v.availableRooms, { message: "Occupied rooms exceed available rooms", path: ["occupiedRooms"] })
+  .refine((v) => v.outOfOrder + v.outOfService <= v.availableRooms, { message: "Out of order + out of service rooms exceed available rooms", path: ["outOfOrder"] });
 
 export const reservationRow = z
   .object({
@@ -48,6 +49,7 @@ const norm = (r: Record<string, string>) => ({
   availableRooms: r.available_rooms ?? r.available,
   occupiedRooms: r.occupied_rooms ?? r.occupied,
   outOfOrder: r.out_of_order ?? r.ooo ?? "0",
+  outOfService: r.out_of_service ?? r.oos ?? "0",
   guests: r.guests ?? r.in_house_guests,
   roomRevenue: r.room_revenue ?? r.revenue,
 });
@@ -100,7 +102,7 @@ export async function commitOccupancy(db: Db, actor: Actor, hotelId: string, fil
   return inTx(db, async (tx) => {
     const batch = await openBatch(tx, actor, hotelId, "OCCUPANCY", fileName, rows, meta);
     const valid = p.rows.filter((r) => r.status === "VALID").map((r) => ({ ...r.data!, sourceRow: r.row }));
-    await tx.occupancyImport.createMany({ data: valid.map((d) => ({ sourceRow: d.sourceRow, hotelId, businessDate: d.businessDate, availableRooms: d.availableRooms, occupiedRooms: d.occupiedRooms, outOfOrder: d.outOfOrder, guests: d.guests, roomRevenue: toStorage(D(d.roomRevenue)).toString(), source: "PMS_IMPORT", importId: batch.id })) });
+    await tx.occupancyImport.createMany({ data: valid.map((d) => ({ sourceRow: d.sourceRow, hotelId, businessDate: d.businessDate, availableRooms: d.availableRooms, occupiedRooms: d.occupiedRooms, outOfOrder: d.outOfOrder, outOfService: d.outOfService, guests: d.guests, roomRevenue: toStorage(D(d.roomRevenue)).toString(), source: "PMS_IMPORT", importId: batch.id })) });
     const b = await finishBatch(tx, batch.id, valid.length, p.counts);
     await audit(tx, actor, { hotelId, action: "IMPORT_POST", entityType: "ImportBatch", entityId: b.id, after: { kind: "OCCUPANCY", fileName, posted: valid.length, skippedDuplicates: p.counts.duplicate } });
     return { batch: b, posted: valid.length, duplicates: p.counts.duplicate };
@@ -157,7 +159,10 @@ export interface OccupancyStats {
   source: "PMS_DAILY" | "RESERVATIONS" | "NONE";
   days: number;
   daysInPeriod: number;
-  availableRooms: number; // available room nights
+  availableRooms: number; // available room nights (room inventory × days, as the PMS reports it)
+  outOfOrder: number; // out-of-order room nights
+  outOfService: number; // out-of-service room nights
+  sellableRooms: number; // available − out of order − out of service: the base of occupancy and RevPAR
   occupiedRooms: number; // occupied room nights
   guests: number; // guest nights
   roomRevenue: Decimal;
@@ -188,19 +193,25 @@ export async function occupancyStats(db: Db, hotelId: string, from: Date, to: Da
     resGuests += n * s.guests;
     resRevenue = resRevenue.plus(s.nights ? D(s.grossRoomRevenue.toString()).times(n).div(s.nights) : ZERO);
   }
-  const kpi = (avail: number, occ: number, rev: Decimal) => ({ occupancy: avail ? D(occ).div(avail) : null, adr: occ ? rev.div(occ) : null, revpar: avail ? rev.div(avail) : null });
+  const kpi = (sellable: number, occ: number, rev: Decimal) => {
+    const k = roomRevenueKpis({ roomRevenue: rev, soldRooms: occ, sellableRooms: sellable, guests: 0 });
+    return { occupancy: k.occupancy, adr: k.adr, revpar: k.revpar };
+  };
   if (daily.length) {
     const a = daily.reduce((s, d) => s + d.availableRooms, 0);
+    const ooo = daily.reduce((s, d) => s + d.outOfOrder, 0);
+    const oos = daily.reduce((s, d) => s + d.outOfService, 0);
+    const sellable = Math.max(0, a - ooo - oos);
     const o = daily.reduce((s, d) => s + d.occupiedRooms, 0);
     const g = daily.reduce((s, d) => s + d.guests, 0);
     const rev = daily.reduce((s, d) => s.plus(D(d.roomRevenue.toString())), ZERO);
-    return { source: "PMS_DAILY", days: daily.length, daysInPeriod, availableRooms: a, occupiedRooms: o, guests: g, roomRevenue: rev, ...kpi(a, o, rev), reservationNights: resNights, note: daily.length < daysInPeriod ? `PMS statistics for ${daily.length} of ${daysInPeriod} days` : "PMS daily statistics" };
+    return { source: "PMS_DAILY", days: daily.length, daysInPeriod, availableRooms: a, outOfOrder: ooo, outOfService: oos, sellableRooms: sellable, occupiedRooms: o, guests: g, roomRevenue: rev, ...kpi(sellable, o, rev), reservationNights: resNights, note: daily.length < daysInPeriod ? `PMS statistics for ${daily.length} of ${daysInPeriod} days` : "PMS daily statistics" };
   }
   if (stays.length) {
     const a = roomCount * daysInPeriod;
-    return { source: "RESERVATIONS", days: daysInPeriod, daysInPeriod, availableRooms: a, occupiedRooms: resNights, guests: resGuests, roomRevenue: resRevenue, ...kpi(a, resNights, resRevenue), reservationNights: resNights, note: "Derived from reservations (no PMS daily statistics); available = active rooms × days" };
+    return { source: "RESERVATIONS", days: daysInPeriod, daysInPeriod, availableRooms: a, outOfOrder: 0, outOfService: 0, sellableRooms: a, occupiedRooms: resNights, guests: resGuests, roomRevenue: resRevenue, ...kpi(a, resNights, resRevenue), reservationNights: resNights, note: "Derived from reservations (no PMS daily statistics); available = active rooms × days" };
   }
-  return { source: "NONE", days: 0, daysInPeriod, availableRooms: 0, occupiedRooms: 0, guests: 0, roomRevenue: ZERO, occupancy: null, adr: null, revpar: null, reservationNights: 0, note: "No occupancy data imported" };
+  return { source: "NONE", days: 0, daysInPeriod, availableRooms: 0, outOfOrder: 0, outOfService: 0, sellableRooms: 0, occupiedRooms: 0, guests: 0, roomRevenue: ZERO, occupancy: null, adr: null, revpar: null, reservationNights: 0, note: "No occupancy data imported" };
 }
 
 export async function listOccupancy(db: Db, actor: Actor, hotelId: string, from: Date, to: Date) {

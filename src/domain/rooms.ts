@@ -4,8 +4,11 @@
 import { allocate } from "./allocation";
 import { D, Decimal, ZERO, sum, safeDiv, type Numeric } from "./money";
 
-export const ROOM_COMPONENTS = ["housekeeping", "laundry", "amenities", "energy", "maintenance", "labor", "other", "distribution"] as const;
+/** `monthly`: the room cost expenses the hotel enters per month (RoomCostItem), prorated to the period. */
+export const ROOM_COMPONENTS = ["housekeeping", "laundry", "amenities", "energy", "maintenance", "labor", "other", "monthly", "distribution"] as const;
 export type RoomComponent = (typeof ROOM_COMPONENTS)[number];
+/** Screen / export label of each component (English source; screens translate). */
+export const ROOM_COMPONENT_LABEL: Record<RoomComponent, string> = { housekeeping: "Housekeeping", laundry: "Laundry", amenities: "Amenities", energy: "Energy", maintenance: "Maintenance", labor: "Labor", other: "Other", monthly: "Monthly room expenses", distribution: "Distribution" };
 export type ComponentCosts = Record<RoomComponent, Decimal>;
 export const emptyComponents = (): ComponentCosts => Object.fromEntries(ROOM_COMPONENTS.map((c) => [c, ZERO])) as ComponentCosts;
 
@@ -164,24 +167,46 @@ export function rollup(lines: RoomCostLine[], keyOf: (l: RoomCostLine) => string
   }));
 }
 
-/** Channel economics (spec 207–209): gross − commission − fees = net; minus room cost = net contribution. */
-export function channelReport(stays: StayInput[], costPerNight: Decimal | null, from: Date, to: Date) {
-  const m = new Map<string, { channel: string; stays: number; nights: number; gross: Decimal; distribution: Decimal }>();
-  for (const s of stays) {
-    const p = stayInPeriod(s, from, to);
-    if (!p.nights) continue;
-    const cur = m.get(s.channel) ?? { channel: s.channel, stays: 0, nights: 0, gross: ZERO, distribution: ZERO };
-    cur.stays++;
-    cur.nights += p.nights;
-    cur.gross = cur.gross.plus(p.gross);
-    cur.distribution = cur.distribution.plus(p.distribution);
-    m.set(s.channel, cur);
-  }
-  return [...m.values()].map((c) => {
-    const net = c.gross.minus(c.distribution);
-    const roomCost = costPerNight ? costPerNight.times(c.nights) : null;
-    return { ...c, net, adr: c.nights ? c.gross.div(c.nights) : null, netAdr: c.nights ? net.div(c.nights) : null, distributionPct: safeDiv(c.distribution, c.gross), roomCost, netContribution: roomCost ? net.minus(roomCost) : null };
-  }).sort((a, b) => b.gross.comparedTo(a.gross));
+/**
+ * Room revenue KPIs over sellable room nights. Sellable = available − out of order − out of service.
+ * ADR = room revenue ÷ sold (occupied) room nights; RevPAR = room revenue ÷ sellable room nights;
+ * occupancy = sold ÷ sellable; room revenue per guest = room revenue ÷ guest nights.
+ * Unsold sellable nights carry their share of the full room cost (an idle-capacity / lost revenue indicator).
+ */
+export function roomRevenueKpis(x: { roomRevenue: Numeric; soldRooms: number; sellableRooms: number; guests: number; fullCost?: Numeric }) {
+  const rev = D(x.roomRevenue);
+  const sellable = Math.max(0, x.sellableRooms);
+  const unsold = Math.max(0, sellable - x.soldRooms);
+  const costPerSellable = x.fullCost !== undefined && sellable ? D(x.fullCost).div(sellable) : null;
+  const adr = x.soldRooms ? rev.div(x.soldRooms) : null;
+  return {
+    occupancy: sellable ? D(x.soldRooms).div(sellable) : null,
+    adr,
+    revpar: sellable ? rev.div(sellable) : null,
+    revenuePerGuest: x.guests ? rev.div(x.guests) : null,
+    unsoldRooms: unsold,
+    costPerSellableRoom: costPerSellable,
+    unsoldCost: costPerSellable ? costPerSellable.times(unsold) : null,
+    unsoldRevenueAtAdr: adr ? adr.times(unsold) : null,
+  };
+}
+
+/** Share of a monthly amount ('YYYY-MM') that falls into [from, to): amount × overlapping days ÷ days in the month. */
+export function prorateMonth(month: string, amount: Numeric, from: Date, to: Date): Decimal {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  const start = Date.UTC(y, m - 1, 1);
+  const end = Date.UTC(y, m, 1);
+  const overlap = Math.min(end, to.getTime()) - Math.max(start, from.getTime());
+  if (overlap <= 0) return ZERO;
+  const days = (ms: number) => Math.trunc(ms / DAY + 0.5); // whole days (UTC midnights)
+  return D(amount).times(days(overlap)).div(days(end - start)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP); // to the kuruş
+}
+
+/** The months ('YYYY-MM') that [from, to) touches. */
+export function monthsInRange(from: Date, to: Date): string[] {
+  const out: string[] = [];
+  for (let d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1)); d < to; d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))) out.push(d.toISOString().slice(0, 7));
+  return out;
 }
 
 /** Hotel unit economics (spec 100, 161–163). */

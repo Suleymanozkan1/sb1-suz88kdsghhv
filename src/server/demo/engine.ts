@@ -7,13 +7,14 @@
  * them with bulk inserts. `tests/integration/demo-engine.test.ts` posts one scenario through the real
  * services and through this engine and requires identical rows.
  *
- * Only weighted-average products are supported (the generator creates WAC products; FIFO stays covered
- * by the service tests). Never imported by request handlers.
+ * FIFO (the default costing method) and weighted-average products are both supported: FIFO positions keep their
+ * layers in memory and are written as FifoLayer / FifoConsumption rows, exactly as the services write them
+ * (transfers carry the sending store's batches). Never imported by request handlers.
  */
 import { randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient, StockTxType } from "@prisma/client";
+import type { CostingMethod, Prisma, PrismaClient, StockTxType } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage } from "@/domain/money";
-import { wacIssue, wacReceive, type Position } from "@/domain/costing";
+import { fifoIssue, transferBatches, wacIssue, wacReceive, type Layer, type Position } from "@/domain/costing";
 
 const COST_KIND: Partial<Record<StockTxType, string>> = {
   CONSUMPTION: "CONSUMPTION",
@@ -30,6 +31,16 @@ export interface EngineProduct {
   categoryId: string;
   group: string;
   standardCost?: Decimal | null;
+  /** default FIFO, as the schema */
+  costingMethod?: CostingMethod;
+}
+
+interface EngineLayer extends Layer {
+  hotelId: string;
+  warehouseId: string;
+  productId: string;
+  sourceTxId: string;
+  originalQty: Decimal;
 }
 
 export interface EngineMovement {
@@ -50,6 +61,8 @@ export interface EngineMovement {
   allowNegative?: boolean;
   idempotencyKey?: string | null;
   id?: string;
+  /** transfer-in: the out leg whose FIFO batches arrive */
+  layersFromTxId?: string;
 }
 
 export class EngineError extends Error {}
@@ -57,6 +70,10 @@ export class EngineError extends Error {}
 export class BulkLedger {
   readonly stock: Prisma.StockTransactionCreateManyInput[] = [];
   readonly cost: Prisma.CostTransactionCreateManyInput[] = [];
+  /** FIFO layers per position (open and used up: all are written) and the draws on them */
+  private readonly layers = new Map<string, EngineLayer[]>();
+  readonly consumptions: Prisma.FifoConsumptionCreateManyInput[] = [];
+  private readonly drawsOf = new Map<string, Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }>>();
   private readonly pos = new Map<string, Position & { lastTxAt: Date | null }>();
   /** hotel-wide Σqty / Σvalue per product: what `costTableAsOf` reads */
   private readonly hotelQty = new Map<string, Decimal>();
@@ -64,6 +81,7 @@ export class BulkLedger {
   private readonly lastAvg = new Map<string, Decimal>();
   private readonly lastPrice = new Map<string, Decimal>();
   private seq = 0;
+  private layerSeq = 0;
   private readonly base = Date.now();
 
   constructor(
@@ -100,6 +118,9 @@ export class BulkLedger {
     if (qty.isZero()) throw new EngineError("Quantity cannot be zero");
     const key = `${m.warehouseId}|${m.productId}`;
     const pos = this.pos.get(key) ?? { quantity: ZERO, value: ZERO, avgCost: ZERO, lastTxAt: null };
+    const fifo = (product.costingMethod ?? "FIFO") === "FIFO";
+    const open = () => (this.layers.get(key) ?? []).filter((l) => l.remainingQty.gt(0));
+    let fifoDraws: Array<{ layerId: string; quantity: Decimal; unitCost: Decimal }> = [];
 
     let total: Decimal;
     let unitCost: Decimal;
@@ -122,7 +143,28 @@ export class BulkLedger {
       if (!m.allowNegative && outQty.gt(pos.quantity)) throw new EngineError(`Insufficient stock: available ${pos.quantity.toString()}, requested ${outQty.toString()} (${m.productId} @ ${m.warehouseId})`);
       if (m.exactTotal !== undefined) {
         total = toStorage(D(m.exactTotal));
+        if (fifo) {
+          const ls = open();
+          const take = Decimal.min(outQty, ls.reduce((a, l) => a.plus(l.remainingQty), ZERO));
+          if (take.gt(0)) fifoDraws = fifoIssue(ls, take).draws;
+        }
         if (pos.quantity.minus(outQty).isZero()) total = pos.value.neg();
+        unitCost = total.neg().div(outQty);
+      } else if (fifo) {
+        const ls = open();
+        const available = ls.reduce((a, l) => a.plus(l.remainingQty), ZERO);
+        if (m.allowNegative && available.lt(outQty)) {
+          const drawn = available.gt(0) ? fifoIssue(ls, available) : { draws: [], totalCost: ZERO };
+          const sorted = [...ls].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id.localeCompare(b.id));
+          const latest = sorted.at(-1)?.unitCost ?? (pos.avgCost.gt(0) ? pos.avgCost : (this.lastPrice.get(m.productId) ?? product.standardCost ?? ZERO));
+          fifoDraws = drawn.draws;
+          total = toStorage(drawn.totalCost.plus(outQty.minus(available).times(latest))).neg();
+        } else {
+          if (available.lt(outQty)) throw new EngineError(`Insufficient FIFO layers: available ${available.toString()}, requested ${outQty.toString()} (${m.productId} @ ${m.warehouseId})`);
+          const r = fifoIssue(ls, outQty);
+          fifoDraws = r.draws;
+          total = pos.quantity.minus(outQty).isZero() ? pos.value.neg() : toStorage(r.totalCost).neg();
+        }
         unitCost = total.neg().div(outQty);
       } else {
         const r = wacIssue(pos, outQty, { allowNegative: m.allowNegative });
@@ -134,7 +176,7 @@ export class BulkLedger {
     const newQty = pos.quantity.plus(qty);
     let newValue = pos.value.plus(total);
     let newAvg: Decimal;
-    if (qty.gt(0) && m.exactTotal === undefined) {
+    if (qty.gt(0) && m.exactTotal === undefined && !fifo) {
       const next = wacReceive(pos, qty, unitCost);
       newAvg = next.avgCost;
       if (pos.quantity.lt(0)) {
@@ -142,6 +184,11 @@ export class BulkLedger {
         total = newValue.minus(pos.value);
       }
     } else {
+      if (fifo && qty.gt(0) && pos.quantity.lt(0)) {
+        // as postMovement: any inbound into negative FIFO stock settles the shortfall; the balance = its open layers
+        newValue = newQty.gt(0) ? toStorage(this.newBatches(m, qty, pos.quantity, unitCost).reduce((a, b) => a.plus(toStorage(b.quantity).times(toStorage(b.unitCost))), ZERO)) : toStorage(newQty.times(unitCost));
+        total = newValue.minus(pos.value);
+      }
       newAvg = newQty.gt(0) ? newValue.div(newQty) : qty.gt(0) ? unitCost : pos.avgCost;
     }
 
@@ -175,6 +222,7 @@ export class BulkLedger {
       createdAt,
     });
     this.pos.set(key, { ...stored, lastTxAt: m.txDate });
+    if (fifo) this.postLayers(key, m, id, qty, pos.quantity, unitCost, fifoDraws);
     this.hotelQty.set(m.productId, (this.hotelQty.get(m.productId) ?? ZERO).plus(toStorage(qty)));
     this.hotelVal.set(m.productId, (this.hotelVal.get(m.productId) ?? ZERO).plus(toStorage(total)));
     if (stored.avgCost.gt(0)) this.lastAvg.set(m.productId, stored.avgCost);
@@ -205,13 +253,48 @@ export class BulkLedger {
     return { id, totalCost: toStorage(total), unitCost: toStorage(unitCost), quantity: toStorage(qty) };
   }
 
-  /** Same legs as `transferStock`: TRANSFER_OUT at average, TRANSFER_IN at exactly that value. */
+  /** As `postMovement`: a receipt adds a layer (a transfer-in: the out leg's batches), an issue draws the oldest. */
+  private postLayers(key: string, m: EngineMovement, txId: string, qty: Decimal, before: Decimal, unitCost: Decimal, draws: Array<{ layerId: string; quantity: Decimal; unitCost: Decimal }>) {
+    const all = this.layers.get(key) ?? [];
+    this.layers.set(key, all);
+    for (const b of this.newBatches(m, qty, before, unitCost)) {
+      const q = toStorage(b.quantity);
+      all.push({ id: this.layerId(), hotelId: this.hotelId, warehouseId: m.warehouseId, productId: m.productId, sourceTxId: txId, receivedAt: b.receivedAt, originalQty: q, remainingQty: q, unitCost: toStorage(b.unitCost) });
+    }
+    const byId = new Map(all.map((l) => [l.id, l]));
+    const taken: Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> = [];
+    for (const d of draws) {
+      const l = byId.get(d.layerId)!;
+      const q = toStorage(d.quantity);
+      l.remainingQty = l.remainingQty.minus(q);
+      this.consumptions.push({ id: randomUUID(), layerId: l.id, txId, quantity: q.toString(), unitCost: toStorage(d.unitCost).toString() });
+      taken.push({ quantity: q, unitCost: toStorage(d.unitCost), receivedAt: l.receivedAt });
+    }
+    if (taken.length) this.drawsOf.set(txId, taken.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime()));
+  }
+
+  /** The layers an inbound movement opens (a transfer-in: the out leg's batches); into negative stock only what is left. */
+  private newBatches(m: EngineMovement, qty: Decimal, before: Decimal, unitCost: Decimal): Array<{ quantity: Decimal; unitCost: Decimal; receivedAt: Date }> {
+    const layerQty = before.lt(0) ? qty.plus(before) : qty;
+    if (!qty.gt(0) || !layerQty.gt(0)) return [];
+    const batches = transferBatches(m.layersFromTxId ? (this.drawsOf.get(m.layersFromTxId) ?? []) : [], qty.minus(layerQty));
+    const rest = layerQty.minus(batches.reduce((a, b) => a.plus(b.quantity), ZERO));
+    if (rest.gt(0)) batches.push({ quantity: rest, unitCost, receivedAt: m.txDate });
+    return batches;
+  }
+
+  /** layer ids sort in creation order (as cuids do), so FIFO ties on the same receipt time break the same way */
+  private layerId() {
+    return `l${this.base.toString(36)}${String(this.layerSeq++).padStart(9, "0")}${randomUUID().slice(0, 6)}`;
+  }
+
+  /** Same legs as `transferStock`: TRANSFER_OUT (oldest batches first), TRANSFER_IN at exactly that value. */
   transfer(fromWarehouseId: string, toWarehouseId: string, productId: string, quantity: Decimal | number | string, txDate: Date, reason?: string) {
     const q = D(quantity);
     if (q.lte(0)) throw new EngineError("Transfer quantity must be positive");
     const group = randomUUID();
     const out = this.post({ warehouseId: fromWarehouseId, productId, type: "TRANSFER_OUT", quantity: q.neg(), txDate, sourceType: "TRANSFER", sourceId: group, transferGroup: group, reason });
-    const inn = this.post({ warehouseId: toWarehouseId, productId, type: "TRANSFER_IN", quantity: q, exactTotal: out.totalCost.neg(), txDate, sourceType: "TRANSFER", sourceId: group, transferGroup: group, reason });
+    const inn = this.post({ warehouseId: toWarehouseId, productId, type: "TRANSFER_IN", quantity: q, exactTotal: out.totalCost.neg(), layersFromTxId: out.id, txDate, sourceType: "TRANSFER", sourceId: group, transferGroup: group, reason });
     return { out, in: inn };
   }
 
@@ -228,9 +311,15 @@ export class BulkLedger {
     for (let i = 0; i < this.cost.length; i += chunk) await db.costTransaction.createMany({ data: this.cost.slice(i, i + chunk) });
     const bal = this.balances();
     for (let i = 0; i < bal.length; i += chunk) await db.stockBalance.createMany({ data: bal.slice(i, i + chunk) });
-    const n = { stock: this.stock.length, cost: this.cost.length, balances: bal.length };
+    const layers = [...this.layers.values()].flat().map((l) => ({ id: l.id, hotelId: l.hotelId, warehouseId: l.warehouseId, productId: l.productId, sourceTxId: l.sourceTxId, receivedAt: l.receivedAt, originalQty: l.originalQty.toString(), remainingQty: l.remainingQty.toString(), unitCost: l.unitCost.toString() }));
+    for (let i = 0; i < layers.length; i += chunk) await db.fifoLayer.createMany({ data: layers.slice(i, i + chunk) });
+    for (let i = 0; i < this.consumptions.length; i += chunk) await db.fifoConsumption.createMany({ data: this.consumptions.slice(i, i + chunk) });
+    const n = { stock: this.stock.length, cost: this.cost.length, balances: bal.length, layers: layers.length };
     this.stock.length = 0;
     this.cost.length = 0;
+    this.consumptions.length = 0;
+    this.layers.clear();
+    this.drawsOf.clear();
     return n;
   }
 }

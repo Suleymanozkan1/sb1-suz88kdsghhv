@@ -11,7 +11,8 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { minibarInvariant } from "./minibar";
-import { theoreticalFor } from "./sales";
+import { postSalesConsumption, theoreticalFor } from "./sales";
+import { businessDay } from "@/domain/business-day";
 
 const STALE_MS = 30 * 60 * 1000;
 type Num = { toString(): string } | null;
@@ -117,13 +118,16 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
       WHERE COALESCE(l.q, 0) <> COALESCE(b.quantity, 0) OR COALESCE(l.v, 0) <> COALESCE(b.value, 0)`;
     add("balances", "Stock balances = Σ stock ledger (quantity and value)", bal.map((b) => ({ warehouseId: b.warehouseId, productId: b.productId, ledgerQty: b.lq?.toString() ?? "0", balanceQty: b.bq?.toString() ?? "0", ledgerValue: b.lv?.toString() ?? "0", balanceValue: b.bv?.toString() ?? "0" })));
 
-    const fifo = await db.$queryRaw<Array<{ warehouseId: string; productId: string; lq: Num; bq: Num }>>`
-      SELECT b."warehouseId", b."productId", COALESCE(SUM(f."remainingQty"), 0) lq, b.quantity bq
+    // quantity and value: a stocked FIFO position is worth exactly what its open layers hold (±0.01 rounding)
+    const fifo = await db.$queryRaw<Array<{ warehouseId: string; productId: string; lq: Num; bq: Num; lv: Num; bv: Num }>>`
+      SELECT b."warehouseId", b."productId", COALESCE(SUM(f."remainingQty"), 0) lq, b.quantity bq,
+        COALESCE(SUM(f."remainingQty" * f."unitCost"), 0) lv, b.value bv
       FROM "StockBalance" b JOIN "Product" p ON p.id = b."productId" AND p."costingMethod" = 'FIFO'
-      LEFT JOIN "FifoLayer" f ON f."warehouseId" = b."warehouseId" AND f."productId" = b."productId"
-      WHERE b."hotelId" = ${hotelId} GROUP BY b."warehouseId", b."productId", b.quantity
-      HAVING COALESCE(SUM(f."remainingQty"), 0) <> GREATEST(b.quantity, 0)`;
-    add("fifo", "FIFO layers remaining = balance quantity", fifo.map((f) => ({ warehouseId: f.warehouseId, productId: f.productId, layers: f.lq?.toString(), balance: f.bq?.toString() })));
+      LEFT JOIN "FifoLayer" f ON f."warehouseId" = b."warehouseId" AND f."productId" = b."productId" AND f."remainingQty" > 0
+      WHERE b."hotelId" = ${hotelId} GROUP BY b."warehouseId", b."productId", b.quantity, b.value
+      HAVING COALESCE(SUM(f."remainingQty"), 0) <> GREATEST(b.quantity, 0)
+        OR (b.quantity >= 0 AND ABS(COALESCE(SUM(f."remainingQty" * f."unitCost"), 0) - b.value) > 0.01)`;
+    add("fifo", "FIFO layers remaining = balance quantity and value", fifo.map((f) => ({ warehouseId: f.warehouseId, productId: f.productId, layers: f.lq?.toString(), balance: f.bq?.toString(), layersValue: f.lv?.toString(), balanceValue: f.bv?.toString() })));
 
     const missingCost = await db.$queryRaw<Array<{ id: string; type: string; totalCost: Num }>>`
       SELECT s.id, s.type::text AS type, s."totalCost" FROM "StockTransaction" s
@@ -133,7 +137,9 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
 
     const mismatched = await db.$queryRaw<Array<{ id: string; stock: Num; cost: Num }>>`
       SELECT s.id, s."totalCost" AS stock, SUM(c.amount) AS cost FROM "StockTransaction" s JOIN "CostTransaction" c ON c."stockTxId" = s.id
-      WHERE s."hotelId" = ${hotelId} GROUP BY s.id, s."totalCost" HAVING SUM(c.amount) <> -s."totalCost" LIMIT 50`;
+      WHERE s."hotelId" = ${hotelId} GROUP BY s.id, s."totalCost" HAVING SUM(c.amount) <> -s."totalCost"
+        -- a stock-only movement (receipt reversal) carries just its revaluation difference, not a mirror of its value
+        AND bool_or(c.kind <> 'REVALUATION') LIMIT 50`;
     add("cost_amounts", "Cost-ledger amounts mirror stock movements", mismatched.map((m) => ({ stockTxId: m.id, stock: m.stock?.toString(), cost: m.cost?.toString() })));
 
     const exp = await db.$queryRaw<Array<{ id: string; status: string; amount: Num; ledger: Num }>>`
@@ -221,23 +227,29 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
   const run = await startRun(db, actor, hotelId, "SALES_REPROCESS");
   try {
     const res = await inTx(db, async (tx) => {
-      const [lines, recipes, versions, periods] = await Promise.all([
+      const [lines, recipes, versions, periods, hotel] = await Promise.all([
         tx.saleLine.findMany({ where: { hotelId, recipeVersionId: null } }),
-        tx.recipe.findMany({ where: { hotelId, posCode: { not: null } } }),
+        tx.recipe.findMany({ where: { hotelId, active: true } }),
         tx.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } } }),
         tx.costPeriod.findMany({ where: { hotelId } }),
+        tx.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } }),
       ]);
+      const closed = (at: Date) => periods.some((x) => x.startDate <= at && new Date(x.endDate.getTime() + 86_400_000) > at && (x.status === "CLOSED" || x.status === "SOFT_CLOSED"));
       const costCache = new Map<string, Map<string, Decimal>>();
       let mapped = 0;
       let skippedClosed = 0;
       let stillUnmapped = 0;
+      const byImport = new Map<string | null, string[]>();
+      // same matching as the import (commitSales): POS code first, else the recipe name (lines keep no item name, so the code)
+      const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
       for (const l of lines) {
-        const p = periods.find((x) => x.startDate <= l.saleDate && new Date(x.endDate.getTime() + 86_400_000) > l.saleDate);
-        if (p && (p.status === "CLOSED" || p.status === "SOFT_CLOSED")) {
+        // the stock posting is dated by the business day (a 03:10 sale on the 1st belongs to the last day of the
+        // previous month): both that day's period and the sale's own must be open, or the run would fail every time
+        if (closed(l.saleDate) || closed(new Date(`${businessDay(l.saleDate, hotel.timezone, hotel.businessDayCutoff)}T12:00:00Z`))) {
           skippedClosed++;
           continue;
         }
-        const recipe = recipes.find((r) => r.posCode === l.posCode);
+        const recipe = recipes.find((r) => r.posCode === l.posCode) ?? byName(l.posCode);
         if (!recipe) {
           stillUnmapped++;
           continue;
@@ -250,8 +262,12 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
         const theo = D(l.quantity.toString()).times(t.unitCost);
         await tx.saleLine.update({ where: { id: l.id }, data: { recipeId: recipe.id, recipeVersionId: t.versionId, theoreticalUnitCost: toStorage(t.unitCost).toString(), theoreticalCost: toStorage(theo).toString() } });
         mapped++;
+        byImport.set(l.importId, [...(byImport.get(l.importId) ?? []), l.id]);
       }
-      return { examined: lines.length, mapped, stillUnmapped, skippedClosed };
+      // the newly mapped sales deduct their ingredients like a fresh import would (only when the hotel deducts sales)
+      let stockMovements = 0;
+      for (const [importId, lineIds] of byImport) stockMovements += await postSalesConsumption(tx, actor, hotelId, importId, { lineIds, tag: `reprocess:${run.id}` });
+      return { examined: lines.length, mapped, stillUnmapped, skippedClosed, stockMovements };
     }, { timeout: 120_000 });
     const status: CalcStatus = res.stillUnmapped || res.skippedClosed ? "PARTIAL" : "COMPLETED";
     await finishRun(db, run.id, status, res);

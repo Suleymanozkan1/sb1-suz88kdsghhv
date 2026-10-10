@@ -7,5 +7,5 @@
 Option Explicit
 
 Public Function RoomSections() As Variant
-    RoomSections = Array("roomCost", "roomTypeCost", "roomFloorCost", "roomChannelCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost")
+    RoomSections = Array("roomCost", "roomTypeCost", "roomFloorCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings", "engineeringCost", "assetCost")
 End Function

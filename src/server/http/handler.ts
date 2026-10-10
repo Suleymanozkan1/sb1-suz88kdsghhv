@@ -54,7 +54,7 @@ export function errorResponse(e: unknown, locale: Locale = "en") {
     const retry = e.code === "RATE_LIMITED" ? (e.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds : undefined;
     return NextResponse.json({ error: { code: e.code, message: tm(e.message), details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
   }
-  if (e instanceof ZodError) return NextResponse.json({ error: { code: "VALIDATION", message: tm("Invalid input"), details: e.issues } }, { status: 422 });
+  if (e instanceof ZodError) return NextResponse.json({ error: { code: "VALIDATION", message: tm("Invalid input"), details: e.issues.map((i) => ({ ...i, message: tm(i.message) })) } }, { status: 422 });
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") return NextResponse.json({ error: { code: "DUPLICATE", message: tm("Duplicate record") } }, { status: 409 });
     if (e.code === "P2025") return NextResponse.json({ error: { code: "NOT_FOUND", message: tm("Not found") } }, { status: 404 });
@@ -104,7 +104,9 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permissio
       if (!actor) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: translateMessage(requestLocale(req), "Sign in required") } }, { status: 401 });
       const query = req.nextUrl.searchParams;
       // Hotel comes from explicit query/header or the cookie; services re-check access (IDOR).
-      const hotelId = query.get("hotelId") ?? req.headers.get("x-hotel-id") ?? req.cookies.get(HOTEL_COOKIE)?.value ?? actor.hotelIds[0] ?? "";
+      // A cookie left over from another user or a hotel since lost / suspended is ignored, like currentHotelId().
+      const cookieHotel = req.cookies.get(HOTEL_COOKIE)?.value;
+      const hotelId = query.get("hotelId") ?? req.headers.get("x-hotel-id") ?? (cookieHotel && actor.hotelIds.includes(cookieHotel) ? cookieHotel : actor.hotelIds[0]) ?? "";
       if (opts.perm) {
         if (!actor.permissions.has(opts.perm)) throw new DomainError("FORBIDDEN", `Missing permission: ${opts.perm}`);
         if (opts.perm !== "platform:admin") requireHotel(actor, hotelId);

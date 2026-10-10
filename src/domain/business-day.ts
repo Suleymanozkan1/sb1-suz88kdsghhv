@@ -23,6 +23,11 @@ export function businessDay(at: Date, timeZone = "Europe/Istanbul", cutoff = "03
   return day.toISOString().slice(0, 10);
 }
 
+/** Today's business day: the default date of manual entries (a count or waste entered at 01:00 belongs to the day before). */
+export function currentBusinessDay(timeZone = "Europe/Istanbul", cutoff = "03:30", now = new Date()): string {
+  return businessDay(now, timeZone, cutoff);
+}
+
 /** The business day that has fully ended at `now` (D-1 after the night audit): what the nightly import fetches. */
 export function lastClosedBusinessDay(now: Date, timeZone = "Europe/Istanbul", cutoff = "03:30"): string {
   const today = businessDay(now, timeZone, cutoff);

@@ -19,8 +19,10 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement, transferStock } from "./ledger";
+import { decimalText } from "@/lib/format";
+import { lastClosedBusinessDay } from "@/domain/business-day";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const pos = dec.refine((v) => Number(v) > 0, "Must be positive");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 
@@ -256,15 +258,23 @@ export async function minibarInvariant(db: Db, hotelId: string) {
   return { ok: differences.length === 0, differences };
 }
 
-/** Rooms with their current minibar contents vs par (for the room grid). */
-export async function roomGrid(db: Db, actor: Actor, hotelId: string) {
+/**
+ * Rooms with their current minibar contents vs par (for the room grid). `occupied`: the room was sold last night
+ * (last closed business day, Opera's list of sold rooms) — only those minibars need checking; null when Opera sent
+ * no list for that day.
+ */
+export async function roomGrid(db: Db, actor: Actor, hotelId: string, now = new Date()) {
   authorize(actor, "minibar:view", { hotelId });
-  const [rooms, pars, subs, products] = await Promise.all([
+  const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } });
+  const lastNight = new Date(`${lastClosedBusinessDay(now, hotel.timezone, hotel.businessDayCutoff)}T00:00:00Z`);
+  const [rooms, pars, subs, products, occ] = await Promise.all([
     db.room.findMany({ where: { hotelId, active: true }, orderBy: [{ floor: "asc" }, { number: "asc" }] }),
     db.minibarPar.findMany({ where: { hotelId, active: true } }),
     db.minibarMovement.groupBy({ by: ["roomId", "productId"], where: { hotelId }, _sum: { quantity: true } }),
     db.product.findMany({ where: { hotelId, minibarPars: { some: {} } } }),
+    db.occupancyImport.findUnique({ where: { hotelId_businessDate: { hotelId, businessDate: lastNight } }, select: { occupiedRoomNumbers: true } }),
   ]);
+  const sold = Array.isArray(occ?.occupiedRoomNumbers) ? new Set((occ.occupiedRoomNumbers as unknown[]).map((n) => String(n).trim())) : null;
   return rooms.map((r) => {
     const parsFor = new Map<string, Decimal>();
     for (const p of pars.filter((x) => x.roomType === r.roomType && !x.roomId)) parsFor.set(p.productId, D(p.parQty.toString()));
@@ -273,6 +283,6 @@ export async function roomGrid(db: Db, actor: Actor, hotelId: string) {
       const qty = D(subs.find((s) => s.roomId === r.id && s.productId === productId)?._sum.quantity?.toString() ?? 0);
       return { productId, product: products.find((p) => p.id === productId)?.name ?? productId, par, qty, missing: restockToPar(qty, par) };
     });
-    return { id: r.id, number: r.number, roomType: r.roomType, floor: r.floor, items, missing: sum(items.map((i) => i.missing)), complete: items.every((i) => i.missing.isZero()) };
+    return { id: r.id, number: r.number, roomType: r.roomType, floor: r.floor, items, missing: sum(items.map((i) => i.missing)), complete: items.every((i) => i.missing.isZero()), occupied: sold ? sold.has(r.number.trim()) : null };
   });
 }

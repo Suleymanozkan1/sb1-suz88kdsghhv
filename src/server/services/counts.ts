@@ -1,7 +1,8 @@
 /**
  * Physical stock counts (spec §179–§182). Count lines capture system vs physical; posting
- * creates COUNT_ADJUSTMENT movements at current cost. Financially significant variances
- * need approval before posting.
+ * creates COUNT_ADJUSTMENT movements at current cost. Every count is sent for approval and is
+ * posted only when an eligible approver accepts it (round 2, §4); a rejected count goes back to
+ * DRAFT for a recount. Unposted counts can be soft-deleted by the company administrator.
  */
 import { z } from "zod";
 import { D, Decimal, ZERO, sum, toStorage } from "@/domain/money";
@@ -11,8 +12,9 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement } from "./ledger";
 import { assertHotelRefs, requireWarehouseScope, warehouseScope } from "../auth/scope";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "Must be a non-negative number");
 
 export async function startCount(db: Db, actor: Actor, hotelId: string, input: { warehouseId: string; countDate: Date; productIds?: string[]; note?: string }) {
   authorize(actor, "inventory:count", { hotelId });
@@ -54,7 +56,7 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
   authorize(actor, "inventory:count", { hotelId });
   const input = countEntry.parse(raw);
   return inTx(db, async (tx) => {
-    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true, warehouse: true } });
+    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { lines: true, warehouse: true } });
     if (!c) throw new DomainError("NOT_FOUND", "Count not found");
     requireWarehouseScope(actor, c.warehouse);
     if (c.status !== "DRAFT") throw new DomainError("IMMUTABLE", `Count is ${c.status}`);
@@ -77,33 +79,69 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
 }
 
 /**
- * Submit a count for posting. The variance is recomputed against the ledger AT POSTING TIME
- * (movements after the count date are respected by using the balance as of now minus later movements).
+ * Send a count for approval (round 2: every count, whatever its variance). Nothing is posted yet: the
+ * approver's decision posts it (decideApproval → postCount) or returns it to DRAFT with a note.
  */
 export async function submitCount(db: Db, actor: Actor, hotelId: string, countId: string) {
   authorize(actor, "inventory:count", { hotelId });
   return inTx(db, async (tx) => {
-    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true, warehouse: true } });
+    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { lines: true, warehouse: true } });
     if (!c) throw new DomainError("NOT_FOUND", "Count not found");
     requireWarehouseScope(actor, c.warehouse);
     if (c.status !== "DRAFT") throw new DomainError("VALIDATION", `Count is ${c.status}`);
-    const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: hotelId } });
     const totalAbs = sum(c.lines.map((l) => D(l.varianceValue.toString()).abs()));
-    if (totalAbs.gte(D(hotel.adjustmentApprovalValue.toString()))) {
-      await tx.stockCount.update({ where: { id: c.id }, data: { status: "SUBMITTED" } });
-      const a = await tx.approval.create({
-        data: { hotelId, action: "STOCK_ADJUSTMENT", entityType: "StockCount", entityId: c.id, requestedById: actor.userId, reason: `Stock count ${c.number} variance ${toStorage(totalAbs).toFixed(2)}`, payload: { varianceValue: totalAbs.toString() } },
-      });
-      await audit(tx, actor, { hotelId, action: "COUNT_SUBMIT", entityType: "StockCount", entityId: c.id, after: { approvalId: a.id, varianceAbs: totalAbs.toString() } });
-      return { status: "PENDING_APPROVAL" as const, approvalId: a.id };
-    }
-    await postCount(tx, actor, hotelId, c.id, { approved: false });
-    return { status: "POSTED" as const, approvalId: null };
+    // only one submission wins (a double click must not create two pending approvals): the DRAFT → SUBMITTED
+    // transition is conditional, and a concurrent second submit sees 0 rows once the first commits
+    const moved = await tx.stockCount.updateMany({ where: { id: c.id, hotelId, status: "DRAFT", deletedAt: null }, data: { status: "SUBMITTED", rejectionNote: null } });
+    if (moved.count !== 1) throw new DomainError("CONFLICT", "This count has already been sent for approval");
+    const a = await tx.approval.create({
+      data: { hotelId, action: "STOCK_ADJUSTMENT", entityType: "StockCount", entityId: c.id, requestedById: actor.userId, reason: `Stock count ${c.number} · ${c.warehouse.name}`, payload: { varianceValue: totalAbs.toString() } },
+    });
+    await audit(tx, actor, { hotelId, action: "COUNT_SUBMIT", entityType: "StockCount", entityId: c.id, after: { approvalId: a.id, varianceAbs: totalAbs.toString() } });
+    return { status: "PENDING_APPROVAL" as const, approvalId: a.id };
+  });
+}
+
+/**
+ * Soft delete (round 2): the count disappears from every list, summary and export but stays in the
+ * database. Posted counts already moved stock and can never be deleted; a pending approval is cancelled.
+ */
+export async function deleteCount(db: Db, actor: Actor, hotelId: string, countId: string) {
+  authorize(actor, "count:delete", { hotelId });
+  return inTx(db, async (tx) => {
+    const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { warehouse: true } });
+    if (!c) throw new DomainError("NOT_FOUND", "Count not found");
+    requireWarehouseScope(actor, c.warehouse);
+    if (c.status === "POSTED" || c.status === "APPROVED") throw new DomainError("IMMUTABLE", "A posted count cannot be deleted - correct it with a new count");
+    const cancelled = await tx.approval.updateMany({ where: { hotelId, entityType: "StockCount", entityId: c.id, status: "PENDING" }, data: { status: "CANCELLED", decidedById: actor.userId, decidedAt: new Date(), decisionNote: "Count deleted" } });
+    const r = await tx.stockCount.update({ where: { id: c.id }, data: { deletedAt: new Date(), deletedById: actor.userId } });
+    await audit(tx, actor, { hotelId, action: "COUNT_DELETE", entityType: "StockCount", entityId: c.id, before: { number: c.number, status: c.status }, after: { deletedAt: r.deletedAt, cancelledApprovals: cancelled.count } });
+    return { id: r.id, deletedAt: r.deletedAt };
+  });
+}
+
+/** Warehouses the user may count (or, read-only, see), and the one selected on the counts page (default: the first). */
+export async function countWarehouses(db: Db, actor: Actor, hotelId: string, selected?: string | null) {
+  // reading counts is inventory:view (GET /api/counts for read-only roles); starting / entering / sending stays inventory:count
+  authorize(actor, "inventory:view", { hotelId });
+  const warehouses = await db.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const current = (selected && warehouses.find((w) => w.id === selected)) || warehouses[0] || null;
+  return { warehouses, current };
+}
+
+/** Counts of ONE warehouse (never the deleted ones), newest first — the counts page, its API and its export. */
+export async function listCounts(db: Db, actor: Actor, hotelId: string, q: { warehouseId: string; countId?: string | null; take?: number }) {
+  authorize(actor, "inventory:view", { hotelId });
+  return db.stockCount.findMany({
+    where: { hotelId, warehouseId: q.warehouseId, deletedAt: null, warehouse: warehouseScope(actor), ...(q.countId ? { id: q.countId } : {}) },
+    include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } },
+    orderBy: [{ countDate: "desc" }, { number: "desc" }],
+    take: q.take ?? 20,
   });
 }
 
 export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: string, opts: { approved: boolean }) {
-  const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId }, include: { lines: true } });
+  const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { lines: true } });
   if (!c) throw new DomainError("NOT_FOUND", "Count not found");
   if (c.status === "POSTED") throw new DomainError("CONFLICT", "Count already posted");
   let posted: Decimal = ZERO;
@@ -133,7 +171,7 @@ export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: 
   for (const l of c.lines) {
     await tx.stockBalance.updateMany({ where: { warehouseId: c.warehouseId, productId: l.productId }, data: { lastCountAt: c.countDate } });
   }
-  await tx.stockCount.update({ where: { id: c.id }, data: { status: "POSTED", postedAt: new Date(), approvedById: opts.approved ? actor.userId : null } });
+  await tx.stockCount.update({ where: { id: c.id }, data: { status: "POSTED", postedAt: new Date(), approvedById: opts.approved ? actor.userId : null, rejectionNote: null } });
   await audit(tx, actor, { hotelId, action: "COUNT_POST", entityType: "StockCount", entityId: c.id, after: { postedValue: posted.toString(), approved: opts.approved } });
   return posted;
 }
@@ -151,7 +189,7 @@ export async function countSummary(db: Db, actor: Actor, hotelId: string, range:
   const [before, during, counts] = await Promise.all([
     db.stockTransaction.groupBy({ by: ["warehouseId"], where: { hotelId, warehouseId: { in: ids }, txDate: { lt: range.from } }, _sum: { totalCost: true } }),
     db.stockTransaction.groupBy({ by: ["warehouseId", "type"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
-    db.stockCount.findMany({ where: { hotelId, warehouseId: { in: ids }, countDate: { gte: range.from, lt: range.to } }, include: { lines: { select: { systemQty: true, countedQty: true, varianceValue: true, unitCost: true } } } }),
+    db.stockCount.findMany({ where: { hotelId, warehouseId: { in: ids }, deletedAt: null, countDate: { gte: range.from, lt: range.to } }, include: { lines: { select: { systemQty: true, countedQty: true, varianceValue: true, unitCost: true } } } }),
   ]);
   const IN = ["PURCHASE", "TRANSFER_IN", "OPENING", "PRODUCTION_IN"];
   const OUT = ["CONSUMPTION", "WASTE", "STAFF_MEAL", "COMPLIMENTARY", "TRANSFER_OUT", "PRODUCTION_OUT"];

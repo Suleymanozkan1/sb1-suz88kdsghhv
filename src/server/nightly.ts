@@ -1,6 +1,8 @@
 /**
- * Nightly job, after the night audit (Vercel cron, vercel.json): for every active hotel the automatic orders are
- * checked (e-mailed on the premium plan). One hotel failing does not stop the others.
+ * Nightly fallback (Vercel cron, vercel.json, 04:00 UTC = 07:00 Istanbul): for every active hotel the automatic
+ * orders are checked (e-mailed on the premium plan). The orders normally go out when the Micros bot reports a
+ * successful run (reportRun) — that is when D-1 consumption is posted; this catches hotels without the bot or a bot
+ * that did not run. An order already sent is not sent again. One hotel failing does not stop the others.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Db } from "./db";

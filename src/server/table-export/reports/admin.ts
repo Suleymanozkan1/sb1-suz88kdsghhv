@@ -49,8 +49,8 @@ export const admin: ReportDef = {
       },
       {
         title: t("Warehouses"),
-        columns: [{ key: "code", header: t("Code") }, { key: "name", header: t("Name") }, { key: "dept", header: t("Department") }, { key: "status", header: t("Status") }],
-        rows: o.warehouses.map((w) => ({ code: w.code, name: w.name, dept: w.department?.name ?? t("Shared"), status: w.active ? t("ACTIVE") : t("INACTIVE") })),
+        columns: [{ key: "code", header: t("Code") }, { key: "name", header: t("Name") }, { key: "dept", header: t("Department") }, { key: "status", header: t("Status") }, { key: "approvers", header: t("Count approvers") }],
+        rows: o.warehouses.map((w) => ({ code: w.code, name: w.name, dept: w.department?.name ?? t("Shared"), status: w.active ? t("ACTIVE") : t("INACTIVE"), approvers: w.countApprovers.length ? w.countApprovers.map((a) => t(o.roles.find((r) => r.key === a.roleKey)?.name ?? a.roleKey)).join(", ") : t("Any role with the approval right") })),
       },
       {
         title: t("Categories ({count})", { count: o.categories.length }),

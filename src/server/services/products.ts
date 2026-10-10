@@ -10,12 +10,16 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
-import { currentUnitCosts } from "./ledger";
+import { currentUnitCosts, fifoNextCosts } from "./ledger";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && !Number.isNaN(Number(v)), "Must be a number");
 const unitCode = z.string().min(1).refine((u) => defaultConverter.has(u), "Unknown unit");
 
-/** Barcode, yield and costing method are not on the product card any more: such keys are dropped (weighted average costing). */
+/**
+ * Barcode, yield, costing method, reorder point and safety stock are not on the product card any more: such keys
+ * are dropped (FIFO costing for every product; reorder point / safety stock live on the automatic-ordering rules).
+ */
 export const productInput = z.object({
   /** optional: hotels rarely keep stock codes (Micros lists products by name); generated when empty */
   sku: z.string().trim().max(64).optional().nullable(),
@@ -30,8 +34,6 @@ export const productInput = z.object({
   standardCost: dec.optional().nullable(),
   minStock: dec.optional().nullable(),
   maxStock: dec.optional().nullable(),
-  reorderPoint: dec.optional().nullable(),
-  safetyStock: dec.optional().nullable(),
   leadTimeDays: z.number().int().min(0).optional().nullable(),
   shelfLifeDays: z.number().int().min(0).optional().nullable(),
   conversions: z.array(z.object({ fromUnit: unitCode, toUnit: unitCode, factor: dec.refine((v) => Number(v) > 0, "Factor must be positive") })).optional(),
@@ -63,7 +65,7 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
     const sku = input.sku || (await nextSku(tx, hotelId));
     const dup = await tx.product.findFirst({ where: { hotelId, sku } });
     if (dup) throw new DomainError("DUPLICATE", `SKU ${sku} already exists`);
-    // a recipe quantity is the raw quantity used: products carry no yield; costing is the ledger's weighted average
+    // a recipe quantity is the raw quantity used: products carry no yield; costing is FIFO (the schema default)
     const { conversions: _c, ...rest } = input;
     const data = { ...rest, sku };
     const product = await tx.product.create({
@@ -108,11 +110,11 @@ export async function updateProduct(db: Db, actor: Actor, hotelId: string, produ
   });
 }
 
-/** Ingredient search by name, SKU, category or brand (spec §27). */
-export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: { limit?: number; categoryGroup?: string; activeOnly?: boolean } = {}) {
-  authorize(actor, "product:view", { hotelId });
+type ProductSearchOpts = { limit?: number; categoryGroup?: string; activeOnly?: boolean; skip?: number; max?: number };
+
+function productSearchWhere(hotelId: string, q: string, opts: ProductSearchOpts): Prisma.ProductWhereInput {
   const term = q.trim();
-  const where: Prisma.ProductWhereInput = {
+  return {
     hotelId,
     ...(opts.activeOnly ? { active: true } : {}),
     ...(opts.categoryGroup ? { category: { group: opts.categoryGroup } } : {}),
@@ -127,19 +129,58 @@ export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: s
         }
       : {}),
   };
-  return db.product.findMany({ where, include: { category: true, conversions: true, defaultSupplier: { select: { name: true } } }, orderBy: { name: "asc" }, take: Math.min(opts.limit ?? 25, 200) });
+}
+
+/** What the product master screen, the export and the product picker show: never the retired card fields. */
+const productListSelect = {
+  id: true,
+  sku: true,
+  name: true,
+  brand: true,
+  categoryId: true,
+  defaultSupplierId: true,
+  purchaseUnit: true,
+  stockUnit: true,
+  recipeUnit: true,
+  taxRatePct: true,
+  currency: true,
+  standardCost: true,
+  minStock: true,
+  maxStock: true,
+  leadTimeDays: true,
+  shelfLifeDays: true,
+  isStockItem: true,
+  active: true,
+  category: { select: { id: true, name: true, code: true, group: true, accountCode: true } },
+  conversions: { select: { fromUnit: true, toUnit: true, factor: true } },
+  defaultSupplier: { select: { name: true } },
+} satisfies Prisma.ProductSelect;
+
+/** Ingredient search by name, SKU, category or brand (spec §27). `max` raises the 200-row cap for trusted server callers (page paging, export); the API route keeps the default. */
+export async function searchProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.findMany({ where: productSearchWhere(hotelId, q, opts), select: productListSelect, orderBy: [{ name: "asc" }, { id: "asc" }], skip: opts.skip, take: Math.min(opts.limit ?? 25, opts.max ?? 200) });
+}
+
+/** Number of products matching the same search (for "showing x of N" and paging). */
+export async function countProducts(db: Db, actor: Actor, hotelId: string, q: string, opts: ProductSearchOpts = {}) {
+  authorize(actor, "product:view", { hotelId });
+  return db.product.count({ where: productSearchWhere(hotelId, q, opts) });
 }
 
 export type CostSource = "WAC" | "FIFO" | "LAST_PURCHASE" | "STANDARD" | "NONE";
 
 /**
  * The single authoritative "current unit cost per stock unit" for every product of a hotel.
- * Order: inventory average (WAC/FIFO value) → last purchase price → standard cost → none.
+ * FIFO (every product by default): what the next consumption costs = the oldest open layer across the hotel's
+ * stores; with no stock, the last purchase price. Weighted average: the inventory average.
+ * Then: last purchase price → inventory average → standard cost → none.
  */
 export async function productCostTable(db: Db, hotelId: string): Promise<Map<string, { unitCost: Decimal | null; source: CostSource }>> {
-  const [products, inv, lastPrices] = await Promise.all([
+  const [products, inv, next, lastPrices] = await Promise.all([
     db.product.findMany({ where: { hotelId }, select: { id: true, standardCost: true, costingMethod: true } }),
     currentUnitCosts(db, hotelId),
+    fifoNextCosts(db, hotelId),
     db.$queryRaw<Array<{ productId: string; unitPrice: { toString(): string } }>>`
       SELECT DISTINCT ON ("productId") "productId", "unitPrice" FROM "SupplierPrice"
       WHERE "hotelId" = ${hotelId} ORDER BY "productId", "priceDate" DESC, "createdAt" DESC`,
@@ -147,9 +188,11 @@ export async function productCostTable(db: Db, hotelId: string): Promise<Map<str
   const last = new Map(lastPrices.map((r) => [r.productId, D(r.unitPrice.toString())]));
   const out = new Map<string, { unitCost: Decimal | null; source: CostSource }>();
   for (const p of products) {
-    const i = inv.get(p.id);
-    if (i) out.set(p.id, { unitCost: i, source: p.costingMethod === "FIFO" ? "FIFO" : "WAC" });
+    const fifo = p.costingMethod === "FIFO";
+    const i = fifo ? next.get(p.id) : inv.get(p.id);
+    if (i) out.set(p.id, { unitCost: i, source: fifo ? "FIFO" : "WAC" });
     else if (last.has(p.id)) out.set(p.id, { unitCost: last.get(p.id)!, source: "LAST_PURCHASE" });
+    else if (fifo && inv.get(p.id)) out.set(p.id, { unitCost: inv.get(p.id)!, source: "FIFO" });
     else if (p.standardCost) out.set(p.id, { unitCost: D(p.standardCost.toString()), source: "STANDARD" });
     else out.set(p.id, { unitCost: null, source: "NONE" });
   }
@@ -158,4 +201,20 @@ export async function productCostTable(db: Db, hotelId: string): Promise<Map<str
 
 export function toConversions(rows: Array<{ fromUnit: string; toUnit: string; factor: { toString(): string } }>): ProductConversion[] {
   return rows.map((r) => ({ fromUnit: r.fromUnit, toUnit: r.toUnit, factor: r.factor.toString() }));
+}
+
+/** Chart-of-accounts code of a product category (hesap planı, e.g. "150.01"): optional, for matching with accounting later. */
+export async function setCategoryAccountCode(db: Db, actor: Actor, hotelId: string, categoryId: string, raw: unknown) {
+  authorize(actor, "product:manage", { hotelId });
+  const { accountCode } = z
+    .object({ accountCode: z.string().trim().max(32).regex(/^[0-9A-Za-z.\-/ ]*$/, "Use digits, letters, dots or dashes (e.g. 150.01)").nullish() })
+    .parse(raw ?? {});
+  const before = await db.productCategory.findFirst({ where: { id: categoryId, hotelId } });
+  if (!before) throw new DomainError("NOT_FOUND", "Category not found");
+  const value = accountCode?.trim() || null;
+  return inTx(db, async (tx) => {
+    const c = await tx.productCategory.update({ where: { id: categoryId }, data: { accountCode: value } });
+    await audit(tx, actor, { hotelId, action: "CATEGORY_ACCOUNT_CODE", entityType: "ProductCategory", entityId: categoryId, before: { accountCode: before.accountCode }, after: { accountCode: value } });
+    return c;
+  });
 }

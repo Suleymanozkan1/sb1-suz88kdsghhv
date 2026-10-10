@@ -1,7 +1,8 @@
 /**
  * Automatic ordering. A rule per product: supplier, reorder point, safety stock, order quantity, e-mail, active.
- * When the stock of an active rule falls to its reorder point the order is e-mailed to the supplier (premium plan;
- * one e-mail per supplier listing its products). On other plans the products at their reorder point are listed
+ * When the stock of an active rule falls to its reorder point the order is e-mailed to the supplier (premium plan —
+ * during the trial every tenant has it; one e-mail per supplier listing its products, written with the hotel's
+ * order e-mail template). On other plans the products at their reorder point are listed
  * on the screen and nothing is sent. Rules are pre-filled from the order recommendations (product, supplier,
  * category, consumption), so nobody has to type every product.
  */
@@ -14,10 +15,12 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
-import { hotelPlan, planHas } from "../plans";
+import { hotelPlan, planHas, trialAllFeatures } from "../plans";
 import { mailConfigured, sendMail } from "../mail";
+import { date, decimalText, localDay } from "@/lib/format";
+import { DEFAULT_ORDER_EMAIL, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".")).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 
 export const ruleInput = z.object({
@@ -30,25 +33,67 @@ export const ruleInput = z.object({
   active: z.boolean().default(true),
 });
 
-/** Do not order the same product again within this window (the order is on its way). */
-const RE_ORDER_HOURS = 24;
+/** An order counts as on its way for the supplier's lead time + 1 day, or this long when no lead time is known. */
+const OUTSTANDING_FALLBACK_DAYS = 7;
+const DAY_MS = 86_400_000;
 
 async function stockByProduct(db: Db, hotelId: string, productIds?: string[]) {
   const rows = await db.stockBalance.groupBy({ by: ["productId"], where: { hotelId, ...(productIds ? { productId: { in: productIds } } : {}) }, _sum: { quantity: true } });
   return new Map(rows.map((r) => [r.productId, D(r._sum.quantity?.toString() ?? 0)]));
 }
 
+// ───────── order e-mail template ─────────
+
+export const templateInput = z.object({
+  subject: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(5000).refine((v) => v.includes("{lines}"), "The e-mail must contain {lines} (the product table)"),
+});
+
+/** The hotel's order e-mail template, or the built-in Turkish one. */
+export async function orderEmailTemplate(db: Db, hotelId: string) {
+  const t = await db.orderEmailTemplate.findUnique({ where: { hotelId } });
+  return t ? { subject: t.subject, body: t.body, custom: true } : { ...DEFAULT_ORDER_EMAIL, custom: false };
+}
+
+export async function saveOrderEmailTemplate(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+  authorize(actor, "purchase:manage", { hotelId });
+  const input = templateInput.parse(raw);
+  const before = await db.orderEmailTemplate.findUnique({ where: { hotelId } });
+  const data = { ...input, updatedById: actor.userId };
+  const after = await db.orderEmailTemplate.upsert({ where: { hotelId }, create: { hotelId, ...data }, update: data });
+  await audit(db, actor, { hotelId, action: "ORDER_EMAIL_TEMPLATE_UPDATE", entityType: "Hotel", entityId: hotelId, before, after });
+  return { subject: after.subject, body: after.body, custom: true };
+}
+
+/** Back to the built-in template. */
+export async function resetOrderEmailTemplate(db: Db, actor: Actor, hotelId: string) {
+  authorize(actor, "purchase:manage", { hotelId });
+  const before = await db.orderEmailTemplate.findUnique({ where: { hotelId } });
+  if (before) {
+    await db.orderEmailTemplate.delete({ where: { hotelId } });
+    await audit(db, actor, { hotelId, action: "ORDER_EMAIL_TEMPLATE_RESET", entityType: "Hotel", entityId: hotelId, before });
+  }
+  return { ...DEFAULT_ORDER_EMAIL, custom: false };
+}
+
 export async function autoOrderOverview(db: Db, actor: Actor, hotelId: string) {
   authorize(actor, "purchase:view", { hotelId });
-  const [plan, rules] = await Promise.all([
+  const [plan, rules, template, hotel] = await Promise.all([
     hotelPlan(db, hotelId),
     db.autoOrderRule.findMany({ where: { hotelId }, include: { product: { include: { category: true } }, supplier: true, sends: { orderBy: { sentAt: "desc" }, take: 1 } }, orderBy: [{ supplier: { name: "asc" } }, { product: { name: "asc" } }] }),
+    orderEmailTemplate(db, hotelId),
+    db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true, timezone: true } }),
   ]);
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
   return {
     plan,
+    /** the trial switch is on: every feature is open whatever the organization's plan */
+    trial: trialAllFeatures(),
     emailEnabled: planHas(plan, "autoOrderEmail"),
     mailConfigured: mailConfigured(),
+    template,
+    hotel: hotel.name,
+    today: date(localDay(hotel.timezone)),
     rules: rules.map((r) => {
       const qty = stock.get(r.productId) ?? ZERO;
       return {
@@ -149,9 +194,11 @@ export async function fillFromRecommendations(db: Db, actor: Actor, hotelId: str
 }
 
 /**
- * Checks every active rule and e-mails the orders that are due (premium plan, mail server configured), one
- * e-mail per supplier. Runs nightly after the night audit and on "check now". A product ordered in the last
- * 24 hours is not ordered again. Returns what was due and what was sent.
+ * Checks every active rule and e-mails the orders that are due (premium plan or trial, mail server configured), one
+ * e-mail per supplier, written with the hotel's order e-mail template (HTML table + plain-text fallback). Runs after each Micros import, nightly and on "check now". An ordered product is not ordered
+ * again while that order is outstanding: until a goods receipt of it is posted, its stock is back above the reorder
+ * point, or the supplier's lead time + 1 day has passed (7 days without a lead time — the order was lost).
+ * Returns what was due and what was sent.
  */
 export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Actor; now?: Date } = {}) {
   if (opts.actor) authorize(opts.actor, "purchase:manage", { hotelId });
@@ -159,32 +206,51 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   const plan = await hotelPlan(db, hotelId);
   const rules = await db.autoOrderRule.findMany({ where: { hotelId, active: true }, include: { product: true, supplier: true } });
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
-  const due = rules.filter((r) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString())) && (!r.lastOrderedAt || now.getTime() - r.lastOrderedAt.getTime() > RE_ORDER_HOURS * 3_600_000));
+  const low = (r: (typeof rules)[number]) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString()));
+  // stock back above the reorder point: the last order arrived (or was not needed), the next drop orders again
+  const refilled = rules.filter((r) => r.lastOrderedAt && !low(r));
+  if (refilled.length) await db.autoOrderRule.updateMany({ where: { id: { in: refilled.map((r) => r.id) } }, data: { lastOrderedAt: null } });
+  const ordered = rules.filter((r) => r.lastOrderedAt && low(r));
+  // a receipt of the product from the rule's supplier posted after the order: the order arrived (stock may still be
+  // low — then order again); an unrelated purchase from someone else does not count as this order
+  const received = new Set(
+    ordered.length
+      ? (await db.goodsReceiptItem.findMany({ where: { productId: { in: ordered.map((r) => r.productId) }, receipt: { hotelId, postedAt: { gte: new Date(Math.min(...ordered.map((r) => r.lastOrderedAt!.getTime()))) } } }, select: { productId: true, receipt: { select: { postedAt: true, supplierId: true } } } }))
+          .filter((i) => ordered.some((r) => r.productId === i.productId && r.supplierId === i.receipt.supplierId && i.receipt.postedAt! > r.lastOrderedAt!))
+          .map((i) => i.productId)
+      : [],
+  );
+  const outstanding = (r: (typeof rules)[number]) => {
+    if (!r.lastOrderedAt || received.has(r.productId)) return false;
+    const lead = r.product.leadTimeDays ?? r.supplier.leadTimeDays; // as the suggested reorder point uses it
+    return now.getTime() - r.lastOrderedAt.getTime() < (lead !== null ? lead + 1 : OUTSTANDING_FALLBACK_DAYS) * DAY_MS;
+  };
+  const due = rules.filter((r) => low(r) && !outstanding(r));
   if (!planHas(plan, "autoOrderEmail") || !due.length) return { due: due.length, sent: 0, failed: 0, plan, emailEnabled: planHas(plan, "autoOrderEmail") };
-  const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true } });
-  // claim each rule before e-mailing: the nightly run and a "check now" (or two clicks) at the same moment must not
-  // both order; only the run whose conditional update wins sends, a failed send gives the rule back
-  const cutoff = new Date(now.getTime() - RE_ORDER_HOURS * 3_600_000);
-  const claimed: typeof due = [];
-  for (const r of due) {
-    const c = await db.autoOrderRule.updateMany({ where: { id: r.id, OR: [{ lastOrderedAt: null }, { lastOrderedAt: { lt: cutoff } }] }, data: { lastOrderedAt: now } });
-    if (c.count === 1) claimed.push(r);
-  }
+  const [hotel, template] = await Promise.all([db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true, timezone: true } }), orderEmailTemplate(db, hotelId)]);
+  const today = date(localDay(hotel.timezone, now));
   const groups = new Map<string, typeof due>();
-  for (const r of claimed) {
+  for (const r of due) {
     const to = r.email ?? r.supplier.email ?? "";
     const k = `${r.supplierId}|${to}`;
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   let sent = 0;
   let failed = 0;
-  for (const [k, rs] of groups) {
+  for (const [k, group] of groups) {
+    // claim a supplier's rules right before its e-mail: the nightly run and a "check now" (or two clicks) at the same
+    // moment must not both order — only the run whose conditional update (lastOrderedAt still as read) wins sends.
+    // Claiming per e-mail (not all up front) means a run cut short leaves the unsent suppliers unclaimed for the next run.
+    const rs: typeof due = [];
+    for (const r of group) {
+      const c = await db.autoOrderRule.updateMany({ where: { id: r.id, lastOrderedAt: r.lastOrderedAt }, data: { lastOrderedAt: now } });
+      if (c.count === 1) rs.push(r);
+    }
+    if (!rs.length) continue;
     const to = k.split("|")[1]!;
     const s = rs[0]!.supplier;
-    const lines = rs.map((r) => `- ${r.product.name}: ${r.orderQty.toString()} ${r.product.stockUnit}`);
-    const res = to
-      ? await sendMail({ to, subject: `Sipariş / Order — ${hotel.name}`, text: `Sayın ${s.name},\n\n${hotel.name} için aşağıdaki ürünleri sipariş ediyoruz:\n\n${lines.join("\n")}\n\nTeslimat ve fiyat teyidi için bu e-postayı yanıtlayabilirsiniz.\n\nHotelCost (otomatik sipariş)` })
-      : ({ ok: false, error: "Supplier has no e-mail address" } as const);
+    const mail = renderOrderEmail(template, { supplier: s.name, hotel: hotel.name, date: today, lines: rs.map((r) => ({ product: r.product.name, qty: r.orderQty.toString(), unit: r.product.stockUnit })) });
+    const res = to ? await sendMail({ to, ...mail }) : ({ ok: false, error: "Supplier has no e-mail address" } as const);
     for (const r of rs) {
       await db.autoOrderSend.create({ data: { hotelId, ruleId: r.id, quantity: r.orderQty, stockQty: (stock.get(r.productId) ?? ZERO).toString(), email: to || "-", status: res.ok ? "SENT" : "FAILED", error: res.ok ? null : res.error } });
       if (!res.ok) await db.autoOrderRule.update({ where: { id: r.id }, data: { lastOrderedAt: r.lastOrderedAt } });

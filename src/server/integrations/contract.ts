@@ -8,7 +8,8 @@
  *   GET  /api/integrations/runs/next   "run now" requests made by a user in HotelCost (the bot polls)
  *
  * Idempotency: a check is identified by its check number + business day, an invoice by supplier + invoice
- * number, a minibar charge by its folio reference, covers / occupancy by business day (+ outlet / meal). Sending the same day again never duplicates;
+ * number, a minibar charge by its folio reference, covers / occupancy by business day (+ outlet / meal), a product by its name
+ * (or code). Sending the same day again never duplicates;
  * a re-sent check or invoice is reported as a duplicate and skipped.
  */
 import { z } from "zod";
@@ -58,7 +59,7 @@ export const coversSchema = z.object({ outlet: z.string().trim().min(1).max(100)
 /** Opera night-audit statistics for the business day. */
 export const occupancySchema = z.object({
   availableRooms: num, occupiedRooms: num, guests: num,
-  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(),
+  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(), outOfService: num.optional().nullable(),
   /** room numbers occupied that night (minibar checks only rooms that were sold) */
   occupiedRoomNumbers: z.array(z.string().trim().max(20)).optional(),
 });
@@ -74,12 +75,32 @@ export const minibarSchema = z.object({
   postedAt: z.string().datetime({ offset: true }).optional(),
 });
 
+/**
+ * A product card from the Micros purchasing module ("Ürünleri çek": products added since the last pull). Matched by
+ * name (Turkish case-insensitive) or code: a known product is reported as a duplicate, never created twice.
+ *   unit      the unit it is bought / stocked in, as printed (kg, lt, adet, koli, şişe …)
+ *   packSize / packUnit   what one unit holds: a case of 12 pcs, a 0.7 l bottle, an 830 g tin (kilo / gramaj)
+ */
+export const productSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  /** stock code in Micros, if the hotel keeps codes */
+  code: z.string().trim().max(64).optional().nullable(),
+  unit: z.string().trim().min(1).max(20),
+  packSize: num.refine((n) => n > 0, "Pack size must be positive").optional().nullable(),
+  packUnit: z.string().trim().max(20).optional().nullable(),
+  taxRatePct: num.refine((n) => n >= 0 && n <= 100, "VAT % must be between 0 and 100").optional().nullable(),
+  /** category / group text as Micros shows it: matched to a HotelCost category by name, code or account code */
+  category: z.string().trim().max(100).optional().nullable(),
+});
+
 export const ingestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("checks"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(checkSchema).max(20000) }),
   z.object({ kind: z.literal("invoices"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(invoiceSchema).max(5000) }),
   z.object({ kind: z.literal("covers"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(coversSchema).max(500) }),
   z.object({ kind: z.literal("minibar"), source: z.enum(["OPERA", "MICROS", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(minibarSchema).max(5000) }),
   z.object({ kind: z.literal("occupancy"), source: z.enum(["OPERA", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(occupancySchema).length(1) }),
+  // product cards are not tied to a business day
+  z.object({ kind: z.literal("products"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day.optional(), runId: z.string().max(64).optional(), items: z.array(productSchema).max(5000) }),
 ]);
 export type IngestInput = z.infer<typeof ingestSchema>;
 

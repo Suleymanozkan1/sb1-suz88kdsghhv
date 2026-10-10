@@ -20,18 +20,33 @@ Public Sub ProtectAll()
     Next ws
 End Sub
 
+' Every table column fits its header (plus the filter button) and its values, never narrower than the
+' prefilled layout (the KPI tiles share columns with the summary table); text longer than 60 characters
+' wraps instead of being cut off. The header row wraps and grows when a header needs two lines.
 Public Sub FormatWorkbook()
     Dim ws As Worksheet
     Dim lo As ListObject
-    Dim c As Range
+    Dim lc As ListColumn
+    Dim before As Double
+    Dim fitted As Double
     For Each ws In ThisWorkbook.Worksheets
         If ws.Visible = -1 Then
             For Each lo In ws.ListObjects
-                lo.Range.Columns.AutoFit
-                For Each c In lo.HeaderRowRange.Cells
-                    If c.ColumnWidth > 60 Then c.ColumnWidth = 60
-                    If c.ColumnWidth < 10 Then c.ColumnWidth = 10
-                Next c
+                For Each lc In lo.ListColumns
+                    before = lc.Range.ColumnWidth
+                    lc.Range.Columns.AutoFit
+                    fitted = lc.Range.ColumnWidth + 2
+                    If fitted < before Then fitted = before
+                    If fitted < 8 Then fitted = 8
+                    If fitted > 60 Then
+                        fitted = 60
+                        lc.Range.WrapText = True
+                    End If
+                    lc.Range.ColumnWidth = fitted
+                Next lc
+                lo.HeaderRowRange.WrapText = True
+                lo.HeaderRowRange.Font.Bold = True
+                lo.HeaderRowRange.Rows.AutoFit
             Next lo
         End If
     Next ws

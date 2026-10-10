@@ -262,10 +262,11 @@ export async function salesWarehouseFor(db: Db, hotelId: string): Promise<(depar
  * are skipped (they show as unmapped sales). Stock may go negative (sales happen before late receipts are booked);
  * the data-quality screen lists negative positions.
  */
-export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string, importId: string): Promise<number> {
+export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string, importId: string | null, only?: { lineIds: string[]; tag: string }): Promise<number> {
   const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { autoDeductSales: true, timezone: true, businessDayCutoff: true } });
   if (!hotel.autoDeductSales) return 0;
-  const lines = await db.saleLine.findMany({ where: { importId, recipeVersionId: { not: null }, consumptionPosted: false }, include: { recipeVersion: { select: { costSnapshot: true } }, recipe: { select: { name: true } } } });
+  // `only`: lines mapped later by reprocessing — just those, under their own key (the import's key per day/outlet/ingredient is taken)
+  const lines = await db.saleLine.findMany({ where: { hotelId, importId, recipeVersionId: { not: null }, consumptionPosted: false, ...(only ? { id: { in: only.lineIds } } : {}) }, include: { recipeVersion: { select: { costSnapshot: true } }, recipe: { select: { name: true } } } });
   if (!lines.length) return 0;
   const warehouseOf = await salesWarehouseFor(db, hotelId);
   type Group = { day: string; departmentId: string; qty: Map<string, Decimal>; dishes: Map<string, Map<string, Decimal>> };
@@ -303,7 +304,7 @@ export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string
         sourceType: SALES_SOURCE,
         sourceId: importId,
         reason: `Sales: ${dishes.slice(0, 6).join(", ")}${dishes.length > 6 ? ", …" : ""}`.slice(0, 500),
-        idempotencyKey: `sale:${importId}:${g.day}:${g.departmentId}:${productId}`,
+        idempotencyKey: `sale:${importId}:${only ? `${only.tag}:` : ""}${g.day}:${g.departmentId}:${productId}`,
         allowNegative: true,
       });
       n++;

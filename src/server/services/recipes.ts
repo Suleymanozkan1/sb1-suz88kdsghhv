@@ -11,8 +11,9 @@ import { type Actor, authorize, departmentScope, requireDepartment } from "../au
 import { audit } from "./audit";
 import { productCostTable, toConversions } from "./products";
 import { raiseAlert } from "./alerts";
+import { decimalText, localDay } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 
 export const RECIPE_TYPES = ["RESTAURANT", "CAFE", "BAR", "BREAKFAST", "PASTRY", "BANQUET", "ROOM_SERVICE", "MINIBAR", "STAFF_MEAL", "COMPLIMENTARY", "PRODUCTION", "SEMI_FINISHED"] as const;
 
@@ -143,7 +144,7 @@ export async function buildResolver(db: Db, hotelId: string, opts: { asOf?: Date
 }
 
 async function loadRecipe(db: Db, actor: Actor, hotelId: string, recipeId: string) {
-  const recipe = await db.recipe.findFirst({ where: { id: recipeId, hotelId }, include: { versions: { include: { lines: true }, orderBy: { version: "desc" } } } });
+  const recipe = await db.recipe.findFirst({ where: { id: recipeId, hotelId, deletedAt: null }, include: { versions: { include: { lines: true }, orderBy: { version: "desc" } } } });
   if (!recipe) throw new DomainError("NOT_FOUND", "Recipe not found");
   requireDepartment(actor, recipe.departmentId);
   return recipe;
@@ -153,7 +154,7 @@ async function assertRefs(db: Db, hotelId: string, lines: z.infer<typeof version
   const pids = lines.map((l) => l.productId).filter(Boolean) as string[];
   const rids = lines.map((l) => l.subRecipeId).filter(Boolean) as string[];
   if (pids.length && (await db.product.count({ where: { hotelId, id: { in: pids } } })) !== new Set(pids).size) throw new DomainError("VALIDATION", "Unknown product in recipe lines");
-  if (rids.length && (await db.recipe.count({ where: { hotelId, id: { in: rids } } })) !== new Set(rids).size) throw new DomainError("VALIDATION", "Unknown sub-recipe in recipe lines");
+  if (rids.length && (await db.recipe.count({ where: { hotelId, id: { in: rids }, deletedAt: null } })) !== new Set(rids).size) throw new DomainError("VALIDATION", "Unknown sub-recipe in recipe lines");
   for (const l of lines) if (l.productId && l.subRecipeId) throw new DomainError("VALIDATION", "A line references either a product or a sub-recipe, not both");
 }
 
@@ -224,6 +225,7 @@ export async function createVersion(db: Db, actor: Actor, hotelId: string, recip
     await assertRefs(tx, hotelId, input.lines);
     const next = (recipe.versions[0]?.version ?? 0) + 1;
     const v = await tx.recipeVersion.create({ data: { recipeId, version: next, status: "DRAFT", createdById: actor.userId, ...versionData(input), lines: { create: lineData(input.lines) } }, include: { lines: true } });
+    await tx.recipe.update({ where: { id: recipeId }, data: { updatedAt: new Date() } });
     await audit(tx, actor, { hotelId, action: "RECIPE_VERSION_CREATE", entityType: "RecipeVersion", entityId: v.id, after: { recipe: recipe.code, version: next }, reason: input.reason });
     return v;
   });
@@ -233,13 +235,14 @@ export async function updateDraft(db: Db, actor: Actor, hotelId: string, version
   authorize(actor, "recipe:manage", { hotelId });
   const input = versionInput.parse(raw);
   return inTx(db, async (tx) => {
-    const v = await tx.recipeVersion.findFirst({ where: { id: versionId, recipe: { hotelId } }, include: { recipe: true, lines: true } });
+    const v = await tx.recipeVersion.findFirst({ where: { id: versionId, recipe: { hotelId, deletedAt: null } }, include: { recipe: true, lines: true } });
     if (!v) throw new DomainError("NOT_FOUND", "Recipe version not found");
     requireDepartment(actor, v.recipe.departmentId);
     if (!["DRAFT", "REJECTED"].includes(v.status)) throw new DomainError("IMMUTABLE", "Only draft versions can be edited; create a new version");
     await assertRefs(tx, hotelId, input.lines);
     await tx.recipeIngredient.deleteMany({ where: { versionId } });
     const updated = await tx.recipeVersion.update({ where: { id: versionId }, data: { ...versionData(input), status: "DRAFT", lines: { create: lineData(input.lines) } }, include: { lines: true } });
+    await tx.recipe.update({ where: { id: v.recipeId }, data: { updatedAt: new Date() } });
     await audit(tx, actor, { hotelId, action: "RECIPE_DRAFT_UPDATE", entityType: "RecipeVersion", entityId: versionId, before: { lines: v.lines.length }, after: { lines: updated.lines.length } });
     return updated;
   });
@@ -251,43 +254,157 @@ export async function updateDraft(db: Db, actor: Actor, hotelId: string, version
  */
 export async function approveVersion(db: Db, actor: Actor, hotelId: string, versionId: string, opts: { effectiveFrom?: Date } = {}) {
   authorize(actor, "recipe:approve", { hotelId });
+  return inTx(db, (tx) => freezeAndApprove(tx, actor, hotelId, versionId, opts));
+}
+
+/** Validate, cost, freeze and make a version the effective one (the caller has checked the permission). */
+async function freezeAndApprove(tx: Db, actor: Actor, hotelId: string, versionId: string, opts: { effectiveFrom?: Date } = {}) {
+  const v = await tx.recipeVersion.findFirst({ where: { id: versionId, recipe: { hotelId, deletedAt: null } }, include: { recipe: true, lines: true } });
+  if (!v) throw new DomainError("NOT_FOUND", "Recipe version not found");
+  requireDepartment(actor, v.recipe.departmentId);
+  if (!["DRAFT", "PENDING_APPROVAL"].includes(v.status)) throw new DomainError("VALIDATION", `Version is ${v.status}`);
+  const def = versionToDef(v.recipe, v);
+  const resolver = await buildResolver(tx, hotelId, { draftOverride: def });
+  const issues = validateRecipeDef(def, resolver);
+  if (issues.length) throw new DomainError("VALIDATION", `Recipe is incomplete: ${issues.map((i) => i.message).join("; ")}`, { issues });
+  const cost = costRecipe(def, resolver);
+  const effectiveFrom = opts.effectiveFrom ?? new Date();
+  const prev = await tx.recipeVersion.findFirst({ where: { recipeId: v.recipeId, status: "APPROVED" } });
+  if (prev) await tx.recipeVersion.update({ where: { id: prev.id }, data: { status: "SUPERSEDED", effectiveTo: effectiveFrom } });
+  const approved = await tx.recipeVersion.update({
+    where: { id: v.id },
+    data: {
+      status: "APPROVED",
+      approvedById: actor.userId,
+      approvedAt: new Date(),
+      effectiveFrom,
+      costSnapshot: serializeCost(cost) as Prisma.InputJsonValue,
+      batchCost: str(cost.fullBatchCost),
+      ingredientCost: str(cost.foodCost),
+      portionCost: str(cost.portionCost),
+    },
+  });
+  await tx.recipe.update({ where: { id: v.recipeId }, data: { updatedAt: new Date() } });
+  await audit(tx, actor, {
+    hotelId,
+    action: "RECIPE_APPROVE",
+    entityType: "RecipeVersion",
+    entityId: v.id,
+    before: prev ? { version: prev.version, portionCost: prev.portionCost?.toString() } : null,
+    after: { version: approved.version, portionCost: approved.portionCost?.toString() },
+    reason: v.reason,
+  });
+  return approved;
+}
+
+/**
+ * "Güncelle": an authorised user (recipe:manage — managers and chefs, not staff) changes a recipe and the change is
+ * in force at once, without a separate approval: the header is updated and the new content becomes a new version
+ * that is costed, frozen and made effective now (the previous one is kept as SUPERSEDED). An open draft is reused
+ * as that version. The version must pass validation, as any approval.
+ */
+export async function editRecipe(db: Db, actor: Actor, hotelId: string, recipeId: string, raw: unknown) {
+  authorize(actor, "recipe:manage", { hotelId });
+  const input = recipeInput.parse(raw);
+  requireDepartment(actor, input.departmentId ?? null);
   return inTx(db, async (tx) => {
-    const v = await tx.recipeVersion.findFirst({ where: { id: versionId, recipe: { hotelId } }, include: { recipe: true, lines: true } });
-    if (!v) throw new DomainError("NOT_FOUND", "Recipe version not found");
-    requireDepartment(actor, v.recipe.departmentId);
-    if (!["DRAFT", "PENDING_APPROVAL"].includes(v.status)) throw new DomainError("VALIDATION", `Version is ${v.status}`);
-    const def = versionToDef(v.recipe, v);
-    const resolver = await buildResolver(tx, hotelId, { draftOverride: def });
-    const issues = validateRecipeDef(def, resolver);
-    if (issues.length) throw new DomainError("VALIDATION", `Recipe is incomplete: ${issues.map((i) => i.message).join("; ")}`, { issues });
-    const cost = costRecipe(def, resolver);
-    const effectiveFrom = opts.effectiveFrom ?? new Date();
-    const prev = await tx.recipeVersion.findFirst({ where: { recipeId: v.recipeId, status: "APPROVED" } });
-    if (prev) await tx.recipeVersion.update({ where: { id: prev.id }, data: { status: "SUPERSEDED", effectiveTo: effectiveFrom } });
-    const approved = await tx.recipeVersion.update({
-      where: { id: v.id },
-      data: {
-        status: "APPROVED",
-        approvedById: actor.userId,
-        approvedAt: new Date(),
-        effectiveFrom,
-        costSnapshot: serializeCost(cost) as Prisma.InputJsonValue,
-        batchCost: str(cost.fullBatchCost),
-        ingredientCost: str(cost.foodCost),
-        portionCost: str(cost.portionCost),
-      },
-    });
+    const recipe = await loadRecipe(tx, actor, hotelId, recipeId);
+    const code = input.code || recipe.code;
+    if (code !== recipe.code && (await tx.recipe.findFirst({ where: { hotelId, code, NOT: { id: recipeId } } }))) throw new DomainError("DUPLICATE", `Recipe code ${code} exists`);
+    if (input.departmentId && !(await tx.department.findFirst({ where: { id: input.departmentId, hotelId } }))) throw new DomainError("VALIDATION", "Department not found");
+    if (input.outputProductId && !(await tx.product.findFirst({ where: { id: input.outputProductId, hotelId } }))) throw new DomainError("VALIDATION", "Output product not found");
+    if (input.version.lines.some((l) => l.subRecipeId === recipeId)) throw new DomainError("VALIDATION", "Recipe cannot contain itself");
+    await assertRefs(tx, hotelId, input.version.lines);
+    const header = { code, name: input.name, type: input.type, departmentId: input.departmentId ?? null, outputProductId: input.outputProductId ?? recipe.outputProductId, posCode: input.posCode ?? null };
+    await tx.recipe.update({ where: { id: recipeId }, data: header });
+    const reason = input.version.reason?.trim() || "Recipe updated";
+    const data = { ...versionData({ ...input.version, reason }), createdById: actor.userId };
+    const open = recipe.versions.find((v) => ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(v.status));
+    let versionId: string;
+    if (open) {
+      await tx.recipeIngredient.deleteMany({ where: { versionId: open.id } });
+      versionId = (await tx.recipeVersion.update({ where: { id: open.id }, data: { ...data, status: "DRAFT", lines: { create: lineData(input.version.lines) } } })).id;
+    } else {
+      const next = (recipe.versions[0]?.version ?? 0) + 1;
+      versionId = (await tx.recipeVersion.create({ data: { recipeId, version: next, status: "DRAFT", ...data, lines: { create: lineData(input.version.lines) } } })).id;
+    }
+    const approved = await freezeAndApprove(tx, actor, hotelId, versionId);
     await audit(tx, actor, {
       hotelId,
-      action: "RECIPE_APPROVE",
-      entityType: "RecipeVersion",
-      entityId: v.id,
-      before: prev ? { version: prev.version, portionCost: prev.portionCost?.toString() } : null,
-      after: { version: approved.version, portionCost: approved.portionCost?.toString() },
-      reason: v.reason,
+      action: "RECIPE_EDIT",
+      entityType: "Recipe",
+      entityId: recipeId,
+      before: { code: recipe.code, name: recipe.name, type: recipe.type, departmentId: recipe.departmentId, posCode: recipe.posCode },
+      after: { ...header, version: approved.version, portionCost: approved.portionCost?.toString() ?? null },
+      reason,
     });
-    return approved;
+    return { id: recipeId, version: approved.version, versionId: approved.id };
   });
+}
+
+/**
+ * "Sil": soft delete. The recipe disappears from every list, picker and sales matching (inactive + deletedAt), but the
+ * row and its versions stay: sales history and frozen costs reference them. A recipe still used as a sub-recipe by
+ * another recipe cannot be deleted.
+ */
+export async function deleteRecipe(db: Db, actor: Actor, hotelId: string, recipeId: string, reason?: string | null) {
+  authorize(actor, "recipe:manage", { hotelId });
+  return inTx(db, async (tx) => {
+    const recipe = await loadRecipe(tx, actor, hotelId, recipeId);
+    const users = await tx.recipe.findMany({
+      where: { hotelId, deletedAt: null, NOT: { id: recipeId }, versions: { some: { status: { in: ["APPROVED", "DRAFT", "PENDING_APPROVAL"] }, lines: { some: { subRecipeId: recipeId } } } } },
+      select: { name: true },
+      take: 5,
+    });
+    if (users.length) throw new DomainError("CONFLICT", `${recipe.name} is used as a sub-recipe by: ${users.map((u) => u.name).join(", ")}`);
+    const at = new Date();
+    await tx.recipe.update({ where: { id: recipeId }, data: { deletedAt: at, active: false } });
+    await audit(tx, actor, { hotelId, action: "RECIPE_DELETE", entityType: "Recipe", entityId: recipeId, before: { code: recipe.code, name: recipe.name, type: recipe.type, active: recipe.active }, after: { deletedAt: at.toISOString() }, reason: reason?.trim() || null });
+    return { id: recipeId, deletedAt: at };
+  });
+}
+
+/**
+ * "Reçete fiyatlarını güncelle": every recipe's effective version is re-costed at today's ingredient costs (FIFO:
+ * what the next consumption costs, i.e. the oldest open batch; without stock the last invoice price) and its frozen
+ * cost snapshot is refreshed with them, the way recipes:refreeze re-freezes snapshots. Returns old vs new cost per
+ * portion (per unit made for batch recipes), largest change first.
+ */
+export async function refreshRecipePrices(db: Db, actor: Actor, hotelId: string) {
+  authorize(actor, "recipe:manage", { hotelId });
+  const recipes = await db.recipe.findMany({ where: { hotelId, deletedAt: null, ...departmentScope(actor) }, include: { versions: { where: { status: "APPROVED" }, include: { lines: true } } }, orderBy: { name: "asc" } });
+  const resolver = await buildResolver(db, hotelId);
+  // sub-recipes stay at the versions the snapshot was frozen with (as refreezeSnapshots): only the prices change,
+  // never the frozen structure / quantities
+  const byId = new Map((await db.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } }, include: { recipe: true, lines: true } })).map((x) => [x.id, x]));
+  const rows: Array<{ recipeId: string; code: string; name: string; version: number; unit: string; oldPortionCost: string | null; newPortionCost: string | null; change: string | null; changePct: string | null; complete: boolean }> = [];
+  const failed: string[] = [];
+  for (const r of recipes) {
+    const v = r.versions[0];
+    if (!v) continue;
+    try {
+      const subVersion = frozenSubVersions(v.costSnapshot as SnapTree | null);
+      const frozen: CostResolver = {
+        product: resolver.product,
+        recipe: (id) => {
+          const sv = byId.get(subVersion.get(id) ?? "");
+          return sv ? versionToDef(sv.recipe, sv) : resolver.recipe(id);
+        },
+      };
+      const cost = costRecipe(versionToDef(r, v), frozen);
+      await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      const before = v.portionCost ? D(v.portionCost.toString()) : null;
+      const after = cost.portionCost;
+      const change = before && after ? after.minus(before) : null;
+      rows.push({ recipeId: r.id, code: r.code, name: r.name, version: v.version, unit: v.yieldUnit, oldPortionCost: str(before, 4), newPortionCost: str(after, 4), change: str(change, 4), changePct: change && before && !before.isZero() ? str(pct(change, before), 2) : null, complete: cost.complete });
+    } catch (e) {
+      failed.push(`${r.code} ${r.name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  rows.sort((a, b) => Math.abs(Number(b.change ?? 0)) - Math.abs(Number(a.change ?? 0)) || a.name.localeCompare(b.name, "tr"));
+  const changed = rows.filter((r) => r.change && Number(r.change) !== 0).length;
+  await audit(db, actor, { hotelId, action: "RECIPE_PRICES_REFRESH", entityType: "Recipe", entityId: hotelId, after: { recipes: rows.length, changed, failed: failed.length } });
+  return { refreshed: rows.length, changed, failed, rows };
 }
 
 /** Live cost of a recipe (current product costs) or of a specific version. */
@@ -301,11 +418,26 @@ export async function recipeCost(db: Db, actor: Actor, hotelId: string, recipeId
   return { result: costRecipe(def, resolver), version, resolver };
 }
 
-export async function listRecipes(db: Db, actor: Actor, hotelId: string, filter: { type?: string; q?: string } = {}) {
+/** YYYY-MM-DD or nothing */
+const dayText = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+
+/**
+ * The recipe list. `from` / `to` (YYYY-MM-DD, hotel days, both inclusive): only recipes created or changed in that
+ * range ("which recipes were entered / updated between 15.09 and 29.10").
+ */
+export async function listRecipes(db: Db, actor: Actor, hotelId: string, filter: { type?: string; q?: string; from?: string; to?: string } = {}) {
   authorize(actor, "recipe:view", { hotelId });
-  const recipes = await db.recipe.findMany({
+  const from = dayText(filter.from);
+  const to = dayText(filter.to);
+  const { timezone } = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true } });
+  const inRange = (d: Date) => {
+    const day = localDay(timezone, d);
+    return (!from || day >= from) && (!to || day <= to);
+  };
+  const all = await db.recipe.findMany({
     where: {
       hotelId,
+      deletedAt: null,
       ...departmentScope(actor),
       ...(filter.type ? { type: filter.type as (typeof RECIPE_TYPES)[number] } : {}),
       ...(filter.q ? { OR: [{ name: { contains: filter.q, mode: "insensitive" } }, { code: { contains: filter.q, mode: "insensitive" } }] } : {}),
@@ -313,6 +445,7 @@ export async function listRecipes(db: Db, actor: Actor, hotelId: string, filter:
     include: { department: true, versions: { include: { lines: true } } },
     orderBy: { name: "asc" },
   });
+  const recipes = from || to ? all.filter((r) => inRange(r.createdAt) || inRange(r.updatedAt)) : all;
   const resolver = await buildResolver(db, hotelId);
   return recipes.map((r) => {
     const v = effectiveAt(r.versions, new Date());
@@ -343,6 +476,8 @@ export async function listRecipes(db: Db, actor: Actor, hotelId: string, filter:
       grossMarginPct: cost ? str(cost.grossMarginPct, 2) : null,
       complete: cost?.complete ?? false,
       error,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
     };
   });
 }
@@ -358,7 +493,7 @@ export async function priceImpact(db: Db, actor: Actor, hotelId: string, product
   const product = base.products.get(productId);
   if (!product) throw new DomainError("NOT_FOUND", "Product not found");
   const scenario = await buildResolver(db, hotelId, { costOverrides: new Map([[productId, D(newUnitCost)]]) });
-  const recipes = await db.recipe.findMany({ where: { hotelId, active: true, ...departmentScope(actor) } });
+  const recipes = await db.recipe.findMany({ where: { hotelId, active: true, deletedAt: null, ...departmentScope(actor) } });
   const rows = [];
   for (const r of recipes) {
     const def = base.recipe(r.id);
@@ -399,6 +534,20 @@ export async function priceImpact(db: Db, actor: Actor, hotelId: string, product
 
 type SnapLine = { kind: string; refId: string; unitCost: string | null; children?: SnapTree };
 type SnapTree = { recipeId: string; versionId?: string; model?: number; lines: SnapLine[] };
+
+/** Sub-recipe id → the version id a frozen snapshot was costed with (at any depth). */
+function frozenSubVersions(snap: SnapTree | null | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (tree: SnapTree) => {
+    for (const l of tree.lines ?? []) {
+      if (!l.children) continue;
+      if (l.children.versionId && !out.has(l.children.recipeId)) out.set(l.children.recipeId, l.children.versionId);
+      walk(l.children);
+    }
+  };
+  if (snap) walk(snap);
+  return out;
+}
 
 /**
  * One-off correction after the costing rule changed (COST_MODEL 2: a recipe quantity is the raw quantity used).

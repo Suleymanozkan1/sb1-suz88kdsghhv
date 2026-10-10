@@ -6,6 +6,7 @@
  *
  * Reconciliation identities (all exact, tested):
  *   actual            = opening + purchases + transfersIn − transfersOut − closing          (ledger)
+ *                     = opening + purchases − transfersOutNet − closing                    (screen)
  *   variance          = actual − theoretical(frozen at sale)
  *   price component   = Σ theoreticalQty × periodAvgCost − theoretical(frozen)
  *   unexplained       = variance − price − waste − staffMeal − complimentary
@@ -267,6 +268,12 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
       purchases: tot((r) => r.purchases.value),
       transfersIn: tot((r) => r.transfersIn.value),
       transfersOut: tot((r) => r.transfersOut.value),
+      /**
+       * Transfers out net of transfers in — the reconciliation line (round 2: no "transfers in" row). Stock moved
+       * between the hotel's own stores nets to zero at hotel level; for a department scope the stock it received
+       * from other stores is deducted (negative = net received). opening + purchases − this − closing = actual.
+       */
+      transfersOutNet: tot((r) => r.transfersOut.value.minus(r.transfersIn.value)),
       closing: tot((r) => r.closing.value),
       actualCost,
       theoreticalCost,

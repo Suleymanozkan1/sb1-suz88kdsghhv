@@ -35,7 +35,8 @@ export interface Allocated<K extends string = string> {
  * method so the parts always sum to exactly `amount` (no rounding residue left in the source).
  */
 export function allocate<K extends string>(amount: Numeric, shares: Share<K>[], scale = 6): Allocated<K>[] {
-  const total = D(amount);
+  // an amount with more decimals than the parts (e.g. a prorated 1/3) could never be handed out unit by unit
+  const total = D(amount).toDecimalPlaces(scale, Decimal.ROUND_HALF_UP);
   if (!shares.length) throw new DomainError("VALIDATION", "Allocation has no destinations");
   const drivers = shares.map((s) => D(s.driver));
   if (drivers.some((d) => d.isNeg())) throw new DomainError("VALIDATION", "Allocation drivers cannot be negative");

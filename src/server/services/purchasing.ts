@@ -15,8 +15,9 @@ import { audit } from "./audit";
 import { postMovement } from "./ledger";
 import { raiseAlert } from "./alerts";
 import { toConversions } from "./products";
+import { decimalText } from "@/lib/format";
 
-const dec = z.union([z.string(), z.number()]).transform((v) => String(v)).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
+const dec = z.union([z.string(), z.number()]).transform(decimalText).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
 const pos = dec.refine((v) => Number(v) > 0, "Must be positive");
 const nonNeg = dec.refine((v) => Number(v) >= 0, "Cannot be negative");
 
@@ -348,4 +349,35 @@ export function receiptTotals(items: Array<{ netAmount: { toString(): string }; 
   const net = sum(items.map((i) => i.netAmount.toString()));
   const tax = sum(items.map((i) => i.taxAmount.toString()));
   return { net, tax, gross: net.plus(tax) };
+}
+
+export const RECEIPT_SOURCES = ["MICROS", "IMPORT", "MANUAL"] as const;
+export type ReceiptStatus = "POSTED" | "PARTLY_REVERSED" | "REVERSED" | "DRAFT";
+/** screen / export labels (English keys, translated with t) */
+export const RECEIPT_SOURCE: Record<string, string> = { MICROS: "Micros", IMPORT: "From file import", MANUAL: "Entered by hand" };
+export const RECEIPT_STATUS: Record<ReceiptStatus, string> = { POSTED: "Posted", PARTLY_REVERSED: "Partly reversed", REVERSED: "Reversed", DRAFT: "Draft" };
+
+/**
+ * Goods receipts of a period for the purchasing screen and its PDF / Excel / CSV: by receipt date (the invoice's
+ * day — Micros invoices arrive by date through the automation), optionally one supplier / one source, newest first.
+ * The status says whether a line's stock posting was reversed later (stock correction).
+ */
+export async function listReceipts(db: Db, hotelId: string, f: { from: Date; to: Date; supplierId?: string | null; source?: string | null }, take: number) {
+  const receipts = await db.goodsReceipt.findMany({
+    where: { hotelId, receiptDate: { gte: f.from, lt: f.to }, ...(f.supplierId ? { supplierId: f.supplierId } : {}), ...(f.source && (RECEIPT_SOURCES as readonly string[]).includes(f.source) ? { source: f.source } : {}) },
+    include: { supplier: true, warehouse: true, items: { include: { product: true } } },
+    orderBy: [{ receiptDate: "desc" }, { number: "desc" }],
+    take,
+  });
+  const itemIds = receipts.flatMap((r) => r.items.map((i) => i.id));
+  const reversed = new Set(
+    itemIds.length ? (await db.stockTransaction.findMany({ where: { hotelId, sourceType: "GOODS_RECEIPT", sourceId: { in: itemIds }, reversedBy: { isNot: null } }, select: { sourceId: true } })).map((x) => x.sourceId) : [],
+  );
+  return receipts.map((r) => {
+    const n = r.items.filter((i) => reversed.has(i.id)).length;
+    const status: ReceiptStatus = !r.postedAt ? "DRAFT" : n === 0 ? "POSTED" : n === r.items.length ? "REVERSED" : "PARTLY_REVERSED";
+    // what the supplier invoices: net + VAT + the extra costs on the document (freight, customs …)
+    const total = D(r.landedTotal.toString()).plus(r.taxTotal.toString());
+    return { ...r, status, total: toStorage(total).toString() };
+  });
 }

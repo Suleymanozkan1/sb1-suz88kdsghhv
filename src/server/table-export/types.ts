@@ -51,3 +51,23 @@ export interface ReportDef {
   perm?: Permission;
   load(ctx: XCtx): Promise<XReport>;
 }
+
+/** Columns that hold product / dish names: shown in title case like on screen (feedback r2 §0). */
+const NAME_COLUMNS = /^(product|productName|name|item|itemName|recipe|recipeName|dish|ingredient|component)$/;
+
+/**
+ * The export as the reader sees it on screen: report, table and column titles and product / dish names in title case
+ * for the locale ("dana incik" → "Dana İncik"). Data stays as stored; only the file shows it this way.
+ */
+export function displayCase(r: XReport, locale: Locale, title: (s: string, locale: Locale) => string): XReport {
+  const tc = (s: string) => title(s, locale);
+  return {
+    ...r,
+    title: tc(r.title),
+    tables: r.tables.map((tb) => {
+      const names = tb.columns.filter((c) => (c.type ?? "text") === "text" && NAME_COLUMNS.test(c.key)).map((c) => c.key);
+      const fix = (row: Record<string, XValue>) => (names.length ? { ...row, ...Object.fromEntries(names.filter((k) => typeof row[k] === "string").map((k) => [k, tc(row[k] as string)])) } : row);
+      return { ...tb, title: tb.title === undefined ? undefined : tc(tb.title), columns: tb.columns.map((c) => ({ ...c, header: tc(c.header) })), rows: tb.rows.map(fix), totals: tb.totals };
+    }),
+  };
+}

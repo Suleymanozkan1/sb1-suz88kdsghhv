@@ -48,7 +48,8 @@ export const DEMO_DEPARTMENTS: Array<{ code: string; name: string; outlet: boole
   { code: "REST", name: "Restaurant", outlet: true, parent: "FB", recipeType: "RESTAURANT", warehouse: "KITCH" },
   { code: "CAFE", name: "Cafe", outlet: true, parent: "FB", recipeType: "CAFE", warehouse: "KITCH" },
   { code: "BAR", name: "Bar", outlet: true, parent: "FB", recipeType: "BAR", warehouse: "BAR" },
-  { code: "BRKF", name: "Breakfast", outlet: true, parent: "FB", recipeType: "BREAKFAST", warehouse: "BRKF" },
+  // breakfast is issued from the kitchen store: there is no breakfast (buffet) store
+  { code: "BRKF", name: "Breakfast", outlet: true, parent: "FB", recipeType: "BREAKFAST", warehouse: "KITCH" },
   { code: "KITCH", name: "Kitchen", outlet: false, parent: "FB", warehouse: "KITCH" },
   { code: "PAST", name: "Pastry", outlet: true, parent: "FB", recipeType: "PASTRY", warehouse: "PAST" },
   { code: "BANQ", name: "Banquet", outlet: true, parent: "FB", recipeType: "BANQUET", warehouse: "KITCH" },
@@ -63,8 +64,6 @@ export const DEMO_WAREHOUSES: Array<[string, string, string | null]> = [
   ["MAIN", "Main Warehouse", null],
   ["KITCH", "Kitchen Warehouse", "KITCH"],
   ["BAR", "Bar Warehouse", "BAR"],
-  ["BRKF", "Breakfast Warehouse", "BRKF"],
-  ["BUFFET", "Breakfast Buffet Store", "BRKF"],
   ["PAST", "Pastry Warehouse", "PAST"],
   ["HK", "Housekeeping Warehouse", "HK"],
   ["MINIBAR", "Minibar Warehouse", "MINI"],
