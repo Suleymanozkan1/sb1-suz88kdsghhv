@@ -80,6 +80,9 @@ export function Importer({ allowed, currency }: { allowed: Kind[]; currency: str
             if (!f) return;
             if (f.size > MAX_FILE_BYTES) {
               setPreview(null);
+              setCsv("");
+              setXlsx(null);
+              setFileName("");
               setMsg({ tone: "red", text: t("{name} is too large ({size} MB). Files up to 3.5 MB can be imported: split it into smaller files.", { name: f.name, size: (f.size / 1024 / 1024).toFixed(1).replace(".", ",") }) });
               return;
             }
