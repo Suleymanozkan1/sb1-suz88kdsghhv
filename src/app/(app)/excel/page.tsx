@@ -65,7 +65,7 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
                   <tr key={r.id}>
                     <Td>{dateTime(r.generatedAt, hotel.timezone)}</Td><Td>{users.get(r.generatedById)}</Td><Td className="font-mono text-xs">{d.exportId}</Td><Td>{d.meta?.period?.label}</Td>
                     <Td><Badge tone={d.score?.reconciliation === "PASS" ? "green" : d.score?.reconciliation === "FAIL" ? "red" : "amber"}>{d.score?.reconciliation ? t(d.score.reconciliation) : null}</Badge></Td>
-                    <Td align="right">{d.score?.dataQuality ?? "—"}%</Td>
+                    <Td align="right">{d.score?.dataQuality != null && d.score.dataQuality !== "" ? `${d.score.dataQuality}%` : "—"}</Td>
                   </tr>
                 );
               })}

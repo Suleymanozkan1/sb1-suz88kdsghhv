@@ -7,7 +7,7 @@ import { ProductPicker, unitsFor, type PickedProduct } from "@/components/produc
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
 
-export function MovementForm({ warehouses, departments, canAdjust }: { warehouses: { id: string; name: string }[]; departments: { id: string; name: string }[]; canAdjust: boolean }) {
+export function MovementForm({ warehouses, departments, canAdjust, today }: { warehouses: { id: string; name: string }[]; departments: { id: string; name: string }[]; canAdjust: boolean; today: string }) {
   const router = useRouter();
   const t = useT();
   const [product, setProduct] = useState<PickedProduct | null>(null);
@@ -17,8 +17,10 @@ export function MovementForm({ warehouses, departments, canAdjust }: { warehouse
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     if (!product) return setMsg({ tone: "red", text: t("Select a product") });
-    const f = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const f = new FormData(form);
     setBusy(true);
     setMsg(null);
     try {
@@ -29,6 +31,10 @@ export function MovementForm({ warehouses, departments, canAdjust }: { warehouse
       if (!body.unitCost) delete body.unitCost;
       const r = await call<{ totalCost: string; unitCost: string }>("POST", "/api/inventory/movements", body);
       setMsg({ tone: "green", text: t("Posted. Cost {cost} at {unitCost}/unit.", { cost: Math.abs(Number(r.totalCost)).toFixed(2), unitCost: Number(r.unitCost).toFixed(4) }) });
+      // a second click must not post the same movement again under a new idempotency key
+      form.reset();
+      setProduct(null);
+      setType("CONSUMPTION");
       router.refresh();
     } catch (err) {
       setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") });
@@ -54,7 +60,7 @@ export function MovementForm({ warehouses, departments, canAdjust }: { warehouse
       </div>
       <div><Label htmlFor="mv-wh">{t("Warehouse")}</Label><Select id="mv-wh" name="warehouseId" required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
       <div><Label htmlFor="mv-dept">{t("Department")}</Label><Select id="mv-dept" name="departmentId"><option value="">{t("(warehouse default)")}</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></div>
-      <div><Label htmlFor="mv-date">{t("Date")}</Label><Input id="mv-date" name="txDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></div>
+      <div><Label htmlFor="mv-date">{t("Date")}</Label><Input id="mv-date" name="txDate" type="date" defaultValue={today} required /></div>
       <div><Label htmlFor="mv-qty">{t("Quantity")}</Label><Input id="mv-qty" name="quantity" inputMode="decimal" required /></div>
       <div><Label htmlFor="mv-unit">{t("Unit")}</Label><Select id="mv-unit" name="unit" key={product?.id}>{unitsFor(product).map((u) => <option key={u}>{u}</option>)}</Select></div>
       {type === "OPENING" && <div><Label htmlFor="mv-cost">{t("Unit cost")}</Label><Input id="mv-cost" name="unitCost" inputMode="decimal" /></div>}

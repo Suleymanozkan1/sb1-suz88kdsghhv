@@ -4,17 +4,20 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
+import { money } from "@/lib/format";
 import { useT } from "@/i18n/client";
 
 const KINDS = {
   expenses: { label: "Expenses (accounting / payroll / utilities)", template: "date,department,category,subcategory,description,amount,tax,quantity,unit,supplier,invoice_no,asset,room,external_id\n2026-09-30,HK,LABOR,SALARY,Housekeeping payroll,185000,,,,,,,,PAY-HK-2026-09" },
   occupancy: { label: "PMS daily occupancy", template: "business_date,available_rooms,occupied_rooms,out_of_order,guests,room_revenue\n2026-09-01,90,71,0,138,412000" },
   reservations: { label: "PMS reservations / stays", template: "external_id,room,room_type,arrival,departure,guests,channel,board_basis,status,gross_room_revenue,commission,payment_fee,other_distribution\nRES-1001,101,Standard,2026-09-01,2026-09-04,2,OTA,BB,CHECKED_OUT,13500,2025,0,0" },
-  products: { label: "Product master (new products)", template: "name,category,stock_unit,purchase_unit,case_size,recipe_unit,supplier,standard_cost,sku\nZucchini,Vegetables,kg,case,5,g,HAL-SEBZE,42," },
+  products: { label: "Product master (new products)", template: "name,brand,category,stock_unit,purchase_unit,case_size,recipe_unit,supplier,standard_cost,vat,sku\nZucchini,,Vegetables,kg,case,5,g,HAL-SEBZE,42,1,\nOlive Oil,Komili,Oils,l,l,,ml,MET-GIDA,310,\"8,5\"," },
   "supplier-prices": { label: "Supplier price list / contract", template: "supplier,product,price_date,purchase_unit,price,source\nANT-ET,Chicken Breast,2026-10-01,case,2050,CONTRACT" },
   "opening-stock": { label: "Opening stock (go-live)", template: "warehouse,product,quantity,unit_cost\nMAIN,Chicken Breast,40,205" },
 } as const;
 type Kind = keyof typeof KINDS;
+/** the API body cap is 5 MB (server/http/handler.ts) and base64 makes an .xlsx a third bigger: 3.5 MB → ~4.7 MB of JSON */
+const MAX_FILE_BYTES = 3.5 * 1024 * 1024;
 
 interface Preview {
   rows: Array<{ row: number; status: string; messages: string[] }>;
@@ -23,7 +26,7 @@ interface Preview {
 }
 
 export type ImportKindKey = Kind;
-export function Importer({ allowed }: { allowed: Kind[] }) {
+export function Importer({ allowed, currency }: { allowed: Kind[]; currency: string }) {
   const t = useT();
   const router = useRouter();
   const [kind, setKind] = useState<Kind>(allowed[0] ?? "expenses");
@@ -70,8 +73,16 @@ export function Importer({ allowed }: { allowed: Kind[] }) {
         <div className="md:col-span-2">
           <Label htmlFor="im-file">{t("CSV (comma or semicolon) or Excel .xlsx (first sheet)")}</Label>
           <input id="im-file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="block w-full text-sm" onChange={async (e) => {
-            const f = e.target.files?.[0];
+            const input = e.currentTarget;
+            const f = input.files?.[0];
+            // cleared so that choosing the same file again (after fixing it) fires onChange again
+            input.value = "";
             if (!f) return;
+            if (f.size > MAX_FILE_BYTES) {
+              setPreview(null);
+              setMsg({ tone: "red", text: t("{name} is too large ({size} MB). Files up to 3.5 MB can be imported: split it into smaller files.", { name: f.name, size: (f.size / 1024 / 1024).toFixed(1).replace(".", ",") }) });
+              return;
+            }
             setFileName(f.name);
             if (/\.xlsx$/i.test(f.name)) {
               const buf = new Uint8Array(await f.arrayBuffer());
@@ -91,7 +102,7 @@ export function Importer({ allowed }: { allowed: Kind[] }) {
         </div>
       </div>
       <details className="text-sm"><summary className="cursor-pointer text-ink-600">{t("Template")}</summary><pre tabIndex={0} className="mt-2 overflow-x-auto rounded bg-ink-50 p-2 text-xs">{KINDS[kind].template}</pre></details>
-      {xlsx ? <p className="text-sm text-ink-600">{t("Excel file loaded: {name}", { name: fileName })}</p> : <textarea aria-label={t("CSV content")} className="h-28 w-full rounded-lg border border-ink-200 p-2 font-mono text-xs" placeholder={t("…or paste CSV here")} value={csv} onChange={(e) => setCsv(e.target.value)} />}
+      {xlsx ? <p className="text-sm text-ink-600">{t("Excel file loaded: {name}", { name: fileName })}</p> : <textarea aria-label={t("CSV content")} className="h-28 w-full rounded-lg border border-ink-200 p-2 font-mono text-xs" placeholder={t("…or paste CSV here")} value={csv} onChange={(e) => { setCsv(e.target.value); setPreview(null); }} />}
       <div className="flex gap-2">
         <Button variant="secondary" disabled={(!csv && !xlsx) || busy} onClick={() => doPreview()}>{t("Preview")}</Button>
         <Button disabled={!preview || preview.counts.invalid > 0 || preview.counts.valid === 0 || busy} onClick={commit}>{t("Import {n} row(s)", { n: preview ? preview.counts.valid : "" })}</Button>
@@ -100,7 +111,7 @@ export function Importer({ allowed }: { allowed: Kind[] }) {
         <div className="space-y-2">
           <p className="text-sm">
             <Badge tone="green">{t("{n} valid", { n: preview.counts.valid })}</Badge> <Badge tone="red">{t("{n} invalid", { n: preview.counts.invalid })}</Badge> <Badge tone="amber">{t("{n} duplicate", { n: preview.counts.duplicate })}</Badge> {preview.counts.warning ? <Badge tone="violet">{t("{n} warning", { n: preview.counts.warning })}</Badge> : null}
-            {preview.totalAmount && <span className="ml-2">{t("Total {amount}", { amount: Number(preview.totalAmount).toLocaleString("tr-TR") })}</span>}
+            {preview.totalAmount && <span className="ml-2">{t("Total {amount}", { amount: money(preview.totalAmount, currency) })}</span>}
             {preview.counts.invalid > 0 && <span className="ml-2 text-red-700">{t("Fix invalid rows first — imports are all-or-nothing.")}</span>}
           </p>
           {preview.rows.some((r) => r.status !== "VALID") && (

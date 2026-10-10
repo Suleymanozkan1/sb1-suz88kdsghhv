@@ -28,7 +28,10 @@ export function SalesImporter() {
     setFile(f.name);
     try { setPreview(await call<Preview>("POST", "/api/sales/preview", { csv: text })); } catch (err) { setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Preview failed") }); }
   }
+  const [busy, setBusy] = useState(false);
   async function commit() {
+    if (busy) return;
+    setBusy(true);
     try {
       const r = await call<{ summary: Preview["summary"]; theoreticalCost: string }>("POST", "/api/sales/commit", { csv, fileName: file });
       setMsg({ tone: "green", text: t("Imported {n} lines. Theoretical cost {cost}.", { n: r.summary.valid, cost: Number(r.theoreticalCost).toFixed(2) }) });
@@ -36,6 +39,8 @@ export function SalesImporter() {
       router.refresh();
     } catch (err) {
       setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Import failed") });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -54,7 +59,7 @@ export function SalesImporter() {
               <tbody className="divide-y divide-ink-100">{preview.rows.filter((r) => r.status !== "VALID").slice(0, 100).map((r) => <tr key={r.row}><Td>{r.row}</Td><Td><Badge tone={r.status === "INVALID" ? "red" : r.status === "DUPLICATE" ? "violet" : "amber"}>{t(r.status)}</Badge></Td><Td className="whitespace-normal text-xs">{r.messages.join("; ")}</Td></tr>)}</tbody>
             </Table>
           )}
-          <Button onClick={commit} disabled={preview.summary.valid === 0}>{t("Commit {n} lines", { n: preview.summary.valid })}</Button>
+          <Button onClick={commit} disabled={busy || preview.summary.valid === 0}>{t("Commit {n} lines", { n: preview.summary.valid })}</Button>
         </>
       )}
     </div>

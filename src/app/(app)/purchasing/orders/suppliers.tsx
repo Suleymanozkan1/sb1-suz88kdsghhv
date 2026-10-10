@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Input, Label, Table, Td, Th, cn } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 export interface SupplierRow { id: string; code: string; name: string; address: string | null; email: string | null; phone: string | null; leadTimeDays: number | null; active: boolean; rules: number }
 type Form = { name: string; address: string; email: string; phone: string; leadTimeDays: string };
@@ -89,7 +90,7 @@ export function Suppliers({ suppliers, canManage }: { suppliers: SupplierRow[]; 
       </div>
       {canManage && (
         <div className="rounded-xl border border-ink-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink-900">{t("New supplier")}</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink-900"><Title>{t("New supplier")}</Title></h2>
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
             <div><Label htmlFor="sp-n">{t("Company name")}</Label><Input id="sp-n" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
             <div className="md:col-span-2"><Label htmlFor="sp-a">{t("Address")}</Label><Input id="sp-a" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></div>

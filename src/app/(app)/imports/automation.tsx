@@ -47,14 +47,19 @@ export function Keys({ keys, tz }: { keys: Key[]; tz: string }) {
   const [name, setName] = useState("Micros / Opera");
   const [shown, setShown] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   async function create() {
+    if (busy) return;
     setErr(null);
+    setBusy(true);
     try {
       const r = await call<{ key: string }>("POST", "/api/integrations/keys", { name });
       setShown(r.key);
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setBusy(false);
     }
   }
   async function revoke(k: Key) {
@@ -91,7 +96,7 @@ export function Keys({ keys, tz }: { keys: Key[]; tz: string }) {
       )}
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-64"><Label htmlFor="ik-n">{t("Key name")}</Label><Input id="ik-n" value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <Button variant="secondary" onClick={create}>{t("Create key")}</Button>
+        <Button variant="secondary" disabled={busy} onClick={create}>{t("Create key")}</Button>
       </div>
     </div>
   );

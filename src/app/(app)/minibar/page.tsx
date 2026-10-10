@@ -41,7 +41,7 @@ export default async function MinibarPage({ searchParams }: { searchParams: Prom
         {grid.data.length === 0 ? <Empty title={t("No rooms defined")} /> : (
           <RoomBoard
             canManage={can(actor, "minibar:manage")}
-            rooms={grid.data.map((r) => ({ id: r.id, number: r.number, roomType: t(r.roomType), floor: r.floor, complete: r.complete, missing: r.missing.toString(), items: r.items.map((i) => ({ productId: i.productId, product: i.product, par: i.par.toString(), qty: i.qty.toString() })) }))}
+            rooms={grid.data.map((r) => ({ id: r.id, number: r.number, roomType: t(r.roomType), floor: r.floor, complete: r.complete, missing: r.missing.toString(), occupied: r.occupied, items: r.items.map((i) => ({ productId: i.productId, product: i.product, par: i.par.toString(), qty: i.qty.toString() })) }))}
           />
         )}
       </Card>

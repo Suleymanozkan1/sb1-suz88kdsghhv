@@ -1,11 +1,13 @@
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { menuEngineeringReport } from "@/server/services/planning";
 import { MENU_ACTION, type MenuClass } from "@/domain/planning";
+import { departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Menu Engineering" };
 
@@ -22,7 +24,7 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
   const rep = await guarded(() => menuEngineeringReport(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || null }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const r = rep.data;
-  const departments = await prisma.department.findMany({ where: { hotelId, isOutlet: true }, orderBy: { name: "asc" } });
+  const departments = await prisma.department.findMany({ where: { hotelId, isOutlet: true, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } });
   return (
     <>
       <PageHeader title={t("Menu engineering")} subtitle={t("Popularity (menu mix ≥ 70 % of an equal share = {popularity}) × contribution per unit (≥ weighted average {contribution}). Cost = recipe version frozen at sale; \"cost change\" shows today's recipe cost vs then.", { popularity: pct(f100(r.thresholds.popularity)), contribution: money(r.thresholds.contributionPerUnit, cur) })} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} exportKey="menu-engineering" />
@@ -33,7 +35,7 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
               const items = r.items.filter((i) => i.cls === c);
               return (
                 <Card key={c} title={<span className="flex items-center gap-2"><Badge tone={TONE[c]}>{t(c)}</Badge><span className="text-xs font-normal text-ink-500">{t(MENU_ACTION[c])}</span></span>}>
-                  {items.length === 0 ? <p className="text-sm text-ink-400">—</p> : <ul className="space-y-1 text-sm">{items.map((i) => <li key={i.id} className="flex justify-between gap-2"><span>{i.name}</span><span className="tabular-nums text-ink-500">{t("{qty} sold · {cm} / unit", { qty: qty(i.qty, undefined, 0), cm: money(i.contributionPerUnit, cur) })}</span></li>)}</ul>}
+                  {items.length === 0 ? <p className="text-sm text-ink-400">—</p> : <ul className="space-y-1 text-sm">{items.map((i) => <li key={i.id} className="flex justify-between gap-2"><span><Title>{i.name}</Title></span><span className="tabular-nums text-ink-500">{t("{qty} sold · {cm} / unit", { qty: qty(i.qty, undefined, 0), cm: money(i.contributionPerUnit, cur) })}</span></li>)}</ul>}
                 </Card>
               );
             })}
@@ -44,7 +46,7 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
               <tbody className="divide-y divide-ink-100">
                 {r.items.map((i) => (
                   <tr key={i.id}>
-                    <Td className="font-medium">{i.name}</Td><Td><Badge tone={TONE[i.cls]}>{t(i.cls)}</Badge></Td><Td align="right">{qty(i.qty, undefined, 0)}</Td><Td align="right">{pct(f100(i.menuMix))}</Td>
+                    <Td className="font-medium"><Title>{i.name}</Title></Td><Td><Badge tone={TONE[i.cls]}>{t(i.cls)}</Badge></Td><Td align="right">{qty(i.qty, undefined, 0)}</Td><Td align="right">{pct(f100(i.menuMix))}</Td>
                     <Td align="right">{money(i.revenue, cur, 0)}</Td><Td align="right">{money(i.cost, cur, 0)}</Td><Td align="right">{money(i.contribution, cur, 0)}</Td><Td align="right">{money(i.contributionPerUnit, cur)}</Td>
                     <Td align="right" className={i.belowMarginTarget ? "font-semibold text-red-700" : ""}>{pct(f100(i.marginPct))}</Td><Td align="right">{pct(f100(i.foodCostPct))}</Td>
                     <Td align="right" className={i.costDriftTotal?.gt(0) ? "text-red-700" : ""}>{i.costDriftTotal ? money(i.costDriftTotal, cur, 0) : "—"}</Td>

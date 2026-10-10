@@ -8,6 +8,8 @@ import { money, qty, date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { WasteForm } from "./waste-form";
 import { D, ZERO, sum, type Decimal } from "@/domain/money";
+import { currentBusinessDay } from "@/domain/business-day";
+import { Title } from "@/components/title";
 
 export const metadata = { title: "Waste" };
 
@@ -32,7 +34,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader exportKey="waste" title={t("Waste / zayiat")} subtitle={t("Valued at cost (frozen from the ledger at posting). High-value records require approval.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
-      {can(actor, "waste:record") && <Card title={t("Record waste")} className="mb-4"><WasteForm types={[...WASTE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} /></Card>}
+      {can(actor, "waste:record") && <Card title={t("Record waste")} className="mb-4"><WasteForm currency={hotel.baseCurrency} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} types={[...WASTE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} /></Card>}
       <div className="grid gap-3 md:grid-cols-4">
         <Stat label={t("Posted waste cost")} value={money(total, cur, 0)} hint={t("{n} records", { n: posted.length })} />
         <Stat label={t("Pending approval")} value={rows.filter((r) => r.status === "PENDING").length} tone="warn" />
@@ -46,7 +48,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
             <tbody className="divide-y divide-ink-100">
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <Td>{date(r.wasteDate)}</Td><Td>{r.department.name}</Td><Td>{r.product.name}</Td>
+                  <Td>{date(r.wasteDate)}</Td><Td>{r.department.name}</Td><Td><Title>{r.product.name}</Title></Td>
                   <Td><Badge>{t(r.wasteType)}</Badge>{r.reason && <span className="ml-1 text-xs text-ink-500">{r.reason}</span>}</Td>
                   <Td align="right">{qty(r.quantity.toString(), r.unit)}</Td>
                   <Td align="right">{money(r.unitCost?.toString(), cur)}</Td>

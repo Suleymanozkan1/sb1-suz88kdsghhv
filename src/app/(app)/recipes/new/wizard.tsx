@@ -6,24 +6,34 @@ import { Plus, Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { ProductPicker, unitsFor, type PickedProduct } from "@/components/product-picker";
 import { call } from "@/lib/client";
-import { money, pct, qty } from "@/lib/format";
-import { useT } from "@/i18n/client";
+import { money, pct, qty, titleTr } from "@/lib/format";
+import { useLocale, useT } from "@/i18n/client";
+import { translateMessage } from "@/i18n/core";
+import { Title } from "@/components/title";
 
-interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string }
+export interface Line { key: string; kind: "product" | "sub"; product: PickedProduct | null; subRecipeId: string; quantity: string; unit: string }
+export interface WizardHead { type: string; code: string; name: string; departmentId: string; posCode: string; batchYieldQty: string; yieldUnit: string; portions: string; sellingPrice: string }
 // the first line is server-rendered: its key (used in element ids) must be the same on server and client
 const blank = (key: string = crypto.randomUUID()): Line => ({ key, kind: "product", product: null, subRecipeId: "", quantity: "", unit: "" });
 type Cost = { foodCost: string; portionCost: string | null; foodCostPct: string | null; grossMarginPct: string | null; lines: { name: string; lineCost: string; apQty: string; baseUnit: string; unitCost: string | null; issues: string[] }[] };
 /** recipes that are made in a batch and used inside other recipes (sauces, doughs): they need an output quantity */
 const BATCH_TYPES = ["SEMI_FINISHED", "PRODUCTION"];
 
-export function RecipeWizard({ types, departments, subRecipes }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[] }) {
+/**
+ * New recipe, or (with `edit`) the "Güncelle" form of an existing one: prefilled, and saving makes the change the
+ * recipe's new version, in force at once (no separate approval; the previous version stays in the history).
+ */
+export function RecipeWizard({ types, departments, subRecipes, currency, edit }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[]; currency: string; edit?: { recipeId: string; head: WizardHead; lines: Line[] } }) {
   const router = useRouter();
   const t = useT();
-  const [head, setHead] = useState({ type: "RESTAURANT", code: "", name: "", departmentId: departments[0]?.id ?? "", posCode: "", batchYieldQty: "1", yieldUnit: "kg", portions: "1", sellingPrice: "" });
+  const locale = useLocale();
+  const [head, setHead] = useState<WizardHead>(edit?.head ?? { type: "RESTAURANT", code: "", name: "", departmentId: departments[0]?.id ?? "", posCode: "", batchYieldQty: "1", yieldUnit: "kg", portions: "1", sellingPrice: "" });
   const batch = BATCH_TYPES.includes(head.type);
-  const [lines, setLines] = useState<Line[]>([blank("line-0")]);
+  const [lines, setLines] = useState<Line[]>(edit?.lines.length ? edit.lines : [blank("line-0")]);
+  const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<{ issues: { field: string; message: string }[]; cost: Cost | null } | null>(null);
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const set = (k: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
 
   const version = useMemo(() => {
@@ -50,12 +60,19 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
   }, [version, head.name, t]);
 
   async function save() {
+    if (busy) return;
     setMsg(null);
+    setBusy(true);
     try {
-      const r = await call<{ id: string }>("POST", "/api/recipes", { code: head.code.trim() || null, name: head.name, type: head.type, departmentId: head.departmentId || null, posCode: head.posCode || null, version: { ...version, reason: "Initial version" } });
+      const header = { code: head.code.trim() || null, name: head.name, type: head.type, departmentId: head.departmentId || null, posCode: head.posCode || null };
+      const r = edit
+        ? await call<{ id: string }>("PUT", `/api/recipes/${edit.recipeId}`, { ...header, version: { ...version, reason: reason.trim() || null } })
+        : await call<{ id: string }>("POST", "/api/recipes", { ...header, version: { ...version, reason: "Initial version" } });
       router.push(`/recipes/${r.id}`);
+      router.refresh();
     } catch (e) {
       setMsg({ tone: "red", text: e instanceof Error ? e.message : t("Failed") });
+      setBusy(false);
     }
   }
 
@@ -93,7 +110,7 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
                 <div className="md:col-span-4">
                   <Label htmlFor={`i-${l.key}`}>{l.kind === "product" ? t("Search ingredient") : t("Sub-recipe")}</Label>
                   {l.kind === "product" ? <ProductPicker id={`i-${l.key}`} value={l.product} onChange={(p) => set(l.key, { product: p, unit: p?.recipeUnit ?? "" })} /> : (
-                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">{t("Select…")}</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+                    <Select id={`i-${l.key}`} value={l.subRecipeId} onChange={(e) => set(l.key, { subRecipeId: e.target.value, unit: subRecipes.find((s) => s.id === e.target.value)?.unit === "kg" ? "g" : (subRecipes.find((s) => s.id === e.target.value)?.unit ?? "") })}><option value="">{t("Select…")}</option>{subRecipes.map((s) => <option key={s.id} value={s.id}>{titleTr(s.name, locale)}</option>)}</Select>
                   )}
                 </div>
                 <div className="md:col-span-3"><Label htmlFor={`q-${l.key}`}>{t("Quantity used")}</Label><Input id={`q-${l.key}`} inputMode="decimal" value={l.quantity} onChange={(e) => set(l.key, { quantity: e.target.value })} /></div>
@@ -111,23 +128,33 @@ export function RecipeWizard({ types, departments, subRecipes }: { types: string
           {!c ? <p className="text-sm text-ink-500">{t("Add ingredients to see the live cost.")}</p> : (
             <div className="space-y-3 text-sm">
               <dl className="grid grid-cols-2 gap-y-1">
-                <dt className="font-medium">{t("Food cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost)}</dd>
-                <dt className="font-semibold">{batch ? t("Cost per unit made") : t("Cost per portion")}</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost)}</dd>
+                <dt className="font-medium">{t("Food cost")}</dt><dd className="text-right font-medium tabular-nums">{money(c.foodCost, currency)}</dd>
+                <dt className="font-semibold">{batch ? t("Cost per unit made") : t("Cost per portion")}</dt><dd className="text-right font-semibold tabular-nums">{money(c.portionCost, currency)}</dd>
                 <dt className="text-ink-500">{t("Food cost %")}</dt><dd className="text-right tabular-nums">{pct(c.foodCostPct)}</dd>
                 <dt className="text-ink-500">{t("Margin %")}</dt><dd className="text-right tabular-nums">{pct(c.grossMarginPct)}</dd>
               </dl>
               <Table>
                 <thead><tr><Th>{t("Line")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Cost")}</Th></tr></thead>
-                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td>{l.name} {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost)}</Td></tr>)}</tbody>
+                <tbody className="divide-y divide-ink-100">{c.lines.map((l, i) => <tr key={i}><Td><Title>{l.name}</Title> {l.issues.map((x) => <Badge key={x} tone="red">{t(x)}</Badge>)}</Td><Td align="right">{qty(l.apQty, l.baseUnit)}</Td><Td align="right">{money(l.lineCost, currency)}</Td></tr>)}</tbody>
               </Table>
             </div>
           )}
-          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">{t("Validation")}</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul></Alert></div>}
+          {preview && preview.issues.length > 0 && <div className="mt-3"><Alert tone="amber"><p className="font-medium">{t("Validation")}</p><ul className="list-disc pl-4">{preview.issues.map((i, k) => <li key={k}>{translateMessage(locale, i.message)}</li>)}</ul></Alert></div>}
         </Card>
         <Card title={`4 · ${t("Save")}`}>
           {msg && <div className="mb-2"><Alert tone={msg.tone}>{msg.text}</Alert></div>}
-          <p className="mb-3 text-xs text-ink-500">{t("Saved as a")} <strong>{t("draft version")}</strong>. {t("A user with recipe approval rights must approve it before it is used for theoretical cost. Incomplete drafts are allowed; approval is blocked until validation passes.")}</p>
-          <Button onClick={save} disabled={!head.name}>{t("Save draft")}</Button>
+          {edit ? (
+            <>
+              <p className="mb-3 text-xs text-ink-500">{t("Saved as the recipe's new version and in force at once: cost and stock deduction use it from now on. The previous version stays in the version history.")}</p>
+              <div className="mb-3"><Label htmlFor="w-reason">{t("Reason for the change (optional)")}</Label><Input id="w-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></div>
+              <Button onClick={save} disabled={!head.name || busy}>{t("Save changes")}</Button>
+            </>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-ink-500">{t("Saved as a")} <strong>{t("draft version")}</strong>. {t("A user with recipe approval rights must approve it before it is used for theoretical cost. Incomplete drafts are allowed; approval is blocked until validation passes.")}</p>
+              <Button onClick={save} disabled={!head.name || busy}>{t("Save draft")}</Button>
+            </>
+          )}
         </Card>
       </div>
     </div>

@@ -6,9 +6,11 @@ import { filterRules } from "./filter-rules";
 import { Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Label, Select, Table, Td, Th, cn } from "@/components/ui";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
+import { ExportButtons } from "@/components/export-buttons";
 import { call } from "@/lib/client";
 import { dateTime, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
+import { Title } from "@/components/title";
 
 export interface RuleRow {
   id: string;
@@ -40,7 +42,9 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
   const [v, setV] = useState(init);
   const [busy, setBusy] = useState(false);
   const dirty = JSON.stringify(v) !== JSON.stringify(init);
-  const supplierEmail = suppliers.find((s) => s.id === v.supplierId)?.email ?? "";
+  // the page lists active suppliers only: keep a deactivated supplier of this rule selectable instead of showing the first active one
+  const options = suppliers.some((s) => s.id === r.supplierId) ? suppliers : [{ id: r.supplierId, name: `${r.supplier} (${t("inactive")})`, email: r.ownEmail ? null : r.email }, ...suppliers];
+  const supplierEmail = options.find((s) => s.id === v.supplierId)?.email ?? "";
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -67,11 +71,11 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
       <Td>
         <div className="w-32">
           <Select aria-label={t("Supplier")} className="py-1 pl-2" disabled={!canManage} value={v.supplierId} onChange={(e) => setV({ ...v, supplierId: e.target.value })}>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </div>
       </Td>
-      <Td className="font-medium" style={{ whiteSpace: "normal" }}>{r.product}<span className="block text-xs font-normal text-ink-400">{r.unit}</span></Td>
+      <Td className="font-medium" style={{ whiteSpace: "normal" }}><Title>{r.product}</Title><span className="block text-xs font-normal text-ink-400">{r.unit}</span></Td>
       <Td style={{ whiteSpace: "normal" }}>{r.category}</Td>
       <Td align="right" className={cn(r.due && "font-semibold text-amber-800")}>{qty(r.stock, r.unit, 2)}{r.due && <span className="block text-xs font-normal" style={{ whiteSpace: "normal" }}>{t("at reorder point")}</span>}</Td>
       <Td align="right">{num("reorderPoint")}</Td>
@@ -104,7 +108,7 @@ function Row({ r, suppliers, canManage, onMsg }: { r: RuleRow; suppliers: Suppli
   );
 }
 
-export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfigured }: { rules: RuleRow[]; suppliers: Supplier[]; canManage: boolean; emailEnabled: boolean; mailConfigured: boolean }) {
+export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfigured, trial = false }: { rules: RuleRow[]; suppliers: Supplier[]; canManage: boolean; emailEnabled: boolean; mailConfigured: boolean; /** trial: every feature open */ trial?: boolean }) {
   const t = useT();
   const router = useRouter();
   const [msg, setMsg] = useState<Msg>(null);
@@ -169,14 +173,16 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       {!emailEnabled ? (
         <Alert tone="blue">{t("Basic plan: products at their reorder point are highlighted here. Automatic e-mail orders to suppliers are part of the Premium plan.")}</Alert>
       ) : !mailConfigured ? (
-        <Alert tone="amber">{t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
+        <Alert tone="amber">{trial ? t("Trial — every feature is open: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.") : t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
       ) : (
-        <Alert tone="green">{t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
+        <Alert tone="green">{trial ? t("Trial — every feature is open: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).") : t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
       )}
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-64"><Label htmlFor="ao-q">{t("Search")}</Label><Input id="ao-q" value={filter} placeholder={t("Product, category or supplier")} onChange={(e) => setFilter(e.target.value)} /></div>
         <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} />{t("Only at reorder point")} <Badge tone={due ? "amber" : "gray"}>{due}</Badge></label>
+        {/* right of the filters: the export takes them from the URL (synced above) */}
+        <div className="flex flex-wrap"><ExportButtons report="orders" params={{ tab: "auto" }} /></div>
         <div className="ml-auto flex gap-2">
           {canManage && <Button variant="secondary" disabled={busy} onClick={fill}>{t("Fill from recommendations")}</Button>}
           {canManage && <Button disabled={busy} onClick={check}>{t("Check now")}</Button>}
@@ -193,7 +199,7 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       </div>
       {canManage && (
         <div className="rounded-xl border border-ink-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink-900">{t("Add rule")}</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink-900"><Title>{t("Add rule")}</Title></h2>
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
             <div className="md:col-span-2"><Label htmlFor="ao-p">{t("Product")}</Label><ProductPicker id="ao-p" value={add.product} onChange={(p) => setAdd({ ...add, product: p })} /></div>
             <div><Label htmlFor="ao-s">{t("Supplier")}</Label><Select id="ao-s" value={add.supplierId} onChange={(e) => setAdd({ ...add, supplierId: e.target.value })}>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
