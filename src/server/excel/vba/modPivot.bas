@@ -1,5 +1,5 @@
 '==============================================================================
-' modPivot :: rebuilds the pivot tables on 55_PIVOTS from the report tables.
+' modPivot :: rebuilds the pivot tables on 52_PIVOTS from the report tables.
 '==============================================================================
 Option Explicit
 
@@ -10,7 +10,7 @@ Private Const XL_SUM As Long = -4157
 Public Sub RefreshPivots()
     Dim ws As Worksheet
     Dim pt As PivotTable
-    Set ws = ThisWorkbook.Worksheets(S("55_PIVOTS"))
+    Set ws = ThisWorkbook.Worksheets(S("52_PIVOTS"))
     For Each pt In ws.PivotTables
         pt.TableRange2.Clear
     Next pt

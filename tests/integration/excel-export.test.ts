@@ -231,7 +231,7 @@ describe(".xlsm workbook (spec 1-7, 86-90, 105-120, 129)", () => {
     const na = wb.getWorksheet("18_ROOM_COST")!;
     expect(String(na.getCell("A4").value)).toContain("NOT_AVAILABLE");
 
-    const rec = wb.getWorksheet("46_RECONCILIATION")!;
+    const rec = wb.getWorksheet("43_RECONCILIATION")!;
     const statuses: string[] = [];
     rec.eachRow((row, i) => {
       if (i <= 6) return;
@@ -249,7 +249,7 @@ describe(".xlsm workbook (spec 1-7, 86-90, 105-120, 129)", () => {
     const tile = ex.getCell("D6").value as { formula: string; result: number };
     expect(tile.formula).toContain('MATCH("actualCost"');
     expect(tile.result).toBe(20000);
-    expect(wb.getWorksheet("51_README")!.getCell("A5").value).toBe("WHAT THIS WORKBOOK IS");
+    expect(wb.getWorksheet("48_README")!.getCell("A5").value).toBe("WHAT THIS WORKBOOK IS");
   });
 });
 
@@ -300,7 +300,7 @@ describe("Turkish workbook (everything the user reads is Turkish; formulas and m
   });
 
   it("formula checks evaluate to Turkish statuses and no check fails", () => {
-    const rec = wb.getWorksheet("46_MUTABAKAT")!;
+    const rec = wb.getWorksheet("43_MUTABAKAT")!;
     const statuses: string[] = [];
     rec.eachRow((row, n) => row.eachCell((c) => { const r = (c.value as { formula?: string; result?: unknown } | null); if (n > 6 && r?.formula && typeof r.result === "string") statuses.push(r.result); }));
     expect(statuses.length).toBeGreaterThan(5);
@@ -316,7 +316,7 @@ describe("Turkish workbook (everything the user reads is Turkish; formulas and m
     // non-ASCII text is built with ChrW (code page 1252 modules)
     expect([...all].every((ch) => ch.charCodeAt(0) < 128)).toBe(true);
     const lit = (s: string) => vbaString(s);
-    expect(all).toContain(lit("53_GRAFİKLER"));
+    expect(all).toContain(lit("50_GRAFİKLER"));
     expect(all).toContain(lit("Toplam maliyet"));
     expect(all).toContain(lit("HATALI"));
     for (const col of [["tbl_costDetail", "İz no"], ["tbl_rawStockTransactions", "Hareket no"], ["tbl_costTrend", "Ay"], ["tbl_departmentCost", "Toplam maliyet"]]) expect(tables.get(col[0]!)).toContain(col[1]);

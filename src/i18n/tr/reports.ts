@@ -419,6 +419,6 @@ export const reports: Record<string, string> = {
   "VARIANCE DEFINITIONS": "SAPMA TANIMLARI",
   "Variance = Actual − Theoretical. Unexplained = Variance − Price/timing − Recorded waste − Staff meals − Complimentary. Unexplained usage is evidence for investigation, not an accusation.": "Sapma = Gerçekleşen − Teorik. Açıklanamayan = Sapma − Fiyat/zamanlama − Kayıtlı fire − Personel yemeği − İkram. Açıklanamayan kullanım incelenmesi gereken bir bulgudur, suçlama değildir.",
   "IF SOMETHING GOES WRONG": "BİR SORUN OLURSA",
-  "See 48_EXPORT_ERRORS and 46_RECONCILIATION. A failed or incomplete download is never written as a successful report (status 'EXPORT FAILED').": "48_EXPORT_ERRORS ve 46_RECONCILIATION sayfalarına bakın. Başarısız veya eksik indirme hiçbir zaman başarılı rapor olarak yazılmaz (durum 'EXPORT FAILED').",
+  "See 45_EXPORT_ERRORS and 43_RECONCILIATION. A failed or incomplete download is never written as a successful report (status 'EXPORT FAILED').": "45_EXPORT_ERRORS ve 43_RECONCILIATION sayfalarına bakın. Başarısız veya eksik indirme hiçbir zaman başarılı rapor olarak yazılmaz (durum 'EXPORT FAILED').",
   "HTTP 401/403: create a new token or check your export permission. Mac Excel cannot refresh (no MSXML); the prefilled data is still valid.": "HTTP 401/403: yeni bir anahtar oluşturun veya dışa aktarma yetkinizi kontrol edin. Mac Excel yenileme yapamaz (MSXML yok); hazır veriler yine de geçerlidir.",
 };

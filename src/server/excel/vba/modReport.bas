@@ -138,7 +138,7 @@ Public Function CompletionSummary(ByVal payload As Object) As String
     Dim i As Long
     Dim s As String
     If payload Is Nothing Then
-        CompletionSummary = L("No data was written.") & " " & L("See") & " " & S("48_EXPORT_ERRORS") & "."
+        CompletionSummary = L("No data was written.") & " " & L("See") & " " & S("45_EXPORT_ERRORS") & "."
         Exit Function
     End If
     keys = Array("costDetail", "rawStockTransactions", "actualConsumption", "waste", "recipeSummary", "rawSales", "inventoryValue")
