@@ -147,8 +147,10 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
         await tx.wasteRecord.update({ where: { id: a.entityId }, data: { status: "REJECTED", approvedById: actor.userId, approvedAt: new Date() } });
       } else if (a.action === "STOCK_ADJUSTMENT") {
         // rejected: nothing is posted; the count goes back to DRAFT for a recount, with the approver's note
-        // (only while it is still waiting: a count another approval already posted is never reopened)
-        await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED" }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
+        // (only while it is still waiting: a count another approval already posted, or one deleted, is never reopened).
+        // Rejecting a request whose count is no longer waiting still succeeds on purpose: it is how a stale duplicate
+        // request is cleared, since approving it is refused
+        await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED", deletedAt: null }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
       }
 
       const updated = await tx.approval.update({

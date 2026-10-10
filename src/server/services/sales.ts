@@ -194,6 +194,7 @@ export async function commitSales(db: Db, actor: Actor, hotelId: string, input: 
             recipeId: d.recipeId,
             recipeVersionId: versionId,
             posCode: d.posCode,
+            itemName: d.name || null,
             quantity: d.quantity,
             netRevenue: d.netRevenue,
             theoreticalUnitCost: unitCost ? toStorage(unitCost).toString() : null,

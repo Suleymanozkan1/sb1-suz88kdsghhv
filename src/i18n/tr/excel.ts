@@ -289,6 +289,7 @@ export const XL_VALUES: Record<string, string> = {
   "Dead Stock": "Ölü stok",
   Slow: "Yavaş",
   "Slow Moving": "Yavaş hareketli",
+  "Never Issued": "Hiç çıkış yapılmadı",
   TOTAL: "TOPLAM",
   KPI: "KPI",
   VOLUME: "HACİM",

@@ -398,7 +398,9 @@ export async function refreshRecipePrices(db: Db, actor: Actor, hotelId: string)
         },
       };
       const cost = costRecipe(versionToDef(r, v), frozen);
-      await db.recipeVersion.update({ where: { id: v.id }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      // only while the version is still the approved one: a version superseded meanwhile keeps its own snapshot
+      const written = await db.recipeVersion.updateMany({ where: { id: v.id, status: "APPROVED" }, data: { costSnapshot: serializeCost(cost) as Prisma.InputJsonValue, batchCost: str(cost.fullBatchCost), ingredientCost: str(cost.foodCost), portionCost: str(cost.portionCost) } });
+      if (written.count !== 1) throw new DomainError("CONFLICT", "The recipe changed during the refresh: run it again");
       const before = v.portionCost ? D(v.portionCost.toString()) : null;
       const after = cost.portionCost;
       const change = before && after ? after.minus(before) : null;

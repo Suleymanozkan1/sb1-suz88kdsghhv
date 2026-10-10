@@ -31,7 +31,8 @@ export default async function ReportsPage() {
             <tbody className="divide-y divide-ink-100">
               {res.data.map((r) => {
                 const f = (r.params ?? {}) as Record<string, string | null>;
-                const filters = Object.entries(f).filter(([, v]) => v).map(([k]) => k).join(", ");
+                // scope = the creator's department access, replayed by the verify step: not a filter they chose
+                const filters = Object.entries(f).filter(([k, v]) => v && k !== "scope").map(([k]) => k).join(", ");
                 return (
                   <tr key={r.id}>
                     <Td>{dateTime(r.generatedAt, hotel.timezone)}</Td>

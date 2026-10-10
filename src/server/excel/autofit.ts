@@ -202,6 +202,8 @@ export function autoFitColumns(ws: ExcelJS.Worksheet, options: AutoFitOptions = 
     const fit = Math.min(Math.max(Math.ceil(w * 10) / 10, min), max);
     column.width = options.keepWider && column.width && column.width > fit ? column.width : fit;
     if (w > max) {
+      // the column style too: cells written after this call (streamed `extra` rows) inherit the wrap
+      column.alignment = { ...column.alignment, wrapText: true, vertical: column.alignment?.vertical ?? "top" };
       // too long for the widest column: wrap in place (every row of the column, also beyond the sample)
       for (let r = fromRow; r <= ws.rowCount; r++) {
         const cell = ws.getRow(r).getCell(col);

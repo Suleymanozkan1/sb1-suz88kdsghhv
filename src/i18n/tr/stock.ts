@@ -222,6 +222,7 @@ export const stock: Record<string, string> = {
 
   // ── products ──
   "Product master": "Ürün kartları",
+  "Only the first {count} products are included: narrow the search to export the rest.": "Yalnızca ilk {count} ürün dosyada: kalanları almak için aramayı daraltın.",
   "Purchase → stock → recipe units with explicit conversions. Costs come from the ledger.": "Satın alma → stok → reçete birimleri, açık dönüşüm katsayılarıyla. Maliyetler stok hareketlerinden gelir.",
   "New product": "Yeni ürün",
   "{n} products": "{n} ürün",

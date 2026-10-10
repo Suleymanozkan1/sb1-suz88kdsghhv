@@ -338,7 +338,8 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
     const req = await db.integrationRequest.findFirst({ where: { id: r.requestId, hotelId, kind: "PRODUCTS" } });
     if (req) await db.hotel.update({ where: { id: hotelId }, data: { productsPulledAt: req.pickedAt ?? new Date() } });
   }
-  if (r.source === "MICROS" && r.status === "SUCCEEDED") {
+  // only a day run posts consumption: a product pull (no business day) never sends orders
+  if (r.source === "MICROS" && r.status === "SUCCEEDED" && r.businessDay) {
     try {
       await runAutoOrders(db, hotelId);
     } catch (e) {

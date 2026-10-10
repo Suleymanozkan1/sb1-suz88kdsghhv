@@ -472,12 +472,13 @@ export async function currentUnitCosts(db: Db, hotelId: string, productIds?: str
  * the hotel's stores (stock unit). Products without open layers (no stock) are not in the map.
  */
 export async function fifoNextCosts(db: Db, hotelId: string, productIds?: string[]): Promise<Map<string, Decimal>> {
+  if (productIds && !productIds.length) return new Map();
+  const only = productIds ? Prisma.sql`AND "productId" IN (${Prisma.join(productIds)})` : Prisma.empty;
   const rows = await db.$queryRaw<Array<{ productId: string; unitCost: Prisma.Decimal }>>`
     SELECT DISTINCT ON ("productId") "productId", "unitCost" FROM "FifoLayer"
-    WHERE "hotelId" = ${hotelId} AND "remainingQty" > 0
+    WHERE "hotelId" = ${hotelId} AND "remainingQty" > 0 ${only}
     ORDER BY "productId", "receivedAt" ASC, "id" ASC`;
-  const want = productIds ? new Set(productIds) : null;
-  return new Map(rows.filter((r) => !want || want.has(r.productId)).map((r) => [r.productId, D(r.unitCost.toString())]));
+  return new Map(rows.map((r) => [r.productId, D(r.unitCost.toString())]));
 }
 
 /**
