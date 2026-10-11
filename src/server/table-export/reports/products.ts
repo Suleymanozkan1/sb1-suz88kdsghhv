@@ -9,9 +9,13 @@ const EXPORT_MAX = 5000;
 export const products: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const term = q.get("q") ?? "";
-    const [rows, costs] = await Promise.all([searchProducts(prisma, actor, hotelId, term, { limit: EXPORT_MAX, max: EXPORT_MAX }), productCostTable(prisma, hotelId)]);
+    const [rows, costs] = await Promise.all([searchProducts(prisma, actor, hotelId, term, { limit: EXPORT_MAX + 1, max: EXPORT_MAX + 1 }), productCostTable(prisma, hotelId)]);
+    // one row past the cap tells whether the file is cut: then the reader is told to narrow the search
+    const truncated = rows.length > EXPORT_MAX;
+    if (truncated) rows.length = EXPORT_MAX;
     return {
       title: t("Product master"),
+      subtitle: truncated ? t("Only the first {count} products are included: narrow the search to export the rest.", { count: EXPORT_MAX }) : undefined,
       fileName: "urunler",
       filters: [[t("Search"), term || "—"]],
       tables: [{

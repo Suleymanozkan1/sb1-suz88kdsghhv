@@ -23,7 +23,7 @@ export default async function ReportsPage() {
   return (
     <>
       <PageHeader title={t("Reports")} subtitle={t("Every generated report is archived with period, parameters, author, data version and hashes. Closed months can be re-verified: the period hash must reproduce exactly unless the month was reopened.")} exportKey="reports" />
-      {canExport && <Card title={t("Monthly management cost pack")} className="mb-4"><PackForm defaultMonth={lastMonth} /><p className="mt-2 text-xs text-ink-500">{t("Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, budget, recommended actions and the month-end checklist — from the same engine as the screens and Excel.")}</p></Card>}
+      {canExport && <Card title={t("Monthly management cost pack")} className="mb-4"><PackForm defaultMonth={lastMonth} /><p className="mt-2 text-xs text-ink-500">{t("Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, P&L cost view, recommended actions and the month-end checklist — from the same engine as the screens and Excel.")}</p></Card>}
       <Card title={t("Archive ({n})", { n: res.data.length })} padded={false}>
         {res.data.length === 0 ? <div className="p-4"><Empty title={t("No reports generated yet")} /></div> : (
           <Table>
@@ -31,7 +31,8 @@ export default async function ReportsPage() {
             <tbody className="divide-y divide-ink-100">
               {res.data.map((r) => {
                 const f = (r.params ?? {}) as Record<string, string | null>;
-                const filters = Object.entries(f).filter(([, v]) => v).map(([k]) => k).join(", ");
+                // scope = the creator's department access, replayed by the verify step: not a filter they chose
+                const filters = Object.entries(f).filter(([k, v]) => v && k !== "scope").map(([k]) => k).join(", ");
                 return (
                   <tr key={r.id}>
                     <Td>{dateTime(r.generatedAt, hotel.timezone)}</Td>

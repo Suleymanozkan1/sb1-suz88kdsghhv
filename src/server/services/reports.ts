@@ -48,13 +48,17 @@ export async function listReports(db: Db, actor: Actor, hotelId: string, take = 
  */
 export async function verifyReproducibility(db: Db, actor: Actor, hotelId: string, reportId: string) {
   authorize(actor, "report:export", { hotelId });
-  // a department-scoped rebuild only sees part of the hotel and would always report CHANGED
-  if (actor.departmentIds !== "ALL") throw new DomainError("FORBIDDEN", "Verifying a report rebuilds the whole hotel: needs an all-department role");
   const r = await db.report.findFirst({ where: { id: reportId, hotelId } });
   if (!r) throw new DomainError("NOT_FOUND", "Report not found");
   if (!r.periodFrom || !r.periodTo || !r.periodHash) throw new DomainError("VALIDATION", "This report has no reproducibility fingerprint (generated before archiving was introduced)");
-  const params = (r.params ?? {}) as { departmentId?: string | null; warehouseId?: string | null; categoryGroup?: string | null };
-  const e = await buildFullCostExport(db, actor, hotelId, { from: r.periodFrom, to: r.periodTo, departmentId: params.departmentId ?? undefined, warehouseId: params.warehouseId ?? undefined, categoryGroup: params.categoryGroup ?? undefined }, { noArchive: true });
+  const params = (r.params ?? {}) as { departmentId?: string | null; warehouseId?: string | null; categoryGroup?: string | null; scope?: "ALL" | string[] };
+  // the rebuild replays the department scope the report was made with (reports from before the scope was stored were
+  // hotel-wide). Whoever verifies must see at least that scope; a narrower rebuild would always report CHANGED
+  const scope = params.scope ?? "ALL";
+  const covers = actor.departmentIds === "ALL" || (scope !== "ALL" && scope.every((id) => actor.departmentIds.includes(id)));
+  if (!covers) throw new DomainError("FORBIDDEN", scope === "ALL" ? "Verifying a report rebuilds the whole hotel: needs an all-department role" : "This report covers departments outside your access");
+  const replay: Actor = scope === "ALL" ? actor : { ...actor, departmentIds: scope };
+  const e = await buildFullCostExport(db, replay, hotelId, { from: r.periodFrom, to: r.periodTo, departmentId: params.departmentId ?? undefined, warehouseId: params.warehouseId ?? undefined, categoryGroup: params.categoryGroup ?? undefined }, { noArchive: true });
   const data = r.data as { sectionHashes?: Record<string, string>; meta?: { sectionHashes?: Record<string, string> } };
   const before = data.sectionHashes ?? data.meta?.sectionHashes ?? {};
   const differences = PERIOD_BOUND_SECTIONS.filter((k) => (before[k] ?? null) !== (e.meta.sectionHashes[k] ?? null));

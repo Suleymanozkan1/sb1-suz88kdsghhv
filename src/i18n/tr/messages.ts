@@ -9,13 +9,18 @@
 import { r2bMessages } from "./r2b";
 import { r2eMessages } from "./r2e";
 import { r2cMessages } from "./r2c";
+import { r2fMessages } from "./r2f";
 
 export const TR_MESSAGES: Record<string, string> = {
   ...r2cMessages,
   ...r2bMessages,
   ...r2eMessages,
+  ...r2fMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
+  "Approval already decided": "Bu onay talebi zaten karara bağlanmış",
+  "This count is no longer waiting for approval": "Bu sayım artık onay beklemiyor",
+  "The recipe changed during the refresh: run it again": "Güncelleme sırasında reçete değişti: işlemi tekrar çalıştırın",
   "{0}% price": "fiyat %{0}",
   // stock-ledger reasons written by the buffet and minibar services (shown in the ledger)
   "Buffet leftover {0}": "Büfe artığı {0}",
@@ -434,6 +439,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Report not found": "Rapor bulunamadı",
   "This report has no reproducibility fingerprint (generated before archiving was introduced)": "Bu raporun yeniden üretilebilirlik parmak izi yok (arşivleme eklenmeden önce oluşturulmuş)",
   "The management pack is hotel-wide: needs an all-department role": "Yönetim raporu paketi otel geneli içindir: tüm departmanları kapsayan bir rol gerekir",
+  "This report covers departments outside your access": "Bu rapor erişiminiz dışındaki departmanları kapsıyor",
   "Verifying a report rebuilds the whole hotel: needs an all-department role": "Rapor doğrulaması tüm oteli yeniden hesaplar: tüm departmanları kapsayan bir rol gerekir",
   "Unknown report {0}": "Bilinmeyen rapor: {0}",
 

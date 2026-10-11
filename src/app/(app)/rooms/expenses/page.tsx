@@ -4,7 +4,7 @@ import { can } from "@/server/auth/actor";
 import { roomCostItems } from "@/server/services/room-costs";
 import { prisma } from "@/server/db";
 import { Alert, Button, Card, Input, Label, PageHeader } from "@/components/ui";
-import { money } from "@/lib/format";
+import { localDay, money } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RoomCostItemsForm } from "./form";
 
@@ -20,7 +20,7 @@ export default async function RoomCostExpensesPage({ searchParams }: { searchPar
   const sp = await searchParams;
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "rooms:view", hotelId);
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? "") ? sp.month! : new Date().toISOString().slice(0, 7);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? "") ? sp.month! : localDay(hotel.timezone).slice(0, 7);
   const rep = await guarded(() => roomCostItems(prisma, actor, hotelId, month));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const r = rep.data;
@@ -48,6 +48,7 @@ export default async function RoomCostExpensesPage({ searchParams }: { searchPar
           <RoomCostItemsForm
             key={month}
             month={month}
+            revision={r.revision}
             canEdit={can(actor, "opex:manage")}
             items={r.items.map((i) => ({ name: r.defaults ? t(i.name) : i.name, amount: i.amount?.toString() ?? "" }))}
           />

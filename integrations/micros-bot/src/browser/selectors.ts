@@ -84,7 +84,7 @@ export interface OperaSelectors {
   statistics: {
     steps: Step[];
     ready?: SelectorValue;
-    fields: { availableRooms: SelectorValue; occupiedRooms: SelectorValue; guests: SelectorValue; roomRevenue?: SelectorValue; outOfOrder?: SelectorValue };
+    fields: { availableRooms: SelectorValue; occupiedRooms: SelectorValue; guests: SelectorValue; roomRevenue?: SelectorValue; outOfOrder?: SelectorValue; outOfService?: SelectorValue };
     rooms?: { steps?: Step[]; row: SelectorValue; roomNumber: SelectorValue; noData?: SelectorValue } | null;
   };
   minibar?: MinibarScreen | null;

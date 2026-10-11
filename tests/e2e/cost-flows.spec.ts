@@ -11,7 +11,7 @@ test.describe("authentication & navigation", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Invalid" })).toContainText("Invalid email or password");
     await login(page, "controller");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost intelligence", { ignoreCase: true }); // headings are shown in title case
-    await expect(page.getByText("Actual cost %")).toBeVisible();
+    await expect(page.getByText("Actual cost", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Unexplained variance")).toBeVisible();
   });
 });

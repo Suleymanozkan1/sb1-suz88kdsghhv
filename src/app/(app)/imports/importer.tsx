@@ -9,7 +9,7 @@ import { useT } from "@/i18n/client";
 
 const KINDS = {
   expenses: { label: "Expenses (accounting / payroll / utilities)", template: "date,department,category,subcategory,description,amount,tax,quantity,unit,supplier,invoice_no,asset,room,external_id\n2026-09-30,HK,LABOR,SALARY,Housekeeping payroll,185000,,,,,,,,PAY-HK-2026-09" },
-  occupancy: { label: "PMS daily occupancy", template: "business_date,available_rooms,occupied_rooms,out_of_order,guests,room_revenue\n2026-09-01,90,71,0,138,412000" },
+  occupancy: { label: "PMS daily occupancy", template: "business_date,available_rooms,occupied_rooms,out_of_order,out_of_service,guests,room_revenue\n2026-09-01,90,71,0,0,138,412000" },
   reservations: { label: "PMS reservations / stays", template: "external_id,room,room_type,arrival,departure,guests,channel,board_basis,status,gross_room_revenue,commission,payment_fee,other_distribution\nRES-1001,101,Standard,2026-09-01,2026-09-04,2,OTA,BB,CHECKED_OUT,13500,2025,0,0" },
   products: { label: "Product master (new products)", template: "name,brand,category,stock_unit,purchase_unit,case_size,recipe_unit,supplier,standard_cost,vat,sku\nZucchini,,Vegetables,kg,case,5,g,HAL-SEBZE,42,1,\nOlive Oil,Komili,Oils,l,l,,ml,MET-GIDA,310,\"8,5\"," },
   "supplier-prices": { label: "Supplier price list / contract", template: "supplier,product,price_date,purchase_unit,price,source\nANT-ET,Chicken Breast,2026-10-01,case,2050,CONTRACT" },
@@ -80,6 +80,9 @@ export function Importer({ allowed, currency }: { allowed: Kind[]; currency: str
             if (!f) return;
             if (f.size > MAX_FILE_BYTES) {
               setPreview(null);
+              setCsv("");
+              setXlsx(null);
+              setFileName("");
               setMsg({ tone: "red", text: t("{name} is too large ({size} MB). Files up to 3.5 MB can be imported: split it into smaller files.", { name: f.name, size: (f.size / 1024 / 1024).toFixed(1).replace(".", ",") }) });
               return;
             }

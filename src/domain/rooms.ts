@@ -238,3 +238,21 @@ export function laundryUnitCosts(x: { cost: Numeric; kg: Numeric; pieces: number
   const c = D(x.cost);
   return { perKg: safeDiv(c, x.kg), perPiece: x.pieces ? c.div(x.pieces) : null, perOccupiedRoom: x.occupiedRooms ? c.div(x.occupiedRooms) : null };
 }
+
+/**
+ * The rows of the monthly room-expense form to save: fully empty rows are skipped, names and amounts trimmed (a
+ * blank amount is 0). A row with an amount but no name is not dropped silently: its 1-based number is in `unnamed`
+ * and the form refuses to save.
+ */
+export function roomCostFormRows(rows: { name: string; amount: string }[]): { items: { name: string; amount: string }[]; unnamed: number[] } {
+  const items: { name: string; amount: string }[] = [];
+  const unnamed: number[] = [];
+  rows.forEach((r, i) => {
+    const name = r.name.trim();
+    const amount = r.amount.trim();
+    if (!name && !amount) return;
+    if (!name) unnamed.push(i + 1);
+    else items.push({ name, amount: amount || "0" });
+  });
+  return { items, unnamed };
+}

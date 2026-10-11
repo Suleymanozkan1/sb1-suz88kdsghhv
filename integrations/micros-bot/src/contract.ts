@@ -42,7 +42,7 @@ export const coversSchema = z.object({ outlet: z.string().trim().min(1).max(100)
 
 export const occupancySchema = z.object({
   availableRooms: num, occupiedRooms: num, guests: num,
-  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(),
+  roomRevenue: num.optional().nullable(), outOfOrder: num.optional().nullable(), outOfService: num.optional().nullable(),
   occupiedRoomNumbers: z.array(z.string().trim().max(20)).optional(),
 });
 
@@ -84,7 +84,7 @@ export interface Invoice { supplierName: string; invoiceNo: string; invoiceDate:
 export interface Covers { outlet: string; meal: string; covers: number }
 export interface Occupancy {
   availableRooms: number; occupiedRooms: number; guests: number;
-  roomRevenue?: number | null; outOfOrder?: number | null; occupiedRoomNumbers?: string[];
+  roomRevenue?: number | null; outOfOrder?: number | null; outOfService?: number | null; occupiedRoomNumbers?: string[];
 }
 export interface MinibarCharge { room: string; itemCode?: string | null; itemName: string; qty: number; reference: string; postedAt?: string }
 export interface ProductCard { name: string; code?: string | null; unit: string; packSize?: number | null; packUnit?: string | null; taxRatePct?: number | null; category?: string | null }

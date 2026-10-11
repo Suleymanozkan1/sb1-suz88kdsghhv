@@ -28,7 +28,7 @@ export const actionLabel = (action: string) => (action === "STOCK_ADJUSTMENT" ? 
 
 /** /approvals — pending requests and the last 30 decisions (the user's departments only, as on screen). */
 export const approvals: ReportDef = {
-  perm: "dashboard:view",
+  // access as for the page (dashboard viewers, approval:decide, count approvers): checked by approvalsOverview
   async load({ actor, hotelId, hotel, t }) {
     const { pending, history } = await approvalsOverview(prisma, actor, hotelId);
     const users = new Map((await prisma.user.findMany({ where: { id: { in: [...pending, ...history].flatMap((a) => [a.requestedById, a.decidedById ?? ""]) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));

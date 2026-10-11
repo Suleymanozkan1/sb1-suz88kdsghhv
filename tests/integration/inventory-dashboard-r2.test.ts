@@ -131,3 +131,30 @@ describe("price changes ignore reversed receipts", () => {
     expect(d.alerts.filter((a) => a.type === "PRICE_INCREASE")).toEqual([]); // +5 % is below the 10 % threshold; the +50 % never happened
   });
 });
+
+describe("price changes respect the warehouse scope", () => {
+  it("a department-scoped chef only sees receipts into their own (or shared) warehouses, current and previous", async () => {
+    const x = await makeHotel("R2S");
+    const xcc = await x.actor("cost_controller");
+    const chef = await x.actor("chef", [x.depts.restaurant.id]);
+    const rice = await makeProduct(x.hotel.id, x.cats.food.id, { sku: "RICE", name: "Pirinç" });
+    const flour = await makeProduct(x.hotel.id, x.cats.food.id, { sku: "FLOUR", name: "Un" });
+    const receive = (productId: string, warehouseId: string, date: string, unitPrice: number) =>
+      postGoodsReceipt(prisma, xcc, x.hotel.id, { supplierId: x.supplier.id, warehouseId, receiptDate: day(date), items: [{ productId, quantity: 10, unit: "kg", unitPrice }] });
+    await receive(rice.id, x.wh.pastryStore.id, "2026-08-20", 100);
+    await receive(rice.id, x.wh.restStore.id, "2026-09-05", 110);
+    await receive(rice.id, x.wh.pastryStore.id, "2026-09-10", 150);
+    await receive(rice.id, x.wh.restStore.id, "2026-09-20", 121);
+    await receive(flour.id, x.wh.pastryStore.id, "2026-09-02", 50);
+    await receive(flour.id, x.wh.pastryStore.id, "2026-09-12", 60);
+    const all = await supplierPriceChanges(prisma, xcc, x.hotel.id, SEP);
+    expect(all.increases.length + all.decreases.length).toBe(4); // rice 100→110, 110→150, 150→121; flour 50→60
+    const pc = await supplierPriceChanges(prisma, chef, x.hotel.id, SEP);
+    expect(pc.increases.map((c) => [c.product, c.previous.toString(), c.current.toString(), c.changePct.toFixed(2)])).toEqual([["Pirinç", "110", "121", "10.00"]]);
+    expect(pc.decreases).toEqual([]);
+    const d = await dashboard(prisma, chef, x.hotel.id, SEP);
+    expect(d.prices.increases.map((c) => c.product)).toEqual(["Pirinç"]);
+    expect(d.prices.decreases).toEqual([]);
+    expect(d.alerts.filter((a) => a.type === "PRICE_INCREASE").map((a) => a.vars?.pct)).toEqual(["10.0"]);
+  });
+});

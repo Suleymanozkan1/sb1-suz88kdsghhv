@@ -3,7 +3,7 @@ import { prisma } from "@/server/db";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime, money, qty, titleTr } from "@/lib/format";
 import { getT, getLocale } from "@/i18n/server";
-import { approvalsOverview } from "@/server/services/approvals";
+import { approvalsOverview, canOpenApprovals } from "@/server/services/approvals";
 import { actionLabel, approvalDetails } from "@/server/table-export/reports/approvals";
 import { Decide } from "./decide";
 import { Title } from "@/components/title";
@@ -14,7 +14,8 @@ export default async function ApprovalsPage() {
   const t = await getT();
   const locale = await getLocale();
   const { actor, hotelId, hotel } = await pageContext();
-  requirePageAccess(actor, "dashboard:view", hotelId);
+  // dashboard viewers, approval:decide and count approvers of any warehouse (Admin) open the list
+  if (!(await canOpenApprovals(prisma, actor, hotelId))) requirePageAccess(actor, "approval:decide", hotelId);
   // department-scoped approvers see (and can decide) only their departments' requests
   const { pending, history } = await approvalsOverview(prisma, actor, hotelId);
   // a count approval shows the count's differences, so the approver can decide without opening the count

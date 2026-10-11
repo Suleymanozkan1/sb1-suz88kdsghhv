@@ -136,7 +136,7 @@ Public Sub ExportManagementPdf()
     Dim folder As String
     On Error GoTo Fail
     names = Array(CONTROL_SHEET, S("02_EXECUTIVE_SUMMARY"), S("04_FOOD_COST"), S("05_BEVERAGE_COST"), S("09_CONSUMPTION_VARIANCE"), _
-                  S("11_WASTE_SUMMARY"), S("34_DEPARTMENT_COST"), S("45_UNEXPLAINED_VARIANCE"), S("46_RECONCILIATION"), S("53_DASHBOARD_CHARTS"))
+                  S("11_WASTE_SUMMARY"), S("34_DEPARTMENT_COST"), S("42_UNEXPLAINED_VARIANCE"), S("43_RECONCILIATION"), S("50_DASHBOARD_CHARTS"))
     folder = ThisWorkbook.Path
     If Len(folder) = 0 Then folder = Environ$("TEMP")
     target = folder & Application.PathSeparator & L("HotelCost_Management_Report_") & _

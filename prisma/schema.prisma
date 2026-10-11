@@ -1214,6 +1214,8 @@ model SaleLine {
   recipeVersionId     String?
   recipeVersion       RecipeVersion? @relation(fields: [recipeVersionId], references: [id])
   posCode             String
+  // POS item name (when the source sends one): the name fallback of recipe matching, also on reprocessing
+  itemName            String?
   quantity            Decimal        @db.Decimal(20, 6)
   netRevenue          Decimal        @db.Decimal(20, 6)
   // frozen theoretical cost at posting time

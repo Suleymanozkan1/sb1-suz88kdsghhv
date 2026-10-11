@@ -1,5 +1,5 @@
 '==============================================================================
-' modCharts :: rebuilds dashboard charts on 53_DASHBOARD_CHARTS from report tables.
+' modCharts :: rebuilds dashboard charts on 50_DASHBOARD_CHARTS from report tables.
 '==============================================================================
 Option Explicit
 
@@ -12,7 +12,7 @@ Private Const H As Double = 260
 Public Sub RefreshCharts()
     Dim ws As Worksheet
     Dim i As Long
-    Set ws = ThisWorkbook.Worksheets(S("53_DASHBOARD_CHARTS"))
+    Set ws = ThisWorkbook.Worksheets(S("50_DASHBOARD_CHARTS"))
     For i = ws.ChartObjects.Count To 1 Step -1
         ws.ChartObjects(i).Delete
     Next i

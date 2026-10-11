@@ -362,7 +362,7 @@ export const planning: Record<string, string> = {
   "Reason for reopening (audited):": "Yeniden açma gerekçesi (denetim kaydına yazılır):",
   "Reopen": "Yeniden aç",
   "Weekly cost review": "Haftalık maliyet değerlendirmesi",
-  "{from} – {to}: top cost increases, waste, variance, critical and high stock, price and recipe changes.": "{from} – {to}: en büyük maliyet artışları, fire, sapma, kritik ve yüksek stok, fiyat ve reçete değişiklikleri.",
+  "{from} – {to}: top cost increases, waste, variance, critical stock, price and recipe changes.": "{from} – {to}: en büyük maliyet artışları, fire, sapma, kritik stok, fiyat ve reçete değişiklikleri.",
   "Week ending": "Hafta sonu tarihi",
   "Show": "Göster",
   "Cost increase impact": "Maliyet artışı etkisi",

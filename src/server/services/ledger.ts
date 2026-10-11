@@ -472,12 +472,39 @@ export async function currentUnitCosts(db: Db, hotelId: string, productIds?: str
  * the hotel's stores (stock unit). Products without open layers (no stock) are not in the map.
  */
 export async function fifoNextCosts(db: Db, hotelId: string, productIds?: string[]): Promise<Map<string, Decimal>> {
+  if (productIds && !productIds.length) return new Map();
+  const only = productIds ? Prisma.sql`AND "productId" IN (${Prisma.join(productIds)})` : Prisma.empty;
   const rows = await db.$queryRaw<Array<{ productId: string; unitCost: Prisma.Decimal }>>`
     SELECT DISTINCT ON ("productId") "productId", "unitCost" FROM "FifoLayer"
-    WHERE "hotelId" = ${hotelId} AND "remainingQty" > 0
+    WHERE "hotelId" = ${hotelId} AND "remainingQty" > 0 ${only}
     ORDER BY "productId", "receivedAt" ASC, "id" ASC`;
-  const want = productIds ? new Set(productIds) : null;
-  return new Map(rows.filter((r) => !want || want.has(r.productId)).map((r) => [r.productId, D(r.unitCost.toString())]));
+  return new Map(rows.map((r) => [r.productId, D(r.unitCost.toString())]));
+}
+
+/**
+ * What issuing `qty` (stock unit, positive) from one store would cost if it were posted now — read-only, the same
+ * costing postMovement applies to an outbound movement: FIFO products draw the store's oldest open layers (a shortfall
+ * beyond them at the latest layer's cost), average-cost products issue at the store's average; issuing the whole
+ * balance releases its whole value. Used for the values shown before posting (count differences, waste approvals).
+ */
+export async function previewIssueCost(db: Db | Tx, hotelId: string, warehouseId: string, productId: string, qty: Decimal): Promise<Decimal> {
+  if (qty.lte(0)) return ZERO;
+  const [product, bal] = await Promise.all([
+    db.product.findFirst({ where: { id: productId, hotelId }, select: { costingMethod: true } }),
+    db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId, productId } } }),
+  ]);
+  const pos = { quantity: D(bal?.quantity.toString() ?? 0), value: D(bal?.value.toString() ?? 0), avgCost: D(bal?.avgCost.toString() ?? 0) };
+  if (pos.quantity.gt(0) && pos.quantity.minus(qty).isZero()) return pos.value;
+  if (product?.costingMethod === "FIFO") {
+    const layers = (await db.fifoLayer.findMany({ where: { warehouseId, productId, remainingQty: { gt: 0 } }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }], select: { id: true, remainingQty: true, unitCost: true, receivedAt: true } }))
+      .map((l): Layer => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
+    const available = layers.reduce((a, l) => a.plus(l.remainingQty), ZERO);
+    if (available.gte(qty)) return fifoIssue(layers, qty).totalCost;
+    const drawn = available.gt(0) ? fifoIssue(layers, available).totalCost : ZERO;
+    const latest = layers.at(-1)?.unitCost ?? pos.avgCost;
+    return drawn.plus(qty.minus(available).times(latest));
+  }
+  return qty.times(pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost);
 }
 
 export { ZERO };

@@ -10,7 +10,7 @@ import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
-import { postMovement } from "./ledger";
+import { postMovement, previewIssueCost } from "./ledger";
 import { assertHotelRefs, requireWarehouseScope, warehouseScope } from "../auth/scope";
 import { decimalText } from "@/lib/format";
 
@@ -69,9 +69,12 @@ export async function enterCount(db: Db, actor: Actor, hotelId: string, countId:
         continue;
       }
       const variance = D(l.countedQty).minus(D(line.systemQty.toString()));
+      // valued as the posting will value it: a shortage is issued from the store (FIFO: its oldest layers), a surplus
+      // comes in at the store's average cost
+      const value = variance.lt(0) ? (await previewIssueCost(tx, hotelId, c.warehouseId, line.productId, variance.neg())).neg() : variance.times(D(line.unitCost.toString()));
       await tx.stockCountLine.update({
         where: { id: line.id },
-        data: { countedQty: l.countedQty, varianceQty: toStorage(variance).toString(), varianceValue: toStorage(variance.times(D(line.unitCost.toString()))).toString(), reason: l.reason ?? null },
+        data: { countedQty: l.countedQty, varianceQty: toStorage(variance).toString(), varianceValue: toStorage(value).toString(), reason: l.reason ?? null },
       });
     }
     return tx.stockCount.findFirstOrThrow({ where: { id: countId, hotelId }, include: { lines: { include: { product: true } } } });

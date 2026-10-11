@@ -9,6 +9,7 @@ import type { Column, FullCostExport, Section } from "../services/export";
 import { makeT, translateMessage, type Locale, type T, type Vars } from "@/i18n/core";
 import { TR } from "@/i18n/tr";
 import { XL_HEADERS, XL_LABELS, XL_METRICS, XL_SHEETS, XL_TEMPLATES, XL_TEXT, XL_VALUES } from "@/i18n/tr/excel";
+import { titleTr } from "@/lib/format";
 
 export interface XlLang {
   locale: Locale;
@@ -70,6 +71,26 @@ export function xlLang(locale: Locale): XlLang {
     sheet: (n) => XL_SHEETS[n] ?? n,
     upper: (v) => v.toLocaleUpperCase("tr-TR"),
   };
+}
+
+/** Product / dish name columns per section beyond the common product / ingredient / recipe keys. */
+const NAME_KEYS_BY_SECTION: Record<string, string[]> = { topWaste: ["key"], rawProducts: ["name"], menuEngineering: ["item"], missingData: ["item"] };
+const NAME_KEYS = new Set(["product", "ingredient", "recipe"]);
+
+/**
+ * Product and recipe names as the screens show them (feedback r2 §0): title case with Turkish rules (English rules for
+ * an English workbook). Display only: names are text cells; numbers, codes and ids are never touched. Buffet items carry
+ * their unit in brackets ("Pilav (kg)"): only the name before it is cased.
+ */
+export function displayNames(e: FullCostExport, locale: Locale): FullCostExport {
+  const tc = (v: string) => titleTr(v, locale);
+  const sections = Object.fromEntries(Object.entries(e.sections).map(([k, s]): [string, Section] => {
+    const keys = s.columns.filter((c) => c.type === "text" && (NAME_KEYS.has(c.key) || NAME_KEYS_BY_SECTION[k]?.includes(c.key))).map((c) => c.key);
+    if (!keys.length) return [k, s];
+    const fix = k === "buffetProduct" ? (v: string) => v.replace(/^(.*?)( \([^()]*\))?$/s, (_, n: string, u?: string) => tc(n) + (u ?? "")) : tc;
+    return [k, { ...s, rows: s.rows.map((r) => { const o = { ...r }; for (const c of keys) if (o[c]) o[c] = fix(o[c]!); return o; }) }];
+  }));
+  return { ...e, sections };
 }
 
 /** Structured reference to a column: tbl_x[Header], with Excel's escapes for special characters. */

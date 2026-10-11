@@ -6,25 +6,33 @@ import { Alert, Button, Input } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
 import { translateMessage } from "@/i18n/core";
+import { roomCostFormRows } from "@/domain/rooms";
 
 type Item = { name: string; amount: string };
 
 /** The month's items: rename, change amounts, add or remove rows, then save them together. */
-export function RoomCostItemsForm({ month, items, canEdit }: { month: string; items: Item[]; canEdit: boolean }) {
+export function RoomCostItemsForm({ month, items, revision: loaded, canEdit }: { month: string; items: Item[]; revision: string; canEdit: boolean }) {
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
   const [rows, setRows] = useState<Item[]>(items);
+  // the month as loaded: the server refuses the save if someone saved it in between
+  const [revision, setRevision] = useState(loaded);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
   const set = (i: number, patch: Partial<Item>) => setRows((rs) => rs.map((r, n) => (n === i ? { ...r, ...patch } : r)));
   const total = rows.reduce((s, r) => s + (Number(r.amount.replace(",", ".")) || 0), 0);
   async function save() {
     setMsg(null);
+    const { items: filled, unnamed } = roomCostFormRows(rows);
+    if (unnamed.length) {
+      setMsg({ tone: "red", text: t("Item {n} has an amount but no name: enter its name or clear the amount.", { n: unnamed.join(", ") }) });
+      return;
+    }
     setBusy(true);
     try {
-      const filled = rows.filter((r) => r.name.trim());
-      await call("PUT", "/api/rooms/expenses", { month, items: filled.map((r) => ({ name: r.name.trim(), amount: r.amount.trim() || "0" })) });
+      const res = await call<{ revision: string }>("PUT", "/api/rooms/expenses", { month, items: filled, revision });
+      setRevision(res.revision);
       setMsg({ tone: "green", text: t("Saved — room cost uses the new amounts") });
       router.refresh();
     } catch (e) {

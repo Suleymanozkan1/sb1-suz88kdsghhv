@@ -105,7 +105,8 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
           <tr><th>Occupied rooms</th><td id="occRooms">${s.occupied}</td></tr>
           <tr><th>In-house guests</th><td id="inHouseGuests">${s.guests}</td></tr>
           <tr><th>Room revenue</th><td id="roomRevenue">₺ ${trNum(s.revenue)}</td></tr>
-          <tr><th>Out of order</th><td id="ooo">${s.ooo}</td></tr></table>`));
+          <tr><th>Out of order</th><td id="ooo">${s.ooo}</td></tr>
+          <tr><th>Out of service</th><td id="oos">${s.oos}</td></tr></table>`));
       }
       if (p === "/rooms" && day) {
         const rooms = state.emptyDays.has(day) ? [] : statsFor(day).rooms;

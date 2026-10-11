@@ -23,7 +23,7 @@ const BATCH_TYPES = ["SEMI_FINISHED", "PRODUCTION"];
  * New recipe, or (with `edit`) the "Güncelle" form of an existing one: prefilled, and saving makes the change the
  * recipe's new version, in force at once (no separate approval; the previous version stays in the history).
  */
-export function RecipeWizard({ types, departments, subRecipes, currency, edit }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[]; currency: string; edit?: { recipeId: string; head: WizardHead; lines: Line[] } }) {
+export function RecipeWizard({ types, departments, subRecipes, currency, edit }: { types: string[]; departments: { id: string; name: string }[]; subRecipes: { id: string; name: string; unit: string }[]; currency: string; edit?: { recipeId: string; head: WizardHead; lines: Line[]; /** the version's standard portion: not edited here, sent back unchanged */ portion?: { size: string | null; unit: string | null } } }) {
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
@@ -42,9 +42,10 @@ export function RecipeWizard({ types, departments, subRecipes, currency, edit }:
     const isBatch = BATCH_TYPES.includes(head.type);
     return {
       batchYieldQty: isBatch ? head.batchYieldQty : head.portions, yieldUnit: isBatch ? head.yieldUnit : "portion", portions: isBatch ? head.batchYieldQty : head.portions, sellingPrice: opt(head.sellingPrice) ?? null,
+      ...(edit?.portion ? { portionSize: edit.portion.size, portionUnit: edit.portion.unit } : {}),
       lines: lines.filter((l) => (l.kind === "product" ? l.product : l.subRecipeId) && l.quantity).map((l) => ({ productId: l.kind === "product" ? l.product!.id : null, subRecipeId: l.kind === "sub" ? l.subRecipeId : null, quantity: l.quantity, unit: l.unit || (l.kind === "product" ? l.product!.recipeUnit : "g") })),
     };
-  }, [head, lines]);
+  }, [head, lines, edit?.portion]);
 
   // Live cost: calculated on the server by the shared engine (no financial math in the browser).
   useEffect(() => {

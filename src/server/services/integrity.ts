@@ -240,7 +240,8 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
       let skippedClosed = 0;
       let stillUnmapped = 0;
       const byImport = new Map<string | null, string[]>();
-      // same matching as the import (commitSales): POS code first, else the recipe name (lines keep no item name, so the code)
+      // same matching as the import (commitSales): POS code first, else the recipe name (the POS item name, or the code
+      // for lines imported before the name was kept)
       const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
       for (const l of lines) {
         // the stock posting is dated by the business day (a 03:10 sale on the 1st belongs to the last day of the
@@ -249,7 +250,7 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
           skippedClosed++;
           continue;
         }
-        const recipe = recipes.find((r) => r.posCode === l.posCode) ?? byName(l.posCode);
+        const recipe = recipes.find((r) => r.posCode === l.posCode) ?? byName(l.itemName ?? l.posCode);
         if (!recipe) {
           stillUnmapped++;
           continue;

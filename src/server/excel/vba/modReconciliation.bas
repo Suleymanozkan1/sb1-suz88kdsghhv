@@ -77,7 +77,7 @@ Public Sub RunReconciliation(ByVal payload As Object)
         End If
     End If
 
-    If nFail > 0 Then LogError "modReconciliation", "checks", "RECONCILIATION", nFail & " " & L("reconciliation check(s) failed - see") & " " & S("46_RECONCILIATION"), "HIGH"
+    If nFail > 0 Then LogError "modReconciliation", "checks", "RECONCILIATION", nFail & " " & L("reconciliation check(s) failed - see") & " " & S("43_RECONCILIATION"), "HIGH"
     SetCtl "ctl_ScoreDataQuality", payload("meta")("dataQuality")
     SetCtl "ctl_ScoreRecon", IIf(nFail > 0, L("FAIL"), IIf(nWarn > 0, L("WARNING"), L("PASS")))
     SetCtl "ctl_ScoreWarnings", nWarn

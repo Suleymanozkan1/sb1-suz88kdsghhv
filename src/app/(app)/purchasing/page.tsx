@@ -2,6 +2,7 @@ import { monthRange, pageContext, requirePageAccess } from "@/server/page";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { listReceipts, RECEIPT_SOURCE, RECEIPT_SOURCES, RECEIPT_STATUS } from "@/server/services/purchasing";
+import { purchasePriceChanges } from "@/server/services/insights";
 import { Badge, Card, Empty, Label, PageHeader, Select, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, qty, date, pct } from "@/lib/format";
@@ -28,7 +29,8 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
     prisma.supplier.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
     prisma.supplier.findMany({ where: { hotelId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } }),
-    can(actor, "purchase:prices") ? prisma.supplierPrice.findMany({ where: { hotelId, changePct: { not: null } }, include: { product: true, supplier: true }, orderBy: { priceDate: "desc" }, take: 25 }) : Promise.resolve([]),
+    // our own receipts in the page's period / supplier / source (as the dashboard), not imported price lists
+    can(actor, "purchase:prices") ? purchasePriceChanges(prisma, actor, hotelId, { ...range, supplierId: sp.supplierId, source: sp.source }) : Promise.resolve([]),
   ]);
   const cur = hotel.baseCurrency;
   const filters = (
@@ -101,19 +103,19 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
       {/* the latest price changes from the invoices: at the very bottom, the receipts come first */}
       {can(actor, "purchase:prices") && (
         <Card title={t("Supplier price changes")} className="mt-4" padded={false}>
-          {prices.length === 0 ? <div className="p-4"><Empty title={t("No price history")} /></div> : (
+          {prices.length === 0 ? <div className="p-4"><Empty title={t("No price changes")} /></div> : (
             <Table>
               <thead><tr><Th>{t("Date")}</Th><Th>{t("Product")}</Th><Th>{t("Supplier")}</Th><Th align="right">{t("Old")}</Th><Th align="right">{t("New")}</Th><Th align="right">{t("Change")}</Th></tr></thead>
               <tbody className="divide-y divide-ink-100">
                 {prices.map((p) => {
                   const ch = Number(p.changePct);
                   return (
-                    <tr key={p.id}>
-                      <Td>{date(p.priceDate)}</Td>
-                      <Td className="font-medium"><Title>{p.product.name}</Title></Td>
-                      <Td>{p.supplier.name}</Td>
-                      <Td align="right">{money(p.previousUnitPrice?.toString(), cur)}/{p.product.stockUnit}</Td>
-                      <Td align="right">{money(p.unitPrice.toString(), cur)}/{p.product.stockUnit}</Td>
+                    <tr key={`${p.productId}-${p.receiptNo}`}>
+                      <Td>{date(p.date)}</Td>
+                      <Td className="font-medium"><Title>{p.product}</Title></Td>
+                      <Td>{p.supplier}</Td>
+                      <Td align="right">{money(p.previous, cur)}/{p.unit}</Td>
+                      <Td align="right">{money(p.current, cur)}/{p.unit}</Td>
                       <Td align="right"><Badge tone={ch > 0 ? "red" : ch < 0 ? "green" : "gray"}>{ch > 0 ? "+" : ""}{ch.toFixed(1)}%</Badge></Td>
                     </tr>
                   );

@@ -27,11 +27,10 @@ import { audit } from "./audit";
 import { periodReport as buffetPeriodReport } from "./buffet";
 import { minibarReport, minibarInvariant, MINIBAR_DEPT } from "./minibar";
 import { roomCostReport, housekeepingReport, laundryReport, laborReport, energyReport, engineeringReport, type OpexLine } from "./operations";
-import { postedAllocationLines } from "./allocation";
 import { departmentRevenue, divisionIds, ROOMS_DIVISION } from "./revenue";
 import { OPEX_CATEGORY_KEYS } from "./opex";
 import { occupancyStats } from "./pms";
-import { activeBudget, actualsByCategory, forecastReport, menuEngineeringReport } from "./planning";
+import { menuEngineeringReport } from "./planning";
 import { listActions, opportunities } from "./savings";
 
 export const EXPORT_VERSION = "1.2";
@@ -114,13 +113,13 @@ const monthStart = (d: Date, back = 0) => new Date(Date.UTC(d.getUTCFullYear(), 
 
 /**
  * Sections whose content depends only on the period's ledger, PMS and sales data (plus master data).
- * Live sections (stock now, reorder, forecast, savings, recipe cost today, trends, budget) are excluded.
+ * Live sections (stock now, reorder, savings, recipe cost today, trends) are excluded.
  */
 export const PERIOD_BOUND_SECTIONS = [
   "costDetail", "foodCost", "beverageCost", "theoreticalConsumption", "actualConsumption", "consumptionVariance", "unexplainedVariance", "topVariance",
   "waste", "wasteSummary", "wasteByCategory", "wasteByDepartment", "topWaste", "yield", "buffetCost", "buffetSummary", "buffetProduct", "minibarCost",
   "roomCost", "roomTypeCost", "roomFloorCost", "housekeepingCost", "laundryCost", "linenCost", "laborCost", "energyCost", "meterReadings",
-  "engineeringCost", "assetCost", "costAllocation", "pnl", "purchaseCost", "ppv", "monthlyStock", "stockVariance", "productSales", "rawStockTransactions", "rawSales",
+  "engineeringCost", "assetCost", "pnl", "purchaseCost", "ppv", "monthlyStock", "stockVariance", "productSales", "rawStockTransactions", "rawSales",
 ];
 
 export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string, p: ExportParams, opts: { noArchive?: boolean } = {}): Promise<FullCostExport> {
@@ -158,14 +157,6 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   const opsNote = opsOk ? null : !can(actor, "opex:view") ? "No opex:view permission." : "Operating-cost modules are hotel-wide: remove department / warehouse / category filters (or use an all-department role).";
   const occ = await occupancyStats(db, hotelId, p.from, p.to);
   const revenueByDept = await departmentRevenue(db, hotelId, p.from, p.to);
-  // Planning (Phase 4): budget lines for the months of the period (budget year = year of period start)
-  const lastDay = new Date(p.to.getTime() - 86_400_000);
-  const budgetYear = p.from.getUTCFullYear();
-  const periodMonths = Array.from({ length: (lastDay.getUTCFullYear() - budgetYear) * 12 + lastDay.getUTCMonth() - p.from.getUTCMonth() + 1 }, (_, i) => p.from.getUTCMonth() + 1 + i).filter((m) => m <= 12);
-  const budget = can(actor, "budget:view") ? await activeBudget(db, hotelId, budgetYear) : null;
-  const budgetLines = budget ? await db.budgetLine.findMany({ where: { budgetId: budget.id, month: { in: periodMonths }, ...(deptIds ? { departmentId: { in: deptIds } } : {}), ...(p.departmentId ? { departmentId: p.departmentId } : {}) } }) : [];
-  const ytdLines = budget ? await db.budgetLine.findMany({ where: { budgetId: budget.id, month: { lte: Math.max(...periodMonths) }, ...(deptIds ? { departmentId: { in: deptIds } } : {}), ...(p.departmentId ? { departmentId: p.departmentId } : {}) } }) : [];
-  const budgetNote = budget ? `${budget.name} (${budget.status})${budget.status === "DRAFT" ? " — not yet approved" : ""}` : can(actor, "budget:view") ? `No budget for ${budgetYear}` : "No budget:view permission.";
   const [food, bev] = p.categoryGroup
     ? [p.categoryGroup === "FOOD" ? tva : null, p.categoryGroup === "BEVERAGE" ? tva : null]
     : await Promise.all([
@@ -249,8 +240,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
       vrows(tva).map((x) => ({ sku: x.sku, ingredient: x.name, unit: x.unit, group: x.categoryGroup, theoreticalQty: s4(x.theoreticalQty), actualQty: s4(x.actual.qty), varianceQty: s4(x.varianceQty), theoreticalCost: s4(x.theoreticalValue), actualCost: s4(x.actual.value), varianceCost: s4(x.varianceValue), variancePct: fr(x.variancePct), waste: s4(x.waste.value), unexplainedQty: s4(x.unexplainedQty), unexplained: s4(x.unexplainedValue), department: p.departmentId ? deptName.get(p.departmentId) ?? null : "All in scope" }))),
   );
   add(
-    section("monthlyStock", "Monthly Stock", "VarianceService (ledger buckets)", [col("sku", "SKU"), col("product", "Product"), col("category", "Category"), col("unit", "Unit"), col("openingQty", "Opening Qty", "qty"), col("purchases", "Purchases", "qty"), col("transferIn", "Transfer In", "qty"), col("transferOut", "Transfer Out", "qty"), col("consumption", "Consumption (actual usage)", "qty"), col("waste", "Waste", "qty"), col("adjustment", "Count Adjustment", "qty"), col("closingQty", "Closing Qty", "qty"), col("unitCost", "Unit Cost", "unitcost"), col("openingValue", "Opening Value", "money"), col("purchaseValue", "Purchase Value", "money"), col("closingValue", "Closing Value", "money")],
-      vrows(tva).map((x) => ({ sku: x.sku, product: x.name, category: x.categoryGroup, unit: x.unit, openingQty: s4(x.opening.qty), purchases: s4(x.purchases.qty), transferIn: s4(x.transfersIn.qty), transferOut: s4(x.transfersOut.qty), consumption: s4(x.actual.qty), waste: s4(x.waste.qty), adjustment: s4(x.countAdjustment.qty.neg()), closingQty: s4(x.closing.qty), unitCost: s4(x.closing.qty.gt(0) ? x.closing.value.div(x.closing.qty) : x.avgCost), openingValue: s4(x.opening.value), purchaseValue: s4(x.purchases.value), closingValue: s4(x.closing.value) }))),
+    section("monthlyStock", "Monthly Stock", "VarianceService (ledger buckets)", [col("sku", "SKU"), col("product", "Product"), col("category", "Category"), col("unit", "Unit"), col("openingQty", "Opening Qty", "qty"), col("purchases", "Purchases", "qty"), col("transferOutNet", "Transfers Out (net)", "qty"), col("consumption", "Consumption (actual usage)", "qty"), col("waste", "Waste", "qty"), col("adjustment", "Count Adjustment", "qty"), col("closingQty", "Closing Qty", "qty"), col("unitCost", "Unit Cost", "unitcost"), col("openingValue", "Opening Value", "money"), col("purchaseValue", "Purchase Value", "money"), col("closingValue", "Closing Value", "money")],
+      vrows(tva).map((x) => ({ sku: x.sku, product: x.name, category: x.categoryGroup, unit: x.unit, openingQty: s4(x.opening.qty), purchases: s4(x.purchases.qty), transferOutNet: s4(x.transfersOut.qty.minus(x.transfersIn.qty)), consumption: s4(x.actual.qty), waste: s4(x.waste.qty), adjustment: s4(x.countAdjustment.qty.neg()), closingQty: s4(x.closing.qty), unitCost: s4(x.closing.qty.gt(0) ? x.closing.value.div(x.closing.qty) : x.avgCost), openingValue: s4(x.opening.value), purchaseValue: s4(x.purchases.value), closingValue: s4(x.closing.value) }))),
   );
   add(
     section("unexplainedVariance", "Unexplained Variance", "VarianceService.usageGap", [col("department", "Department"), col("product", "Product"), col("theoretical", "Theoretical", "money"), col("actual", "Actual", "money"), col("knownWaste", "Known Waste", "money"), col("knownAdjustments", "Known Adjustments (price/timing)", "money"), col("knownStaffMeal", "Known Staff Meal", "money"), col("knownComplimentary", "Known Complimentary", "money"), col("unexplained", "Unexplained", "money"), col("unexplainedPct", "Unexplained %", "pct")],
@@ -262,8 +253,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     if (!r) return add(section(key, title, "VarianceService", [col("line", "Line"), col("value", "Value", "money")], [], "NOT_AVAILABLE", "Filtered out by category filter."));
     const t = r.totals;
     const rows: Row[] = [
-      ["Opening Inventory", t.opening], ["Purchases", t.purchases], ["Transfers In", t.transfersIn], ["Transfers Out", t.transfersOut.neg()], ["Closing Inventory", t.closing.neg()],
-      ["Actual Cost (= Opening + Purchases ± Transfers − Closing)", t.actualCost], ["  of which recorded waste", t.waste], ["  of which staff meals", t.staffMeal], ["  of which complimentary", t.complimentary],
+      ["Opening Inventory", t.opening], ["Purchases", t.purchases], ["Transfers Out (net)", t.transfersOutNet.neg()], ["Closing Inventory", t.closing.neg()],
+      ["Actual Cost (= Opening + Purchases − Transfers Out (net) − Closing)", t.actualCost], ["  of which recorded waste", t.waste], ["  of which staff meals", t.staffMeal], ["  of which complimentary", t.complimentary],
       ["Theoretical Cost", t.theoreticalCost], ["Variance (Actual − Theoretical)", t.variance], ["Unexplained Variance", t.unexplained], ["Revenue (net, mapped sales in scope)", t.revenue],
     ].map(([line, v]) => ({ line: line as string, value: s4(v as Decimal), kind: "money" }));
     rows.push({ line: "Actual Cost %", value: fr(t.actualCostPct), kind: "pct" }, { line: "Theoretical Cost %", value: fr(t.theoreticalCostPct), kind: "pct" }, { line: "Variance % (pts)", value: fr(t.costPctVariancePts), kind: "pct" });
@@ -436,7 +427,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   add(section("criticalStock", "Critical Stock", "inventoryStatus + order recommendation", [col("product", "Product"), col("category", "Category"), col("currentStock", "Current Stock", "qty"), col("unit", "Unit"), col("minimum", "Minimum", "qty"), col("reorderPoint", "Reorder Point", "qty"), col("safetyStock", "Safety Stock", "qty"), col("openPo", "Open PO", "qty"), col("recommendedOrder", "Recommended Order", "qty"), col("supplier", "Supplier"), col("status", "Status")],
     inv.rows.filter((r) => ["LOW", "CRITICAL", "OUT_OF_STOCK"].includes(r.level)).map((r) => { const pr = pMap.get(r.productId); return { product: r.name, category: r.categoryGroup, currentStock: s4(r.quantity), unit: r.unit, minimum: pr?.minStock?.toString() ?? null, reorderPoint: r.reorderPoint, safetyStock: r.safetyStock, openPo: s4(r.openPo), recommendedOrder: s4(recMap.get(r.productId)?.recommended ?? null), supplier: pr?.defaultSupplier?.name ?? null, status: r.level }; })));
   add(section("stockAging", "Stock Aging / Slow Moving", "inventoryStatus (last outbound movement)", [col("product", "Product"), col("currentQty", "Current Qty", "qty"), col("unit", "Unit"), col("value", "Value", "money"), col("daysSinceMovement", "Days Since Movement", "int"), col("daysOfStock", "Days of Stock", "qty"), col("status", "Status")],
-    inv.rows.filter((r) => r.quantity.gt(0)).map((r) => ({ product: r.name, currentQty: s4(r.quantity), unit: r.unit, value: s4(r.value), daysSinceMovement: r.daysSinceLastIssue === null ? null : String(r.daysSinceLastIssue), daysOfStock: s4(r.daysOfStock), status: r.level === "CRITICAL" || r.level === "LOW" ? "Critical" : r.daysSinceLastIssue !== null && r.daysSinceLastIssue > 30 ? "Slow Moving" : "Active" }))));
+    inv.rows.filter((r) => r.quantity.gt(0)).map((r) => ({ product: r.name, currentQty: s4(r.quantity), unit: r.unit, value: s4(r.value), daysSinceMovement: r.daysSinceLastIssue === null ? null : String(r.daysSinceLastIssue), daysOfStock: s4(r.daysOfStock), status: r.level === "CRITICAL" || r.level === "LOW" ? "Critical" : r.daysSinceLastIssue === null ? "Never Issued" : r.daysSinceLastIssue > 30 ? "Slow Moving" : "Active" }))));
   add(section("reorder", "Reorder Recommendation", "orderRecommendations (domain/purchasing.recommendOrder)", [col("product", "Product"), col("method", "Method"), col("lastMonth", "Last Month Consumption", "qty"), col("avg3m", "3 Month Average", "qty"), col("forecast", "Forecast Consumption", "qty"), col("currentStock", "Current Stock", "qty"), col("openPo", "Open PO", "qty"), col("safetyStock", "Safety Stock", "qty"), col("recommendedOrder", "Recommended Order", "qty"), col("unit", "Unit"), col("supplier", "Recommended Supplier"), col("estimatedCost", "Estimated Cost", "money"), col("why", "WHY THIS ORDER IS RECOMMENDED")],
     recs.map((r) => {
       const ex = Object.fromEntries(r.explanation.map((e) => [e.label, e.value]));
@@ -461,15 +452,13 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     const cost = direct.plus(alloc);
     const rev = deptRev.get(k) ?? ZERO;
     const d = departments.find((x) => x.id === k);
-    const bl = budgetLines.filter((l) => (l.departmentId ?? "") === k && l.categoryGroup !== "REVENUE");
-    const bud = bl.length ? sum(bl.map((l) => l.amount.toString())) : null;
-    return { department: d?.name ?? "(hotel level / unassigned)", isOutlet: d?.isOutlet ? "YES" : "NO", revenue: s4(rev), directCost: s4(direct), allocatedCost: s4(alloc), totalCost: s4(cost), budget: s4(bud), variance: bud ? s4(cost.minus(bud)) : null, variancePct: bud && bud.gt(0) ? s4(cost.minus(bud).div(bud)) : null, contribution: s4(rev.minus(cost)), marginPct: rev.gt(0) ? s4(rev.minus(cost).div(rev)) : null, costPct: rev.gt(0) ? s4(cost.div(rev)) : null };
+    return { department: d?.name ?? "(hotel level / unassigned)", isOutlet: d?.isOutlet ? "YES" : "NO", revenue: s4(rev), directCost: s4(direct), allocatedCost: s4(alloc), totalCost: s4(cost), contribution: s4(rev.minus(cost)), marginPct: rev.gt(0) ? s4(rev.minus(cost).div(rev)) : null, costPct: rev.gt(0) ? s4(cost.div(rev)) : null };
   }).sort((a, b) => a.department.localeCompare(b.department));
-  const deptCols = [col("department", "Department"), col("revenue", "Revenue", "money"), col("directCost", "Direct Cost", "money"), col("allocatedCost", "Allocated Cost", "money"), col("totalCost", "Total Cost", "money"), col("costPct", "Cost %", "pct"), col("budget", "Budget", "money"), col("variance", "Variance", "money"), col("variancePct", "Variance %", "pct"), col("contribution", "Contribution", "money"), col("marginPct", "Margin %", "pct")];
-  add(section("departmentCost", "Department Cost", "CostTransaction by department + SaleLine revenue", deptCols, deptRows, budget ? "OK" : "PARTIAL", `Direct and allocated cost are shown separately (spec 146). Revenue: POS + minibar + rooms (PMS). Budget: ${budgetNote}; blank = no budget line.`));
+  const deptCols = [col("department", "Department"), col("revenue", "Revenue", "money"), col("directCost", "Direct Cost", "money"), col("allocatedCost", "Allocated Cost", "money"), col("totalCost", "Total Cost", "money"), col("costPct", "Cost %", "pct"), col("contribution", "Contribution", "money"), col("marginPct", "Margin %", "pct")];
+  add(section("departmentCost", "Department Cost", "CostTransaction by department + SaleLine revenue", deptCols, deptRows, "OK", "Direct and allocated cost are shown separately (spec 146). Revenue: POS + minibar + rooms (PMS)."));
   add(section("outletCost", "Outlet Cost", "CostTransaction by outlet + SaleLine revenue", deptCols, deptRows.filter((r) => r.isOutlet === "YES"), "PARTIAL"));
-  const ccRows = deptRows.map((r) => ({ costCenter: `CC-${r.department}`, budget: r.budget, actual: r.directCost, allocated: r.allocatedCost, total: r.totalCost, variance: r.variance }));
-  add(section("costCenter", "Cost Center", "CostTransaction (department cost centers)", [col("costCenter", "Cost Center"), col("budget", "Budget", "money"), col("actual", "Actual", "money"), col("allocated", "Allocated", "money"), col("total", "Total", "money"), col("variance", "Variance", "money")], ccRows, "PARTIAL"));
+  const ccRows = deptRows.map((r) => ({ costCenter: `CC-${r.department}`, actual: r.directCost, allocated: r.allocatedCost, total: r.totalCost }));
+  add(section("costCenter", "Cost Center", "CostTransaction (department cost centers)", [col("costCenter", "Cost Center"), col("actual", "Actual", "money"), col("allocated", "Allocated", "money"), col("total", "Total", "money")], ccRows, "PARTIAL"));
 
   // ── TOP VARIANCE ──
   add(section("topVariance", "Top Variance", "VarianceService", [col("rank", "Rank", "int"), col("product", "Product"), col("theoreticalCost", "Theoretical Cost", "money"), col("actualCost", "Actual Cost", "money"), col("variance", "Variance", "money"), col("variancePct", "Variance %", "pct")],
@@ -538,11 +527,14 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   add(section("minibarCost", "Minibar Cost", "MinibarCostService.minibarReport (room sub-ledger)", [col("room", "Room"), col("product", "Product"), col("opening", "Opening", "qty"), col("restocked", "Restocked", "qty"), col("consumed", "Consumed", "qty"), col("returned", "Returned", "qty"), col("waste", "Waste", "qty"), col("closing", "Closing", "qty"), money("cost", "Cost"), money("revenue", "Revenue"), money("contribution", "Contribution"), col("variance", "Variance", "qty")],
     minibar ? minibar.lines.sort((a, b) => a.room.localeCompare(b.room, undefined, { numeric: true }) || a.product.localeCompare(b.product)).map((l) => ({ room: l.room, product: l.product, opening: s4(l.opening), restocked: s4(l.restocked), consumed: s4(l.consumed), returned: s4(l.returned), waste: s4(l.waste), closing: s4(l.closing), cost: s4(l.cost), revenue: s4(l.revenue), contribution: s4(l.contribution), variance: s4(l.shrinkage.neg()) })) : [],
     minibar ? "OK" : "NOT_AVAILABLE", minibar ? "Cost = consumed + waste + shrinkage. Variance = count difference (negative = missing, unexplained shrinkage)." : "Minibar is outside the export scope or permission."));
-  const roomCols = [col("room", "Room"), col("roomType", "Room Type"), col("floor", "Floor"), col("area", "Area"), col("occupiedNights", "Occupied Nights", "int"), money("roomRevenue", "Room Revenue"), money("housekeeping", "Housekeeping Cost"), money("laundry", "Laundry Cost"), money("amenities", "Amenities Cost"), money("energy", "Energy Cost"), money("maintenance", "Maintenance Allocation"), money("labor", "Labor Allocation"), money("other", "Other Allocation"), money("monthly", "Monthly Room Expenses"), money("distribution", "Distribution Cost"), money("fullCost", "Full Room Cost"), money("costPerNight", "Cost / Night"), money("contribution", "Contribution"), col("marginPct", "Margin %", "pct")];
+  const roomCols = [col("room", "Room"), col("roomType", "Room Type"), col("floor", "Floor"), col("area", "Area"), col("occupiedNights", "Occupied Nights", "int"), money("roomRevenue", "Room Revenue"), money("housekeeping", "Housekeeping Cost"), money("laundry", "Laundry Cost"), money("amenities", "Amenities Cost"), money("energy", "Energy Cost"), money("maintenance", "Maintenance Cost"), money("labor", "Labor Cost"), money("other", "Other Cost"), money("monthly", "Monthly Room Expenses"), money("distribution", "Distribution Cost"), money("fullCost", "Full Room Cost"), money("costPerNight", "Cost / Night"), money("contribution", "Contribution"), col("marginPct", "Margin %", "pct")];
   type RoomLike = { components: Record<string, Decimal>; roomRevenue: Decimal; fullCost: Decimal; costPerNight: Decimal | null; contribution: Decimal; marginPct: Decimal | null; occupiedNights: number };
   const roomRow = (l: RoomLike, head: Row) => ({ ...head, occupiedNights: String(l.occupiedNights), roomRevenue: s4(l.roomRevenue), housekeeping: s4(l.components.housekeeping!), laundry: s4(l.components.laundry!), amenities: s4(l.components.amenities!), energy: s4(l.components.energy!), maintenance: s4(l.components.maintenance!), labor: s4(l.components.labor!), other: s4(l.components.other!), monthly: s4(l.components.monthly!), distribution: s4(l.components.distribution!), fullCost: s4(l.fullCost), costPerNight: s4(l.costPerNight), contribution: s4(l.contribution), marginPct: s4(l.marginPct) }); // fractions from RoomCostService
   const roomNote = !roomsDiv.length ? "No Rooms division (department code ROOMS)." : rooms ? `Pooled rooms-division cost and the monthly room expenses entered for the period split by ${rooms.basis}; room-tagged costs and channel cost are direct. ${rooms.warnings.join(" ")}`.trim() : !can(actor, "rooms:view") ? "No rooms:view permission." : "Room cost is hotel-level: remove category / warehouse filters or non-rooms department filters.";
-  const roomStatus = rooms ? (rooms.occupancy.source !== "NONE" ? "OK" : "PARTIAL") : "NOT_AVAILABLE";
+  // room cost is complete with occupancy and every month's room expenses entered (feedback r2 §10: the monthly room
+  // expenses screen replaced the allocation run, so a missing allocation no longer makes it partial)
+  const roomExpensesMissing = !!rooms?.monthly.missingMonths.length;
+  const roomStatus = rooms ? (rooms.occupancy.source !== "NONE" && !roomExpensesMissing ? "OK" : "PARTIAL") : "NOT_AVAILABLE";
   add(section("roomCost", "Room Cost", "RoomCostService.roomCostReport (cost ledger + reservations)", roomCols, rooms ? rooms.lines.map((l) => roomRow(l, { room: l.number, roomType: l.roomType, floor: l.floor, area: l.area })) : [], roomStatus as SectionStatus, roomNote));
   const groupCols = [col("group", "Group"), col("rooms", "Rooms", "int"), ...roomCols.slice(4)];
   add(section("roomTypeCost", "Room Type Cost", "RoomCostService (rollup by room type)", groupCols, rooms ? rooms.byType.map((g) => ({ ...roomRow(g, { group: g.key }), rooms: String(g.rooms) })) : [], roomStatus as SectionStatus, roomNote));
@@ -564,34 +556,8 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     engRep ? engRep.byType.map((t) => ({ type: t.type, cost: s4(t.cost), share: s4(safeDiv(t.cost, engRep.total)) })) : [], engRep ? (engRep.byType.length ? "OK" : "PARTIAL") : "NOT_AVAILABLE", engRep ? `Emergency share ${engRep.emergencyShare ? engRep.emergencyShare.times(100).toFixed(1) + "%" : "—"}; preventive share ${engRep.preventiveShare ? engRep.preventiveShare.times(100).toFixed(1) + "%" : "—"}.` : opsNote ?? undefined));
   add(section("assetCost", "Cost per Asset", "Expenses tagged to assets", [col("asset", "Asset"), col("name", "Name"), col("kind", "Kind"), col("department", "Department"), col("location", "Location"), money("periodCost", "Period Cost"), col("periodJobs", "Period Jobs", "int"), money("cumulativeCost", "Cumulative Cost"), col("cumulativeJobs", "Cumulative Jobs", "int")],
     engRep ? engRep.perAsset.map((a) => ({ asset: a.asset, name: a.name, kind: a.kind, department: a.department, location: a.location, periodCost: s4(a.periodCost), periodJobs: String(a.periodJobs), cumulativeCost: s4(a.cumulativeCost), cumulativeJobs: String(a.cumulativeJobs) })) : [], engRep ? "OK" : "NOT_AVAILABLE", engRep ? "Cumulative = all expenses tagged to the asset up to period end." : opsNote ?? undefined));
-  const allocLines = hotelWide && can(actor, "opex:view") ? await postedAllocationLines(db, hotelId, p.from, p.to) : null;
-  add(section("costAllocation", "Cost Allocation", "AllocationRun (posted runs overlapping the period)", [money("sourceCost", "Source Cost"), col("sourceCategory", "Source Category"), col("sourceDepartment", "Source Department"), col("rule", "Allocation Rule"), col("driver", "Driver"), col("driverQty", "Driver Qty", "qty"), col("share", "Share", "pct"), col("destination", "Destination"), money("allocated", "Allocated Amount")],
-    allocLines ? allocLines.map((l) => ({ sourceCost: String(l.sourceCost), sourceCategory: l.sourceCategory, sourceDepartment: l.sourceDepartment, rule: l.rule, driver: l.driver, driverQty: String(l.driverQty), share: String(l.share), destination: l.destination, allocated: String(l.amount) })) : [], allocLines ? (allocLines.length ? "OK" : "PARTIAL") : "NOT_AVAILABLE", allocLines ? (allocLines.length ? "Allocated rows are ALLOCATED cost-ledger postings (net zero for the hotel)." : "No allocation posted for this period.") : opsNote ?? undefined));
-  // ── Budget variance / forecast / savings / menu engineering (Phase 4) ──
+  // ── Savings / menu engineering (Phase 4) ──
   const planOk = can(actor, "budget:view");
-  let budgetRows: Row[] = [];
-  if (budget) {
-    const ytdFrom = new Date(Date.UTC(budgetYear, 0, 1));
-    const [act, ytdAct] = await Promise.all([actualsByCategory(db, hotelId, p.from, p.to, p.departmentId ? [p.departmentId] : deptIds), actualsByCategory(db, hotelId, ytdFrom, p.to, p.departmentId ? [p.departmentId] : deptIds)]);
-    const cats = [...new Set([...budgetLines.map((l) => l.categoryGroup), ...ytdLines.map((l) => l.categoryGroup), ...[...act].filter(([, v]) => !v.isZero()).map(([k]) => k)])].sort((a, b) => (a === "REVENUE" ? -1 : b === "REVENUE" ? 1 : a.localeCompare(b)));
-    budgetRows = cats.map((c) => {
-      const has = ytdLines.some((l) => l.categoryGroup === c);
-      const b = has ? sum(budgetLines.filter((l) => l.categoryGroup === c).map((l) => l.amount.toString())) : null;
-      const yb = has ? sum(ytdLines.filter((l) => l.categoryGroup === c).map((l) => l.amount.toString())) : null;
-      const a = act.get(c) ?? ZERO;
-      const ya = ytdAct.get(c) ?? ZERO;
-      return { category: c, budget: s4(b), actual: s4(a), variance: b ? s4(a.minus(b)) : null, variancePct: b && b.gt(0) ? s4(a.minus(b).div(b)) : null, ytdBudget: s4(yb), ytdActual: s4(ya), ytdVariance: yb ? s4(ya.minus(yb)) : null };
-    });
-  }
-  add(section("budgetVariance", "Budget Variance", "PlanningService (budget lines vs cost ledger)", [col("category", "Category"), money("budget", "Budget"), money("actual", "Actual"), money("variance", "Variance"), col("variancePct", "Variance %", "pct"), money("ytdBudget", "YTD Budget"), money("ytdActual", "YTD Actual"), money("ytdVariance", "YTD Variance")],
-    budgetRows, budget ? "OK" : "NOT_AVAILABLE", `${budgetNote}. Variance = actual − budget (positive = over budget; for REVENUE positive = above budget).`));
-  // forecast: the running month of the period end, or the next month when the period is closed
-  const nowD = new Date();
-  const fcMonth = lastDay.getUTCFullYear() === nowD.getUTCFullYear() && lastDay.getUTCMonth() === nowD.getUTCMonth() ? { y: lastDay.getUTCFullYear(), m: lastDay.getUTCMonth() + 1 } : { y: lastDay.getUTCMonth() === 11 ? lastDay.getUTCFullYear() + 1 : lastDay.getUTCFullYear(), m: lastDay.getUTCMonth() === 11 ? 1 : lastDay.getUTCMonth() + 2 };
-  const fc = planOk && hotelWide ? await forecastReport(db, actor, hotelId, { year: fcMonth.y, month: fcMonth.m }) : null;
-  add(section("forecast", "Forecast", "PlanningService.forecastReport (history × expected volume)", [col("month", "Month"), col("category", "Category"), money("actualToDate", "Actual to Date"), money("forecast", "Forecast"), money("budget", "Budget"), money("expectedVariance", "Expected Variance"), col("method", "Method")],
-    fc ? [...fc.lines.map((l) => ({ month: fc.month, category: l.category, actualToDate: s4(l.actualToDate), forecast: s4(l.forecast), budget: s4(l.budget), expectedVariance: s4(l.expectedVariance), method: l.method })), { month: fc.month, category: "TOTAL", actualToDate: s4(sum(fc.lines.map((l) => l.actualToDate))), forecast: s4(fc.total), budget: s4(fc.budgetTotal), expectedVariance: fc.budgetTotal ? s4(fc.total.minus(fc.budgetTotal)) : null, method: `Scenario cost: best ${fc.scenarios.best.cost.toFixed(0)} / base ${fc.scenarios.base.cost.toFixed(0)} / worst ${fc.scenarios.worst.cost.toFixed(0)}${fc.scenarios.base.result ? `; result (revenue − cost): best ${fc.scenarios.best.result!.toFixed(0)} / base ${fc.scenarios.base.result.toFixed(0)} / worst ${fc.scenarios.worst.result!.toFixed(0)}` : ""}` }] : [],
-    fc ? (fc.lines.length ? "OK" : "PARTIAL") : "NOT_AVAILABLE", fc ? `${fc.month} (${fc.status}). Volume: ${fc.assumptions.occupancyBasis}. ${fc.assumptions.fixedShares}. ${fc.assumptions.seasonality}.` : planOk ? "Forecast is hotel-wide: remove filters / use an all-department role." : "No budget:view permission."));
   const [acts, opps] = planOk ? await Promise.all([listActions(db, actor, hotelId), hotelWide ? opportunities(db, actor, hotelId, { from: p.from, to: p.to }) : Promise.resolve(null)]) : [null, null];
   add(section("costSaving", "Cost Saving", "SavingsService (opportunities + actions)", [col("driver", "Cost Driver"), col("item", "Opportunity / Problem"), money("current", "Current Cost"), money("target", "Target Cost"), money("saving", "Potential Saving"), col("savingPct", "Saving %", "pct"), col("action", "Action"), col("owner", "Owner"), col("dueDate", "Due Date", "date"), col("status", "Status"), money("actualSaving", "Actual Saving"), col("basis", "Formula / Assumption")],
     [
@@ -717,7 +683,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     wastePct: { value: tv.actualCost.gt(0) ? s4(tv.waste.div(tv.actualCost)) : null, status: "ACTUAL", note: "Waste cost / actual cost" },
     costPerOccupiedRoom: rooms?.totals.hotelCpor ? { value: s4(rooms.totals.hotelCpor), status: "ACTUAL", note: `Hotel operating cost / ${rooms.occupancy.occupiedRooms} occupied room nights (${rooms.occupancy.source})` } : { value: null, status: "NOT_AVAILABLE", note: "Needs hotel-wide scope and occupancy data" },
     costPerAvailableRoom: rooms?.totals.hotelCpar ? { value: s4(rooms.totals.hotelCpar), status: "ACTUAL", note: `Hotel operating cost / ${rooms.occupancy.availableRooms} available room nights` } : { value: null, status: "NOT_AVAILABLE" },
-    roomCostPerNight: rooms?.totals.costPerNight ? { value: s4(rooms.totals.costPerNight), status: rooms.allocationPosted ? "ACTUAL" : "ESTIMATED", note: rooms.allocationPosted ? "Full room cost / occupied nights" : "Allocation not posted: excludes energy / overhead of other departments" } : { value: null, status: "NOT_AVAILABLE" },
+    roomCostPerNight: rooms?.totals.costPerNight ? { value: s4(rooms.totals.costPerNight), status: roomExpensesMissing ? "ESTIMATED" : "ACTUAL", note: roomExpensesMissing ? "No room cost expenses entered for this period" : "Full room cost / occupied nights" } : { value: null, status: "NOT_AVAILABLE" },
     occupancy: occ.occupancy ? { value: s4(occ.occupancy), status: "ACTUAL", note: occ.note } : { value: null, status: "NOT_AVAILABLE", note: occ.note },
     adr: occ.adr ? { value: s4(occ.adr), status: "ACTUAL" } : { value: null, status: "NOT_AVAILABLE" },
     revpar: occ.revpar ? { value: s4(occ.revpar), status: "ACTUAL" } : { value: null, status: "NOT_AVAILABLE" },
@@ -748,14 +714,13 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
   const [opexActual, opexPrior, opexYoy] = await Promise.all([opexSum(p.from, p.to), opexSum(new Date(p.from.getTime() - span), p.from), opexSum(yoyFrom, yoyTo)]);
   const opexYoyAny = opexYoy.size > 0;
   const byGroup = (r: VarianceReport, g: string, f: (x: VarianceReport["products"][number]) => Decimal) => sum(r.products.filter((x) => x.categoryGroup === g).map(f));
-  add(section("monthlySummary", "Monthly Cost Summary", "VarianceService (current, prior period, same period last year)", [col("category", "Cost Category"), col("budget", "Budget", "money"), col("actual", "Actual", "money"), col("theoretical", "Theoretical (at avg cost)", "money"), col("variance", "Variance", "money"), col("variancePct", "Variance %", "pct"), col("priorMonth", "Prior Period", "money"), col("yoy", "Same Period LY", "money")],
+  add(section("monthlySummary", "Monthly Cost Summary", "VarianceService (current, prior period, same period last year)", [col("category", "Cost Category"), col("actual", "Actual", "money"), col("theoretical", "Theoretical (at avg cost)", "money"), col("variance", "Variance", "money"), col("variancePct", "Variance %", "pct"), col("priorMonth", "Prior Period", "money"), col("yoy", "Same Period LY", "money")],
     [...groups.map((g) => {
       const a = byGroup(tva, g, (x) => x.actual.value);
       const t = byGroup(tva, g, (x) => x.theoreticalValue);
-      const gb = ytdLines.some((l) => l.categoryGroup === g) ? sum(budgetLines.filter((l) => l.categoryGroup === g).map((l) => l.amount.toString())) : null;
-      return { category: g, budget: s4(gb), actual: s4(a), theoretical: s4(t), variance: s4(a.minus(t)), variancePct: t.gt(0) ? s4(a.minus(t).div(t)) : null, priorMonth: s4(byGroup(prior, g, (x) => x.actual.value)), yoy: yoy.products.length ? s4(byGroup(yoy, g, (x) => x.actual.value)) : null };
-    }), ...OPEX_CATEGORY_KEYS.map((g) => ({ category: `${g} (expenses)`, budget: ytdLines.some((l) => l.categoryGroup === g) ? s4(sum(budgetLines.filter((l) => l.categoryGroup === g).map((l) => l.amount.toString()))) : null, actual: hotelWide ? s4(opexActual.get(g) ?? ZERO) : null, theoretical: null, variance: null, variancePct: null, priorMonth: hotelWide ? s4(opexPrior.get(g) ?? ZERO) : null, yoy: hotelWide && opexYoyAny ? s4(opexYoy.get(g) ?? ZERO) : null }))],
-    "PARTIAL", "Operating-expense categories have no theoretical cost; budget arrives with the Budget module. Expense rows are hotel-wide only."));
+      return { category: g, actual: s4(a), theoretical: s4(t), variance: s4(a.minus(t)), variancePct: t.gt(0) ? s4(a.minus(t).div(t)) : null, priorMonth: s4(byGroup(prior, g, (x) => x.actual.value)), yoy: yoy.products.length ? s4(byGroup(yoy, g, (x) => x.actual.value)) : null };
+    }), ...OPEX_CATEGORY_KEYS.map((g) => ({ category: `${g} (expenses)`, actual: hotelWide ? s4(opexActual.get(g) ?? ZERO) : null, theoretical: null, variance: null, variancePct: null, priorMonth: hotelWide ? s4(opexPrior.get(g) ?? ZERO) : null, yoy: hotelWide && opexYoyAny ? s4(opexYoy.get(g) ?? ZERO) : null }))],
+    "PARTIAL", "Operating-expense categories have no theoretical cost. Expense rows are hotel-wide only."));
 
   const fails = checks.filter((c) => c.status === "FAIL").length;
   const warns = checks.filter((c) => c.status === "WARNING").length;
@@ -798,7 +763,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
 
   // Export snapshot + archive (spec §96, §251)
   const period = await db.costPeriod.findFirst({ where: { hotelId, startDate: { lte: p.from }, endDate: { gte: p.from } } });
-  if (!opts.noArchive) await db.report.create({ data: { hotelId, reportType: "FULL_COST_EXPORT", periodId: period?.id ?? null, periodFrom: p.from, periodTo: p.to, params: { departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null }, generatedById: actor.userId, dataVersion: 1, contentHash, periodHash, data: { exportId, exportVersion: EXPORT_VERSION, meta: result.meta, summary, checks, score: result.score, counts: counts_ } as never } });
+  if (!opts.noArchive) await db.report.create({ data: { hotelId, reportType: "FULL_COST_EXPORT", periodId: period?.id ?? null, periodFrom: p.from, periodTo: p.to, params: { departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null, scope: actor.departmentIds === "ALL" ? "ALL" : [...actor.departmentIds].sort() }, generatedById: actor.userId, dataVersion: 1, contentHash, periodHash, data: { exportId, exportVersion: EXPORT_VERSION, meta: result.meta, summary, checks, score: result.score, counts: counts_ } as never } });
   if (!opts.noArchive) await audit(db, actor, { hotelId, action: "EXPORT_FULL_COST", entityType: "Report", entityId: exportId, after: { period: result.meta.period, filters: result.meta.filters, counts: counts_, reconciliation: result.score.reconciliation } });
   return result;
 }

@@ -183,7 +183,7 @@ yaptığını izleyebilir, sonucu ekranda JSON olarak görebilirsiniz (HotelCost
 | `invoices` | liste aynı; fatura: `supplierName`, `invoiceNo`, `invoiceDate`, `warehouse`, `total` (KDV dahil genel toplam, isteğe bağlı — kalemler tutmazsa HotelCost faturayı reddeder); kalemler: `itemCode`, `itemName`, `qty`, `unit`, `unitPrice`, `taxRatePct` |
 | `covers` | `table`, `row`, `columns.outlet`, `columns.meal` (yoksa `defaultMeal`), `columns.covers` |
 | `products` | `steps` (`{since}` = son çekim tarihi), `table`, `row`, `noData`, `columns.name`, `code`, `unit`, `packSize` + `packUnit` (kilo / gramaj, ör. 830 gr), `taxRatePct`, `category`, `createdAt` |
-| `statistics` (Opera) | `fields.availableRooms`, `occupiedRooms`, `guests`, `roomRevenue`, `outOfOrder`; `rooms` (dolu oda listesi, isteğe bağlı) |
+| `statistics` (Opera) | `fields.availableRooms`, `occupiedRooms`, `guests`, `roomRevenue`, `outOfOrder` (OOO), `outOfService` (OOS); `rooms` (dolu oda listesi, isteğe bağlı) |
 | `minibar` (Opera) | `table`, `row`, `columns.room`, `itemCode`, `itemName`, `qty`, `reference` (folyo/hareket no), `postedAt` |
 
 ## 6. Faturaları dosyadan okuma (`INVOICE_SOURCE=file`)

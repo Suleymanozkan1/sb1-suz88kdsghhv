@@ -168,13 +168,22 @@ export async function restockToParLevels(db: Db, actor: Actor, hotelId: string, 
   return recordMovement(db, actor, hotelId, { roomId: r.id, type: "RESTOCK", movedAt, items });
 }
 
-export const countInput = z.object({ roomId: z.string(), countedAt: z.coerce.date(), lines: z.array(z.object({ productId: z.string(), countedQty: nonNeg })).min(1), note: z.string().max(300).optional().nullable() });
+export const countInput = z.object({ roomId: z.string(), countedAt: z.coerce.date(), lines: z.array(z.object({ productId: z.string(), countedQty: nonNeg })).min(1), note: z.string().max(300).optional().nullable(), idempotencyKey: z.string().max(128).optional().nullable() });
 
-/** Physical room check: differences are posted as shrinkage (COUNT_ADJUSTMENT), never hidden. */
+/**
+ * Physical room check: differences are posted as shrinkage (COUNT_ADJUSTMENT), never hidden.
+ * With an idempotency key a repeated (or overlapping) submission of the same count posts the differences once: requests
+ * with one key are serialised and the later one returns the movements of the first (per line `${key}:${productId}`).
+ */
 export async function countRoom(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "minibar:manage", { hotelId });
   const input = countInput.parse(raw);
   return inTx(db, async (tx) => {
+    if (input.idempotencyKey) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${hotelId}|minibar-count|${input.idempotencyKey}`}, 0))`;
+      const ex = await tx.minibarMovement.findMany({ where: { hotelId, type: "COUNT", idempotencyKey: { startsWith: `${input.idempotencyKey}:` } } });
+      if (ex.length) return ex;
+    }
     const { store: _s, rooms } = await minibarSetup(tx, actor, hotelId);
     const r = await room(tx, hotelId, input.roomId);
     const out = [];
@@ -185,7 +194,7 @@ export async function countRoom(db: Db, actor: Actor, hotelId: string, raw: unkn
       const t = await postMovement(tx, actor, { hotelId, warehouseId: rooms.id, productId: l.productId, type: "COUNT_ADJUSTMENT", quantity: diff, txDate: input.countedAt, sourceType: "MINIBAR", sourceId: r.id, reason: `Minibar count room ${r.number}: expected ${expected}, found ${l.countedQty}` });
       out.push(
         await tx.minibarMovement.create({
-          data: { hotelId, roomId: r.id, productId: l.productId, type: "COUNT", movedAt: input.countedAt, quantity: toStorage(diff).toString(), unitCost: t.unitCost, totalCost: t.totalCost, expectedQty: toStorage(expected).toString(), stockTxId: t.id, userId: actor.userId, note: input.note ?? null },
+          data: { hotelId, roomId: r.id, productId: l.productId, type: "COUNT", movedAt: input.countedAt, quantity: toStorage(diff).toString(), unitCost: t.unitCost, totalCost: t.totalCost, expectedQty: toStorage(expected).toString(), stockTxId: t.id, userId: actor.userId, note: input.note ?? null, idempotencyKey: input.idempotencyKey ? `${input.idempotencyKey}:${l.productId}` : null },
         }),
       );
     }

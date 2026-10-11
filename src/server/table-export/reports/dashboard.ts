@@ -1,6 +1,6 @@
 import { prisma } from "../../db";
 import { monthRange } from "../../page";
-import { homeDashboard, LEVEL_LABEL, STOCK_LEVELS, type DashboardAlert, type PriceSummaryData } from "../../services/insights";
+import { alertDisplayVars, homeDashboard, LEVEL_LABEL, STOCK_LEVELS, type DashboardAlert, type PriceSummaryData } from "../../services/insights";
 import { date } from "@/lib/format";
 import { translateMessage } from "@/i18n/core";
 import type { ReportDef, XTable } from "../types";
@@ -17,7 +17,11 @@ export const dashboard: ReportDef = {
     const levelLabel = (l: string) => t(LEVEL_LABEL[l] ?? l);
     const alertCols = [{ key: "title", header: t("Title") }, { key: "severity", header: t("Severity") }, { key: "message", header: t("Message") }, { key: "createdAt", header: t("Created"), type: "datetime" as const }];
     // derived alerts carry {placeholders} + vars; stored ones are server messages (t() falls back to their templates)
-    const alertRow = (a: DashboardAlert) => ({ title: a.vars ? t(a.title, a.vars) : translateMessage(locale, a.title), severity: t(a.severity), message: a.vars ? t(a.message, a.vars) : translateMessage(locale, a.message), createdAt: a.createdAt });
+    // product names in title case like on screen (display only)
+    const alertRow = (x: DashboardAlert) => alertRowOf({ ...x, vars: alertDisplayVars(x.vars, locale) });
+    function alertRowOf(a: DashboardAlert) {
+      return { title: a.vars ? t(a.title, a.vars) : translateMessage(locale, a.title), severity: t(a.severity), message: a.vars ? t(a.message, a.vars) : translateMessage(locale, a.message), createdAt: a.createdAt };
+    }
     const priceTable = (p: PriceSummaryData): XTable => ({
       title: t("Supplier price increases / decreases"),
       columns: [{ key: "product", header: t("Product") }, { key: "supplier", header: t("Supplier") }, { key: "date", header: t("Date"), type: "date" }, { key: "previous", header: t("Previous price"), type: "unitcost" }, { key: "current", header: t("Last price"), type: "unitcost" }, { key: "unit", header: t("Unit") }, { key: "changePct", header: t("Change %"), type: "pct" }],

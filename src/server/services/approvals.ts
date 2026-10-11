@@ -75,6 +75,21 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
   });
 }
 
+/**
+ * Who may open the approvals list (page, menu entry, export): dashboard viewers as before, anyone with approval:decide,
+ * and a role named as count approver for any warehouse of the hotel (Admin) even without dashboard:view (round 2).
+ */
+export async function canOpenApprovals(db: Db, actor: Actor, hotelId: string): Promise<boolean> {
+  if (!actor.hotelIds.includes(hotelId)) return false;
+  if (can(actor, "dashboard:view") || can(actor, "approval:decide")) return true;
+  return (await db.countApprover.count({ where: { hotelId, roleKey: actor.roleKey } })) > 0;
+}
+
+async function requireOpenApprovals(db: Db, actor: Actor, hotelId: string) {
+  requireHotel(actor, hotelId);
+  if (!(await canOpenApprovals(db, actor, hotelId))) requirePermission(actor, "dashboard:view");
+}
+
 /** Can this user decide any approval at all? (approval:decide, or a role named as count approver in Admin) — checked before the request is even read. */
 export async function requireMayDecide(db: Db, actor: Actor, hotelId: string) {
   requireHotel(actor, hotelId);
@@ -132,8 +147,10 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
         await tx.wasteRecord.update({ where: { id: a.entityId }, data: { status: "REJECTED", approvedById: actor.userId, approvedAt: new Date() } });
       } else if (a.action === "STOCK_ADJUSTMENT") {
         // rejected: nothing is posted; the count goes back to DRAFT for a recount, with the approver's note
-        // (only while it is still waiting: a count another approval already posted is never reopened)
-        await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED" }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
+        // (only while it is still waiting: a count another approval already posted, or one deleted, is never reopened).
+        // Rejecting a request whose count is no longer waiting still succeeds on purpose: it is how a stale duplicate
+        // request is cleared, since approving it is refused
+        await tx.stockCount.updateMany({ where: { id: a.entityId, hotelId, status: "SUBMITTED", deletedAt: null }, data: { status: "DRAFT", rejectionNote: input.note ?? null } });
       }
 
       const updated = await tx.approval.update({
@@ -156,7 +173,7 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
 }
 
 export async function listApprovals(db: Db, actor: Actor, hotelId: string, status: "PENDING" | "APPROVED" | "REJECTED" | "ALL" = "PENDING") {
-  authorize(actor, "dashboard:view", { hotelId });
+  await requireOpenApprovals(db, actor, hotelId);
   const rows = await db.approval.findMany({ where: { hotelId, ...(status === "ALL" ? {} : { status }) }, orderBy: { requestedAt: "desc" }, take: 200 });
   return scopeApprovals(db, actor, hotelId, rows);
 }
@@ -182,7 +199,7 @@ export async function scopeApprovals<A extends { action: string; entityId: strin
 
 /** Pending requests and the last decisions the user may see — the /approvals page and its export. */
 export async function approvalsOverview(db: Db, actor: Actor, hotelId: string, historyTake = 30) {
-  authorize(actor, "dashboard:view", { hotelId });
+  await requireOpenApprovals(db, actor, hotelId);
   const [pending, history] = await Promise.all([
     db.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "desc" } }),
     db.approval.findMany({ where: { hotelId, status: { not: "PENDING" } }, orderBy: { decidedAt: "desc" }, take: actor.departmentIds === "ALL" ? historyTake : 500 }),

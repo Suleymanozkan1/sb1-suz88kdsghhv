@@ -1,8 +1,9 @@
 /**
  * Click-everything crawl: on each page, click every visible button / tab / summary one at a time (fresh load per click),
  * answer prompts with a test reason, and record uncaught errors, console errors, /api 5xx and Next.js error pages.
- * Destructive by design — run only against a throwaway database.
- *   npx tsx scripts/qa/click-all.ts --base=http://localhost:3400 --email=admin@grandanatolia.test --password=HotelCost!2026 [--out=file.json]
+ * Destructive by design (it deletes recipes, reverses expenses …) — run only against a throwaway database; it refuses
+ * to start without --allow-destructive.
+ *   npx tsx scripts/qa/click-all.ts --allow-destructive --base=http://localhost:3400 --email=admin@grandanatolia.test --password=HotelCost!2026 [--out=file.json]
  */
 import { writeFileSync } from "node:fs";
 import { chromium, type Page } from "@playwright/test";
@@ -12,6 +13,7 @@ const BASE = arg("base") ?? "http://localhost:3400";
 const EMAIL = arg("email") ?? "admin@grandanatolia.test";
 const PASSWORD = arg("password") ?? "HotelCost!2026";
 const ONLY = arg("only");
+const ALLOW_DESTRUCTIVE = process.argv.includes("--allow-destructive");
 const PAGES = [
   "/", "/admin", "/approvals", "/audit", "/buffet", "/calendar", "/data-quality", "/excel", "/insights/waste", "/insights/price-changes",
   "/imports", "/integrity", "/inventory", "/inventory/counts", "/inventory/counts/summary", "/inventory/ledger", "/menu-engineering", "/minibar",
@@ -36,6 +38,7 @@ async function settle(page: Page) {
 }
 
 async function main() {
+  if (!ALLOW_DESTRUCTIVE) throw new Error("Refusing to run without --allow-destructive: this crawler clicks every button and changes data");
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ baseURL: BASE, acceptDownloads: true });
   const login = await ctx.request.post("/api/auth/login", { data: { email: EMAIL, password: PASSWORD }, headers: { origin: BASE } });
@@ -48,14 +51,24 @@ async function main() {
   page.on("dialog", (d) => d.accept(d.type() === "prompt" ? "QA test reason" : undefined).catch(() => {}));
 
   const pages = [...PAGES];
+  // a navigation that fails is a finding, never the end of the crawl (the report is still written)
+  const go = async (path: string, control: string) => {
+    try {
+      return await page.goto(path);
+    } catch (e) {
+      findings.push({ path, control, kind: "navigation", detail: ((e as Error).message.split("\n")[0] ?? "").slice(0, 200) });
+      return undefined;
+    }
+  };
   for (const list of ["/recipes", "/buffet"]) {
-    await page.goto(list);
+    if (!(await go(list, "discover"))) continue;
     const href = await page.locator(`main a[href^="${list}/"]:not([href$="/new"])`).first().getAttribute("href").catch(() => null);
     if (href) pages.push(href);
   }
   for (const path of pages.filter((p) => !ONLY || p.startsWith(ONLY))) {
     cur = { path, control: "load" };
-    const res = await page.goto(path);
+    const res = await go(path, "load");
+    if (res === undefined) continue;
     await settle(page);
     if (!res || res.status() >= 400) findings.push({ ...cur, kind: "status", detail: String(res?.status()) });
     // every in-app link on the page must resolve
@@ -70,7 +83,10 @@ async function main() {
       if (SKIP.test(c.label)) continue;
       cur = { path, control: c.label };
       if (c.disabled) { clicked.push({ path, control: c.label, result: "disabled" }); continue; }
-      await page.goto(path);
+      if (!(await go(path, c.label))) {
+        clicked.push({ path, control: c.label, result: "reload failed" });
+        continue;
+      }
       await settle(page);
       const now = await controls(page);
       const target = now.find((n) => n.i === c.i && n.label === c.label) ?? now.find((n) => n.label === c.label);

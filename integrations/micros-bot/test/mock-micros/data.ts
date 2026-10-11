@@ -7,7 +7,7 @@ export interface MockInvoice { id: string; supplier: string; invoiceNo: string; 
 export interface MockCovers { outlet: string; meal: string; covers: number }
 export interface MockMinibar { room: string; code: string; item: string; qty: number; ref: string; time: string }
 export interface MockProduct { code: string; name: string; unit: string; pack: number | null; packUnit: string; vat: number; group: string; created: string /* YYYY-MM-DD */ }
-export interface MockStats { available: number; occupied: number; guests: number; revenue: number; ooo: number; rooms: string[] }
+export interface MockStats { available: number; occupied: number; guests: number; revenue: number; ooo: number; oos: number; rooms: string[] }
 
 const OUTLETS = ["Lobby Bar", "A la Carte Restoran", "Havuz Bar"];
 const MENU: Array<[string, string, number]> = [
@@ -84,7 +84,7 @@ export function productsAll(): MockProduct[] {
 }
 
 export function statsFor(_day: string): MockStats {
-  return { available: 248, occupied: 3, guests: 5, revenue: 123456.78, ooo: 2, rooms: ["101", "214", "305"] };
+  return { available: 248, occupied: 3, guests: 5, revenue: 123456.78, ooo: 2, oos: 1, rooms: ["101", "214", "305"] };
 }
 
 /** Format like Micros does in Turkish locale: 1.234,50 */

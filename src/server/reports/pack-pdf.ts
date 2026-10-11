@@ -7,7 +7,7 @@ import PDFDocument from "pdfkit";
 import type { Column, FullCostExport, Section } from "../services/export";
 import { makeT, type Locale } from "@/i18n/core";
 import { TR } from "@/i18n/tr";
-import { xlLang } from "../excel/i18n";
+import { displayNames, xlLang } from "../excel/i18n";
 
 const FONT = path.join(process.cwd(), "assets", "fonts", "DejaVuSans.ttf");
 const FONT_BOLD = path.join(process.cwd(), "assets", "fonts", "DejaVuSans-Bold.ttf");
@@ -45,7 +45,9 @@ function fmt(v: string | null | undefined, type: Column["type"], cur: string): s
   }
 }
 
-export async function renderManagementPack(e: FullCostExport, x: PackExtras, locale: Locale = "en"): Promise<Buffer> {
+export async function renderManagementPack(source: FullCostExport, x: PackExtras, locale: Locale = "en"): Promise<Buffer> {
+  // product / recipe names in title case like on screen (display only)
+  const e = displayNames(source, locale);
   const t = makeT(locale);
   /** engine words (statement lines, enums, notes, check names): translated when the dictionary knows them, else as is */
   // engine words and server texts with numbers inside ("10.4% price", "3 pending")
@@ -158,7 +160,7 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
   doc.text(t("Period hash {hash}… (reproducibility of closed months)", { hash: e.meta.periodHash.slice(0, 24) }));
   doc.text(t("Scope: {scope}", { scope: e.meta.scope.departments === "ALL" ? t("all departments") : (e.meta.scope.departments as string[]).join(", ") }));
   doc.moveDown(1.5).fillColor(INK).font("bold").fontSize(11).text(t("Contents"));
-  doc.font("body").fontSize(9).text(["Executive summary", "Food & beverage cost", "Rooms cost", "Labor · Energy · Laundry · Housekeeping · Engineering", "Purchasing & supplier changes", "Waste", "Stock", "Variance & unexplained usage", "Top cost drivers", "Budget", "Recommended actions", "Month-end checklist & reconciliation" ].map((c, i) => `${i + 1}. ${t(c)}`).join("\n"));
+  doc.font("body").fontSize(9).text(["Executive summary", "Food & beverage cost", "Rooms cost", "Labor · Energy · Laundry · Housekeeping · Engineering", "Purchasing & supplier changes", "Waste", "Stock", "Variance & unexplained usage", "P&L cost view", "Recommended actions", "Month-end checklist & reconciliation" ].map((c, i) => `${i + 1}. ${t(c)}`).join("\n"));
 
   // ── 1 Executive summary ──
   doc.addPage();
@@ -205,9 +207,8 @@ export async function renderManagementPack(e: FullCostExport, x: PackExtras, loc
   table(S.topVariance, [["rank", 0.08], ["product", 0.32], ["theoreticalCost", 0.2], ["actualCost", 0.2], ["variance", 0.2]], { title: t("Top theoretical vs actual differences"), max: 10 });
   table(S.unexplainedVariance, [["product", 0.34], ["theoretical", 0.16], ["actual", 0.16], ["knownWaste", 0.14], ["unexplained", 0.2]], { title: t("Unexplained variance (largest)"), max: 10, filter: (r) => Number(r.unexplained ?? 0) > 0 });
 
-  h1(t("9. Budget"));
-  table(S.budgetVariance, [["category", 0.22], ["budget", 0.15], ["actual", 0.15], ["variance", 0.15], ["variancePct", 0.11], ["ytdVariance", 0.22]], { title: t("Budget vs actual"), max: 25 });
-  table(S.pnl, [["line", 0.6], ["value", 0.25], ["status", 0.15]], { title: t("P&L cost view"), max: 20 });
+  h1(t("9. P&L cost view"));
+  table(S.pnl, [["line", 0.6], ["value", 0.25], ["status", 0.15]], { max: 20 });
 
   h1(t("10. Recommended actions"));
   table(S.costSaving, [["driver", 0.13], ["item", 0.37], ["saving", 0.14], ["owner", 0.14], ["dueDate", 0.1], ["status", 0.12]], { title: t("Saving actions and opportunities"), max: 18 });

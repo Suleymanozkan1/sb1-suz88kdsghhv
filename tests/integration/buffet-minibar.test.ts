@@ -6,7 +6,7 @@ import { prisma, makeHotel, makeProduct, day, ledgerInvariant } from "./fixtures
 import { postMovement } from "@/server/services/ledger";
 import { createRecipe, approveVersion } from "@/server/services/recipes";
 import { createSession, addLine, closeSession, sessionReport, periodReport, forecast, updateSession, sessionDefaults } from "@/server/services/buffet";
-import { setPar, recordMovement, countRoom, minibarReport, minibarInvariant, restockToParLevels, roomGrid, MINIBAR_STORE } from "@/server/services/minibar";
+import { setPar, recordMovement, countRoom, minibarReport, minibarInvariant, restockToParLevels, roomGrid, roomQty, MINIBAR_STORE } from "@/server/services/minibar";
 import { theoreticalVsActual } from "@/server/services/variance";
 import { buildFullCostExport } from "@/server/services/export";
 import type { Actor } from "@/server/auth/actor";
@@ -207,6 +207,22 @@ describe("minibar E2E (spec 282 / 334: Room 215)", () => {
       expect(e.checks.find((c) => c.check === name)?.status, name).toBe("PASS");
     }
     expect(e.checks.filter((c) => c.status === "FAIL")).toEqual([]);
+  });
+
+  it("two overlapping submissions of the same room count post the difference once", async () => {
+    const room216 = (await prisma.room.findFirstOrThrow({ where: { hotelId: h.hotel.id, number: "216" } })).id;
+    await restockToParLevels(prisma, cc, h.hotel.id, room216, day("2026-09-08"));
+    const body = { roomId: room216, countedAt: day("2026-09-09"), lines: [{ productId: P.coke, countedQty: 2 }, { productId: P.water, countedQty: 4 }], idempotencyKey: "count-216-a" };
+    const [a, b] = await Promise.all([countRoom(prisma, cc, h.hotel.id, body), countRoom(prisma, cc, h.hotel.id, body)]);
+    expect(a.map((m) => m.id)).toEqual(b.map((m) => m.id));
+    const counts = await prisma.minibarMovement.findMany({ where: { hotelId: h.hotel.id, roomId: room216, type: "COUNT" } });
+    expect(counts.map((m) => [m.productId, m.quantity.toString(), m.idempotencyKey])).toEqual([[P.coke, "-2", `count-216-a:${P.coke}`]]);
+    expect((await roomQty(prisma, h.hotel.id, room216, P.coke!)).toString()).toBe("2");
+    // a later retry of the same request is a no-op too; a new key is a new count
+    expect((await countRoom(prisma, cc, h.hotel.id, body)).map((m) => m.id)).toEqual(a.map((m) => m.id));
+    await countRoom(prisma, cc, h.hotel.id, { ...body, lines: [{ productId: P.coke, countedQty: 1 }], idempotencyKey: "count-216-b" });
+    expect((await roomQty(prisma, h.hotel.id, room216, P.coke!)).toString()).toBe("1");
+    expect((await minibarInvariant(prisma, h.hotel.id)).ok).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { allocate, previewRule, costStack } from "@/domain/allocation";
 import { D, sum } from "@/domain/money";
-import { roomCosts, rollup, roomRevenueKpis, prorateMonth, monthsInRange, roomKpis, meterConsumption, laundryUnitCosts, nightsInRange, stayInPeriod, emptyComponents, componentOfCategory } from "@/domain/rooms";
+import { roomCosts, rollup, roomRevenueKpis, prorateMonth, monthsInRange, roomKpis, meterConsumption, laundryUnitCosts, nightsInRange, stayInPeriod, emptyComponents, componentOfCategory, roomCostFormRows } from "@/domain/rooms";
 
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
 
@@ -154,5 +154,12 @@ describe("meters and laundry (spec 108, 110–111)", () => {
   it("laundry unit costs", () => {
     const u = laundryUnitCosts({ cost: 45000, kg: 9000, pieces: 30000, occupiedRooms: 3000 });
     expect([u.perKg!.toString(), u.perPiece!.toString(), u.perOccupiedRoom!.toString()]).toEqual(["5", "1.5", "15"]);
+  });
+});
+
+describe("room expense form rows", () => {
+  it("skips only fully empty rows; an amount without a name blocks the save", () => {
+    expect(roomCostFormRows([{ name: " HK meals ", amount: " 3000 " }, { name: "", amount: "" }, { name: "Uniforms", amount: "" }, { name: "  ", amount: " " }])).toEqual({ items: [{ name: "HK meals", amount: "3000" }, { name: "Uniforms", amount: "0" }], unnamed: [] });
+    expect(roomCostFormRows([{ name: "HK meals", amount: "1" }, { name: " ", amount: "250" }, { name: "", amount: "0" }]).unnamed).toEqual([2, 3]);
   });
 });

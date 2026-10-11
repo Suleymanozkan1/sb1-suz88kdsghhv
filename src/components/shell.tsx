@@ -5,19 +5,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Building2, LogOut, Menu, X } from "lucide-react";
 import { cn } from "./ui";
-import { NAV } from "./nav";
+import { navItems } from "./nav";
 import { ApiError, call } from "@/lib/client";
 import { setLocaleCookie, useLocale, useT } from "@/i18n/client";
 import type { Locale } from "@/i18n/core";
 
 
-export function Shell({ user, hotels, hotelId, permissions, pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; pendingApprovals: number; children: React.ReactNode }) {
+export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; navFlags?: string[]; pendingApprovals: number; children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const t = useT();
   const locale = useLocale();
-  const items = NAV.filter((n) => permissions.includes(n.perm));
+  const items = navItems(permissions, navFlags);
   const isActive = (href: string) => (href === "/" ? path === "/" : path === href || (path.startsWith(`${href}/`) && !items.some((i) => i.href !== href && i.href.startsWith(href) && path.startsWith(i.href))));
 
   const [busy, setBusy] = useState(false);
