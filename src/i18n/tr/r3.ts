@@ -11,6 +11,7 @@ export const r3: Record<string, string> = {
   "Count Results": "Sayım sonuçları",
   "On-house & Hospitality": "Ödenmez ve İkram",
   "Cost Review": "Maliyet Değerlendirmesi",
+  "Show all products": "Tüm ürünleri göster",
 };
 
 /** Server messages of the shared round-3 changes. */

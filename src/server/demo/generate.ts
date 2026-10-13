@@ -22,7 +22,7 @@ import { ROLE_TEMPLATES, SUPER_ADMIN_TEMPLATE } from "../auth/permissions";
 import type { Actor } from "../auth/actor";
 import { actorForUser } from "../auth/actors";
 import { createRecipe, approveVersion, createVersion } from "../services/recipes";
-import { createSession, addLine, closeSession } from "../services/buffet";
+import { createSession, addLine, saveBreakfastCount } from "../services/buffet";
 import { setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../services/minibar";
 import { commitOccupancy, commitReservations } from "../services/pms";
 import { createRule, postAllocation } from "../services/allocation";
@@ -33,6 +33,7 @@ import { ensureDefaultReasons } from "../services/comps";
 import { CATALOG, DEMO_DEPARTMENTS, DEMO_WAREHOUSES, DISH_WORDS, FIRST_NAMES, LAST_NAMES, POSITIONS, ROOM_TYPES, SEMI_FINISHED, SUPPLIER_WORDS, type CatalogCategory, type CatalogItem } from "./catalog";
 import { demoNames, type DemoLocale, type DemoNames } from "./catalog-tr";
 import { BulkLedger } from "./engine";
+import { BREAKFAST_DISH, BREAKFAST_PRODUCTS, BREAKFAST_BUFFET, breakfastOfDay, type BreakfastMode } from "./breakfast";
 import type { DemoProfile } from "./profiles";
 
 // ───────────────────────── helpers ─────────────────────────
@@ -428,8 +429,7 @@ async function masterData(ctx: Ctx, index: number) {
   const rows: Prisma.ProductCreateManyInput[] = [];
   const convs: Prisma.UnitConversionCreateManyInput[] = [];
   let seq = 0;
-  for (const [i, { c, it }] of all.entries()) {
-    if (skip.has(i)) continue;
+  const addProduct = (c: CatalogCategory, it: CatalogItem) => {
     const [name, stockUnit, pu, size, price] = it;
     const id = randomUUID();
     const sku = `${c.code}-${String(++seq).padStart(3, "0")}`;
@@ -441,6 +441,13 @@ async function masterData(ctx: Ctx, index: number) {
     const meta: ProductMeta = { id, sku, name, cat: c, item: it, categoryId: catId.get(c.code)!, stockUnit, purchaseUnit, caseSize: size, price: p, taxRatePct: c.group === "FOOD" ? 1 : 20, suppliers };
     ctx.products.push(meta);
     ctx.byCat.set(c.code, [...(ctx.byCat.get(c.code) ?? []), meta]);
+  };
+  for (const [i, { c, it }] of all.entries()) if (!skip.has(i)) addProduct(c, it);
+  // the breakfast buffet's products are always there, whatever the profile's size leaves out (no draws: the rest stays as it was)
+  for (const b of BREAKFAST_BUFFET) {
+    const c = CATALOG.find((x) => x.code === b.cat);
+    const it = c?.items.find((x) => x[0] === b.name) ?? BREAKFAST_PRODUCTS[b.cat]?.find((x) => x[0] === b.name);
+    if (c && it && !ctx.products.some((p) => p.name === b.name)) addProduct(c, it);
   }
   await db.product.createMany({ data: rows });
   await db.unitConversion.createMany({ data: convs });
@@ -663,7 +670,8 @@ interface SimResult {
   stock: number;
   sales: number;
   waste: number;
-  buffetPlan: Array<{ day: Date; covers: number; expected: number; items: Array<{ productId: string; unit: string; perCover: number }>; level: number }>;
+  /** breakfast days: items are products or the buffet's hot dish (BREAKFAST_DISH) */
+  buffetPlan: Array<{ day: Date; covers: number; expected: number; items: Array<{ productId?: string; dish?: boolean; unit: string; perCover: number; mode: BreakfastMode }>; level: number }>;
   minibarProducts: string[];
 }
 
@@ -755,7 +763,14 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   // housekeeping, engineering and buffet requirements
   const amen = ctx.byCat.get("AMEN") ?? [];
   const clean = [...(ctx.byCat.get("CLEAN") ?? []), ...(ctx.byCat.get("CHEM") ?? [])];
-  const buffetItems = [...ctx.products.filter((p) => ["Eggs", "White Cheese", "Kaşar", "Tomato", "Cucumber", "Black Olives", "Green Olives", "Honey", "Strawberry Jam", "Butter", "Simit", "Watermelon", "Whole Milk"].includes(p.name))];
+  // the open-buffet breakfast (r3 §4) has its own draws: the rest of the simulation does not depend on its assortment
+  const brnd = prng(hashSeed(`${ctx.profile.name}:${ctx.hotel.code}:breakfast`));
+  const byName = new Map(ctx.products.map((p) => [p.name, p]));
+  const dishParts = BREAKFAST_DISH.lines.flatMap(([name, q, unit]) => {
+    const p = byName.get(name);
+    return p ? [{ productId: p.id, perKg: unit === "g" ? q / 1000 : q }] : [];
+  });
+  const hasDish = dishParts.length === BREAKFAST_DISH.lines.length;
   const buffetDays = new Set<string>();
   const buffetPlan: SimResult["buffetPlan"] = [];
   for (let i = 0; i < ctx.profile.buffetSessions && ctx.days.length > 2; i++) {
@@ -765,13 +780,21 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     const n = pms.nightly.get(ymd(d)) ?? { occ: 0, guests: 0, rev: 0 };
     const expected = Math.max(40, rint(n.guests * 0.85));
     const level = [0.02, 0.05, 0.1, 0.16][i % 4]!; // normal / medium / high / critical (spec 70)
-    buffetPlan.push({ day: d, covers: Math.max(30, rint(expected * (0.85 + rnd() * 0.25))), expected, level, items: buffetItems.map((p) => ({ productId: p.id, unit: p.stockUnit, perCover: p.stockUnit === "pc" ? (p.name === "Eggs" ? 1.2 : 0.3) : p.name === "Whole Milk" ? 0.08 : 0.03 + rnd() * 0.02 })) });
+    const items = breakfastOfDay(brnd).flatMap((b): SimResult["buffetPlan"][number]["items"] => {
+      if (b.cat === "DISH") return hasDish ? [{ dish: true, unit: "kg", perCover: b.perCover, mode: b.mode }] : [];
+      const p = byName.get(b.name);
+      return p ? [{ productId: p.id, unit: p.stockUnit, perCover: b.perCover, mode: b.mode }] : [];
+    });
+    buffetPlan.push({ day: d, covers: Math.max(30, rint(expected * (0.85 + brnd() * 0.25))), expected, level, items });
   }
+  // the day before, the kitchen store gets the breakfast's issues (a dish: its ingredients) with a margin
   const buffetNeed = new Map<string, Map<string, Decimal>>();
   for (const b of buffetPlan) {
     const prev = ymd(new Date(b.day.getTime() - DAY));
     const m = buffetNeed.get(prev) ?? new Map<string, Decimal>();
-    for (const it of b.items) m.set(it.productId, (m.get(it.productId) ?? ZERO).plus(D(b.expected * it.perCover * 1.35)));
+    for (const it of b.items) {
+      for (const [p, perCover] of it.productId ? [[it.productId, it.perCover] as const] : dishParts.map((x) => [x.productId, it.perCover * x.perKg] as const)) m.set(p, (m.get(p) ?? ZERO).plus(D(b.expected * perCover * 1.35)));
+    }
     buffetNeed.set(prev, m);
   }
   const minibarProducts = (ctx.byCat.get("BEV") ?? []).filter((p) => p.stockUnit === "pc").slice(0, 5).map((p) => p.id);
@@ -1123,37 +1146,51 @@ async function buffetPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   }));
 
   lap("pms");
-  // buffets through the real service (spec 68-70): production + refill, leftovers by severity level
+  // breakfast days through the real service (r3 §4): issue + refill from the kitchen store, then the breakfast count
+  // (what is left of each item: back to stock or waste); leftovers grow with the day's severity level (spec 70)
   let buffets = 0;
   const overproduction: string[] = [];
+  const byName = new Map(ctx.products.map((p) => [p.name, p]));
+  const dishLines = BREAKFAST_DISH.lines.flatMap(([name, q, unit]) => {
+    const p = byName.get(name);
+    return p ? [{ p, q, unit, perKg: unit === "g" ? q / 1000 : q }] : [];
+  });
+  let dishId: string | null = null;
+  if (sim.buffetPlan.some((b) => b.items.some((i) => i.dish)) && dishLines.length === BREAKFAST_DISH.lines.length) {
+    const r = await createRecipe(db, admin, H, { code: BREAKFAST_DISH.code, name: ctx.n.dish(BREAKFAST_DISH.name, ""), type: "BREAKFAST", departmentId: ctx.dept.BRKF, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: ctx.n.t("Standard batch"), lines: dishLines.map(({ p, q, unit }) => ({ productId: p.id, quantity: String(q), unit })) } });
+    await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: new Date(ctx.start.getTime() - DAY) });
+    dishId = r.id;
+  }
+  const onHand = async (productId: string) => Number((await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId } } }))?.quantity.toString() ?? 0);
   for (const b of sim.buffetPlan) {
-    const stocked = await db.stockBalance.count({ where: { warehouseId: ctx.wh.KITCH!, productId: { in: b.items.map((x) => x.productId) }, quantity: { gt: 1 } } });
+    const stocked = await db.stockBalance.count({ where: { warehouseId: ctx.wh.KITCH!, productId: { in: b.items.flatMap((x) => (x.productId ? [x.productId] : [])) }, quantity: { gt: 1 } } });
     if (!stocked) continue;
     const s = await createSession(db, admin, H, { departmentId: ctx.dept.BRKF, warehouseId: ctx.wh.KITCH, type: "BREAKFAST", serviceDate: b.day, expectedCovers: b.expected, includedCovers: b.covers - rint(b.covers * 0.08), paidCovers: rint(b.covers * 0.08), occupiedRooms: rint(b.covers / 1.9), inHouseGuests: rint(b.covers * 1.1), boardBasis: ctx.hotel.resort ? "AI" : "BB" });
-    const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
+    const count: Array<{ key: string; remaining: string; mode: BreakfastMode }> = [];
     for (const it of b.items) {
-      const pos = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId: it.productId } } });
-      const have = Number(pos?.quantity.toString() ?? 0);
-      const planned = b.expected * it.perCover;
-      const first = Math.min(have * 0.6, planned * 0.8);
-      const refill = Math.min(have * 0.35, planned * (0.25 + rnd() * 0.15));
+      const key = it.productId ?? dishId;
+      if (!key) continue;
+      // what the store can give (a dish: as much as its scarcest ingredient allows)
+      let have = it.productId ? await onHand(it.productId) : Infinity;
+      if (!it.productId) for (const l of dishLines) have = Math.min(have, (await onHand(l.p.id)) / l.perKg);
       const round = (x: number) => (it.unit === "pc" ? Math.trunc(x) : +x.toFixed(3));
-      if (round(first) <= 0) continue;
-      await addLine(db, admin, H, s.id, { kind: "PRODUCTION", productId: it.productId, quantity: round(first), unit: it.unit });
-      if (round(refill) > 0) await addLine(db, admin, H, s.id, { kind: "REFILL", productId: it.productId, quantity: round(refill), unit: it.unit });
-      const produced = round(first) + (round(refill) > 0 ? round(refill) : 0);
-      const left = produced * (b.level + rnd() * 0.02);
-      const waste = round(left * 0.6);
-      const staff = round(left * 0.15);
-      if (waste > 0) leftovers.push({ key: it.productId, quantity: String(waste), class: "WASTE" });
-      if (staff > 0) leftovers.push({ key: it.productId, quantity: String(staff), class: "STAFF_MEAL" });
+      const issued = Math.min(have * 0.95, b.expected * it.perCover * (1.04 + b.level + rnd() * 0.04));
+      const first = round(issued * 0.75);
+      const refill = round(issued - first);
+      if (first <= 0) continue;
+      const ref = it.productId ? { productId: it.productId } : { recipeId: key };
+      await addLine(db, admin, H, s.id, { kind: "PRODUCTION", ...ref, quantity: first, unit: it.unit });
+      if (refill > 0) await addLine(db, admin, H, s.id, { kind: "REFILL", ...ref, quantity: refill, unit: it.unit });
+      const total = first + Math.max(refill, 0);
+      const eaten = b.covers * it.perCover * (0.92 + rnd() * 0.12);
+      count.push({ key, remaining: String(Math.max(0, round(Math.max(total - eaten, total * 0.02)))), mode: it.mode });
     }
-    if (!(await db.buffetLine.count({ where: { sessionId: s.id } }))) continue;
-    await closeSession(db, admin, H, s.id, { actualCovers: b.covers, leftovers });
+    if (!count.length) continue;
+    await saveBreakfastCount(db, admin, H, s.id, { lines: count });
     if (b.level >= 0.1) overproduction.push(s.id);
     buffets++;
   }
-  scenario(ctx, "S08_BUFFET_OVERPRODUCTION", "Buffets with 10-18 % leftovers (high / critical waste levels)", "EDGE_CASE", "Buffet waste % HIGH / CRITICAL; cost per cover", "BuffetSession", overproduction);
+  scenario(ctx, "S08_BUFFET_OVERPRODUCTION", "Breakfast days with 10-18 % more issued than needed (high / critical leftovers)", "EDGE_CASE", "Buffet waste % HIGH / CRITICAL; cost per cover", "BuffetSession", overproduction);
 
   lap(`buffets ${buffets}`);
 }

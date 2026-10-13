@@ -12,10 +12,11 @@ import { getT } from "@/i18n/server";
 import { MovementForm } from "./movement-form";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
+import { ProductChip } from "@/components/product-chip";
 
 export const metadata = { title: "Inventory" };
 
-export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ group?: string; level?: string; from?: string; to?: string }> }) {
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ group?: string; level?: string; from?: string; to?: string; productId?: string }> }) {
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
@@ -24,7 +25,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const res = await guarded(() => inventoryStatus(prisma, actor, hotelId, { categoryGroup: sp.group || undefined, period: range }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const inv = res.data;
-  const rows = level ? inv.rows.filter((r) => r.level === level) : inv.rows;
+  // a single product: from the cost review's critical-stock rows
+  const rows = inv.rows.filter((r) => (!level || r.level === level) && (!sp.productId || r.productId === sp.productId));
   const [warehouses, departments] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } })]);
   const cur = hotel.baseCurrency;
   // status cards filter the list; clicking the active one clears the filter
@@ -34,7 +36,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title={t("Inventory")} subtitle={t("Opening, in, out and closing stock for the selected dates; current quantity, unit cost and stock value from the ledger.")} exportKey="inventory" actions={
-        <FilterBar from={range.fromStr} to={range.toStr}>
+        <FilterBar from={range.fromStr} to={range.toStr} hidden={{ productId: sp.productId }}>
           <div><Label htmlFor="group">{t("Group")}</Label><Select id="group" name="group" defaultValue={sp.group ?? ""} className="w-36"><option value="">{t("All")}</option>{["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING"].map((g) => <option key={g} value={g}>{t(g)}</option>)}</Select></div>
           <div><Label htmlFor="level">{t("Status")}</Label><Select id="level" name="level" defaultValue={level ?? ""} className="w-36"><option value="">{t("All")}</option>{STOCK_LEVELS.map((l) => <option key={l} value={l}>{t(LEVEL_LABEL[l]!)}</option>)}</Select></div>
         </FilterBar>
@@ -52,7 +54,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
         </Card>
       )}
-      <Card className="mt-4" padded={false} title={`${t("Stock by product")}${level ? ` · ${t(LEVEL_LABEL[level]!)}` : ""} (${rows.length})`}>
+      <Card className="mt-4" padded={false} title={`${t("Stock by product")}${level ? ` · ${t(LEVEL_LABEL[level]!)}` : ""} (${rows.length})`} actions={sp.productId && rows[0] ? <ProductChip name={rows[0].name} clear={href(level)} /> : undefined}>
         <Table>
           <thead><tr><Th>{t("Product")}</Th><Th>{t("Group")}</Th><Th align="right">{t("Opening stock")}</Th><Th align="right">{t("Stock in")}</Th><Th align="right">{t("Stock out")}</Th><Th align="right">{t("Closing stock (period end)")}</Th><Th align="right">{t("Current stock")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Open PO")}</Th><Th align="right">{t("Days of stock")}</Th><Th>{t("Status")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">

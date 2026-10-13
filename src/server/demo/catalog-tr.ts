@@ -57,6 +57,9 @@ export const PRODUCT_TR: Record<string, string> = {
   // kahvaltılık
   Honey: "Bal", "Strawberry Jam": "Çilek reçeli", "Black Olives": "Siyah zeytin", "Green Olives": "Yeşil zeytin", Tahini: "Tahin", Molasses: "Pekmez",
   "Croissant Frozen": "Dondurulmuş kruvasan", Simit: "Simit", "Corn Flakes": "Mısır gevreği", "Toast Bread": "Tost ekmeği",
+  // açık büfe kahvaltı (breakfast.ts)
+  "Lor Cheese": "Lor peyniri", "String Cheese": "Dil peyniri", "Beef Salami": "Dana salam", "Green Pepper": "Çarliston biber",
+  "Sour Cherry Jam": "Vişne reçeli", "Apricot Jam": "Kayısı reçeli", "Poğaça": "Poğaça", "Village Bread": "Köy ekmeği",
   // temizlik
   "Floor Cleaner": "Yer temizleyici", "Glass Cleaner": "Cam temizleyici", "Microfiber Cloth": "Mikrofiber bez", "Garbage Bags": "Çöp poşeti",
   "Toilet Paper": "Tuvalet kâğıdı", "Paper Towels": "Kâğıt havlu", "Mop Head": "Paspas başlığı",
@@ -128,7 +131,7 @@ export const DISH_TR: Record<string, string> = {
   // kahvaltı
   Menemen: "Menemen", "Cheese Omelette": "Peynirli Omlet", "Sucuk with Eggs": "Sucuklu Yumurta", "Turkish Breakfast Plate": "Kahvaltı Tabağı",
   Pancakes: "Pankek", "Granola Bowl": "Granola Kasesi", "Poached Eggs": "Poşe Yumurta", "French Toast": "Yumurtalı Ekmek", "Simit Plate": "Simit Tabağı",
-  "Fruit Plate": "Meyve Tabağı",
+  "Fruit Plate": "Meyve Tabağı", "Buffet Menemen": "Açık Büfe Menemen",
   // pastane
   Tiramisu: "Tiramisu", Cheesecake: "Cheesecake", "Chocolate Soufflé": "Çikolatalı Sufle", Baklava: "Baklava", "Künefe": "Künefe",
   Profiterole: "Profiterol", "Apple Pie": "Elmalı Turta", Kazandibi: "Kazandibi", "Fruit Tart": "Meyveli Tart", Brownie: "Brownie",
