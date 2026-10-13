@@ -45,7 +45,7 @@ export function embedUrl(url: string): { kind: "iframe" | "video"; src: string }
   return { kind: "video", src: url };
 }
 
-/** Info icon next to the page title: hover or focus shows the page description, a tap toggles it (mobile). */
+/** Info icon next to the page title: hover or focus shows the page description; a tap opens it (a tap focuses too, so it never toggles closed), a tap outside or Escape closes it. */
 export function PageInfo({ children }: { children: ReactNode }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -62,7 +62,7 @@ export function PageInfo({ children }: { children: ReactNode }) {
   }, [open]);
   return (
     <span ref={ref} className="relative inline-flex align-middle" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" aria-label={t("About this page")} aria-expanded={open} aria-describedby={open ? id : undefined} onClick={() => setOpen((o) => !o)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} className="rounded-full p-0.5 text-ink-400 hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+      <button type="button" aria-label={t("About this page")} aria-expanded={open} aria-describedby={open ? id : undefined} onClick={() => setOpen(true)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} className="rounded-full p-0.5 text-ink-400 hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
         <Info className="h-4 w-4" aria-hidden />
       </button>
       {open && (
