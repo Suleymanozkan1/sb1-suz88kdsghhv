@@ -33,10 +33,11 @@ async function main() {
 
   // 3. issues (only when the day has none yet: the script can be re-run)
   {
-    const list = process.env.ISSUES === "rest" ? ([["Tomato", /Tomato/, "12"], ["Egg", /Egg \(L\)/, "420"], ["Cheddar", /Cheddar Slices/, "2"]] as const) : ([["Cheddar", /Cheddar Slices/, "7,5"], ["Tomato", /Tomato/, "12"], ["Egg", /Egg \(L\)/, "420"], ["Cheddar", /Cheddar Slices/, "2"]] as const);
+    const list = process.env.ISSUES === "none" ? [] : process.env.ISSUES === "rest" ? ([["Cheddar", /Cheddar Slices/, "2"]] as const) : ([["Cheddar", /Cheddar Slices/, "7,5"], ["Tomato", /Tomato/, "12"], ["Egg", /Egg \(L\)/, "420"], ["Cheddar", /Cheddar Slices/, "2"]] as const);
     for (const [search, name, q] of list) {
-      const change = page.getByRole("button", { name: "Değiştir" });
+      const change = page.getByRole("button", { name: /^Değiş/ });
       if (await change.count()) await change.click();
+      if (!(await page.locator("#bl-item").count())) { await page.screenshot({ path: `${outDir}/dbg.png`, fullPage: true }); console.log("buttons:", await page.getByRole("button").allTextContents()); }
       const box = page.locator("#bl-item");
       await box.click();
       await box.fill(search);

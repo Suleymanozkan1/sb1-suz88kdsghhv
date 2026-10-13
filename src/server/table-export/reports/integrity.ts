@@ -5,7 +5,8 @@ import type { T } from "@/i18n/core";
 import type { ReportDef } from "../types";
 import { NAV } from "@/components/nav";
 
-const value = (v: FindingValue, x: string, t: T, currency: string) => (v.kind === "text" ? t(x) : v.kind === "money" ? money(x, currency) : v.kind === "qty" ? qty(x, v.unit) : x);
+// a typographic minus: "-4 pc" would be read (and guarded) as a formula by spreadsheet programs
+const value = (v: FindingValue, x: string, t: T, currency: string) => (v.kind === "text" ? t(x) : v.kind === "money" ? money(x, currency) : v.kind === "qty" ? qty(x, v.unit) : x).replace(/^-/, "\u2212");
 
 /** The page a finding opens, by its menu name (the longest menu path the link starts with). */
 const pageOf = (href: string | null) => {

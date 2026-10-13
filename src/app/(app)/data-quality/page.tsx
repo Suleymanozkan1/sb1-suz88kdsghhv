@@ -74,8 +74,8 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
                 <tbody className="divide-y divide-ink-100">
                   {selected.items.map((i) => (
                     <tr key={i.id} className="align-top hover:bg-ink-50">
-                      <Td className="whitespace-normal font-medium">{i.href ? <Link href={i.href} className="text-ink-900 hover:text-brand-700 hover:underline"><Title>{i.name}</Title></Link> : <Title>{i.name}</Title>}</Td>
-                      <Td className="whitespace-normal text-sm">{i.problems.map((p, n) => <span key={n} className="block">{dqText(t, p)}</span>)}</Td>
+                      <Td className="whitespace-normal font-medium">{i.href ? <Link href={i.href} className="text-ink-900 hover:text-brand-700 hover:underline">{i.isName ? <Title>{i.name}</Title> : i.name}</Link> : i.isName ? <Title>{i.name}</Title> : i.name}</Td>
+                      <Td className="whitespace-normal text-sm">{i.problems.map((p, n) => <span key={n} className="block max-w-xl">{dqText(t, p)}</span>)}</Td>
                       <Td>{i.href ? <Link href={i.href} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">{t(i.fix)} <ArrowRight className="h-3.5 w-3.5" /></Link> : <span className="text-xs text-ink-400">{t(i.fix)}</span>}</Td>
                     </tr>
                   ))}

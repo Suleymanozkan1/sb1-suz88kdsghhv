@@ -34,8 +34,8 @@ export const dataQuality: ReportDef = {
         },
         {
           title: selected ? t(selected.label) : t("Details"),
-          columns: [{ key: "check", header: t("Check") }, { key: "item", header: t("Record") }, { key: "problem", header: t("Problem") }, { key: "fix", header: t("Where to fix") }],
-          rows: listed.flatMap((c) => c.items.map((i) => ({ check: t(c.label), item: i.name, problem: i.problems.map((p) => dqText(t, p)).join(" · "), fix: t(i.fix) }))),
+          columns: [{ key: "check", header: t("Check") }, { key: "record", header: t("Record") }, { key: "problem", header: t("Problem") }, { key: "fix", header: t("Where to fix") }],
+          rows: listed.flatMap((c) => c.items.map((i) => ({ check: t(c.label), record: i.name, problem: i.problems.map((p) => dqText(t, p)).join(" · "), fix: t(i.fix) }))),
         },
       ],
     };

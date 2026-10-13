@@ -389,8 +389,8 @@ export async function closeSession(db: Db, actor: Actor, hotelId: string, sessio
 }
 
 /**
- * Save the breakfast count (kalan + Tüketim/Fire per issued item). Saving again corrects it: the previous count is
- * offset first, so a day is never counted twice. The day then counts as done (status CLOSED, never shown as such).
+ * Save the breakfast count (kalan + Tüketim/Fire per issued item). Saving again corrects it: each changed row of the
+ * previous count is offset first, so a day is never counted twice. The day then counts as done (status CLOSED, never shown as such).
  */
 export async function saveBreakfastCount(db: Db, actor: Actor, hotelId: string, sessionId: string, raw: unknown) {
   const input = countInput.parse(raw);
@@ -412,9 +412,20 @@ export async function saveBreakfastCount(db: Db, actor: Actor, hotelId: string, 
       const leftovers: Leftover[] = input.lines.filter((l) => D(l.remaining).gt(0)).map((l) => ({ key: l.key, quantity: l.remaining, class: MODE_CLASS[l.mode] }));
       const names = await nameMap(tx, s.lines);
       const preview = toMetrics(withLeftovers(s, inputLines, leftovers), names);
+      // a row saved before with the same remainder (and no issue of the item since) keeps its postings
       const previous = s.lines.filter((l) => l.kind === "LEFTOVER");
-      if (previous.length) await undoLeftovers(tx, actor, s, previous, at);
-      await postLeftovers(tx, actor, s, inputLines, leftovers, preview, at);
+      const kept = new Set(
+        leftovers
+          .filter((lo) => {
+            const prev = previous.filter((p) => keyOf(p) === lo.key);
+            const lastIssue = Math.max(...inputLines.filter((i) => keyOf(i) === lo.key).map((i) => i.recordedAt.getTime()));
+            return prev.length === 1 && prev[0]!.leftoverClass === lo.class && D(prev[0]!.quantity.toString()).eq(D(lo.quantity)) && prev[0]!.recordedAt.getTime() >= lastIssue;
+          })
+          .map((lo) => lo.key),
+      );
+      const replaced = previous.filter((p) => !kept.has(keyOf(p)));
+      if (replaced.length) await undoLeftovers(tx, actor, s, replaced, at);
+      await postLeftovers(tx, actor, s, inputLines, leftovers.filter((lo) => !kept.has(lo.key)), preview, at);
       const counted = await tx.buffetSession.update({ where: { id: sessionId }, data: { status: "CLOSED", closedAt: new Date(), closedById: actor.userId } });
       await audit(tx, actor, { hotelId, action: s.status === "CLOSED" ? "BREAKFAST_COUNT_CORRECT" : "BREAKFAST_COUNT", entityType: "BuffetSession", entityId: sessionId, after: { remaining: leftovers.map((l) => ({ key: l.key, quantity: l.quantity, class: l.class })), foodCost: str(preview.buffetFoodCost, 2), wasteCost: str(preview.wasteCost, 2) } });
       return counted;

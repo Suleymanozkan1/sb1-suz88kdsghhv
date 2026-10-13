@@ -7,7 +7,7 @@ import { z } from "zod";
 import { D, Decimal, ZERO, sum } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize, can } from "../auth/actor";
+import { type Actor, authorize, can, departmentScope } from "../auth/actor";
 import { audit } from "./audit";
 import { theoreticalVsActual } from "./variance";
 import { inventoryStatus } from "./insights";
@@ -109,6 +109,48 @@ export async function calendarView(db: Db, actor: Actor, hotelId: string, from: 
   return { tasks, items, counts: { overdue: items.filter((i) => i.status === "OVERDUE").length, done: items.filter((i) => i.status === "DONE").length, upcoming: items.filter((i) => i.status === "UPCOMING" || i.status === "DUE_TODAY").length } };
 }
 
+/** "YYYY-MM" of a real month, else null. */
+export function parseMonth(v: string | null | undefined): { year: number; month: number } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(v ?? "");
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  return month >= 1 && month <= 12 && year >= 2000 && year <= 2100 ? { year, month } : null;
+}
+
+/**
+ * The weeks of a month as the control calendar groups them: days 1–7, 8–14, 15–21, 22–28 and, when the month is
+ * longer than 28 days, 29–end ("5. hafta"). Fixed day blocks instead of Monday weeks: every month has the same
+ * "1. hafta … 4. hafta" and no week straddles two months. `to` is exclusive.
+ */
+export function monthWeeks(year: number, month: number): Array<{ week: number; from: Date; to: Date }> {
+  const end = new Date(Date.UTC(year, month, 1));
+  const out = [];
+  for (let w = 0; w < 5; w++) {
+    const from = new Date(Date.UTC(year, month - 1, 1 + w * 7));
+    if (from >= end) break;
+    const to = w === 4 ? end : new Date(Math.min(end.getTime(), Date.UTC(year, month - 1, 8 + w * 7)));
+    out.push({ week: w + 1, from, to });
+  }
+  return out;
+}
+
+/** The week block (1–5) of a day of the month. */
+export const weekOfMonth = (d: Date) => Math.min(5, Math.floor((d.getUTCDate() - 1) / 7) + 1);
+
+/**
+ * The control calendar of one month, grouped by week. Completed controls stay in their week with the completion
+ * date and the person; nothing is completed automatically (system evidence is only shown next to the task).
+ */
+export async function calendarMonth(db: Db, actor: Actor, hotelId: string, year: number, month: number) {
+  const weeks = monthWeeks(year, month);
+  const from = weeks[0]!.from;
+  const to = weeks[weeks.length - 1]!.to;
+  const v = await calendarView(db, actor, hotelId, from, to);
+  return { ...v, from, to, weeks: weeks.map((w) => ({ ...w, items: v.items.filter((i) => i.dueDate >= w.from && i.dueDate < w.to) })) };
+}
+export type CalendarMonth = Awaited<ReturnType<typeof calendarMonth>>;
+
 const readOnly = (actor: Actor) => ![...actor.permissions].some((p) => !p.endsWith(":view"));
 
 /** The owner role signs off its own control; a period manager signs off any, including tasks without an owner. */
@@ -149,15 +191,23 @@ export async function createTask(db: Db, actor: Actor, hotelId: string, raw: unk
   return t;
 }
 
-// ── Weekly cost review (spec 258) ──
-export async function weeklyReview(db: Db, actor: Actor, hotelId: string, weekEnd: Date) {
+// ── Cost review (spec 258; round 3: any date range, full lists, "top 5" on screen) ──
+export type ReviewRange = { from: Date; to: Date };
+
+/**
+ * The cost review of [from, to): cost increases, waste, unexplained usage, critical stock and recipe changes, each
+ * sorted most important first and complete (the page shows the first 5). Every section follows the user's own rights:
+ * prices need purchase:prices, waste waste:view, variance variance:view, stock inventory:view and recipe changes
+ * recipe:view, all within the user's departments.
+ */
+export async function costReview(db: Db, actor: Actor, hotelId: string, range: ReviewRange) {
   authorize(actor, "report:view", { hotelId });
-  const to = new Date(utc(weekEnd).getTime() + DAY);
-  const from = new Date(to.getTime() - 7 * DAY);
+  const { from, to } = range;
+  if (!(from < to)) throw new DomainError("VALIDATION", "The end date must not be before the start date");
   const [prices, waste, versions] = await Promise.all([
     can(actor, "purchase:prices") ? db.supplierPrice.findMany({ where: { hotelId, priceDate: { gte: from, lt: to }, previousUnitPrice: { not: null } }, include: { product: true, supplier: true } }) : Promise.resolve([]),
-    db.wasteRecord.groupBy({ by: ["productId"], where: { hotelId, status: "APPROVED", wasteDate: { gte: from, lt: to }, ...(actor.departmentIds === "ALL" ? {} : { departmentId: { in: [...actor.departmentIds] } }) }, _sum: { costValue: true, stockQty: true }, _count: true }),
-    db.recipeVersion.findMany({ where: { recipe: { hotelId, deletedAt: null }, approvedAt: { gte: from, lt: to } }, include: { recipe: true }, orderBy: { approvedAt: "desc" } }),
+    can(actor, "waste:view") ? db.wasteRecord.groupBy({ by: ["productId"], where: { hotelId, status: "APPROVED", wasteDate: { gte: from, lt: to }, ...departmentScope(actor) }, _sum: { costValue: true, stockQty: true }, _count: true }) : Promise.resolve([]),
+    can(actor, "recipe:view") ? db.recipeVersion.findMany({ where: { recipe: { hotelId, deletedAt: null, ...departmentScope(actor) }, approvedAt: { gte: from, lt: to } }, include: { recipe: true }, orderBy: { approvedAt: "desc" } }) : Promise.resolve([]),
   ]);
   const products = new Map((await db.product.findMany({ where: { hotelId, id: { in: waste.map((w) => w.productId) } }, select: { id: true, name: true, stockUnit: true } })).map((p) => [p.id, p]));
   const costIncreases = prices
@@ -165,26 +215,42 @@ export async function weeklyReview(db: Db, actor: Actor, hotelId: string, weekEn
       const prev = D(p.previousUnitPrice!.toString());
       const cur = D(p.unitPrice.toString());
       const qty = D(p.quantity?.toString() ?? 0);
-      return { product: p.product.name, supplier: p.supplier.name, date: p.priceDate, previous: prev, current: cur, changePct: prev.gt(0) ? cur.minus(prev).div(prev) : null, impact: cur.minus(prev).times(qty) };
+      return { productId: p.productId, product: p.product.name, supplier: p.supplier.name, date: p.priceDate, previous: prev, current: cur, changePct: prev.gt(0) ? cur.minus(prev).div(prev) : null, impact: cur.minus(prev).times(qty) };
     })
     .filter((x) => x.current.gt(x.previous))
-    .sort((a, b) => b.impact.comparedTo(a.impact))
-    .slice(0, 10);
+    .sort((a, b) => b.impact.comparedTo(a.impact));
   const priceChanges = prices.filter((p) => !D(p.previousUnitPrice!.toString()).eq(D(p.unitPrice.toString()))).length;
   const topWaste = waste
-    .map((w) => ({ product: products.get(w.productId)?.name ?? "?", unit: products.get(w.productId)?.stockUnit ?? "", qty: D(w._sum.stockQty?.toString() ?? 0), cost: D(w._sum.costValue?.toString() ?? 0), records: w._count }))
-    .sort((a, b) => b.cost.comparedTo(a.cost))
-    .slice(0, 10);
-  let topVariance: Array<{ product: string; unexplained: Decimal; variance: Decimal; actual: Decimal }> = [];
+    .map((w) => ({ productId: w.productId, product: products.get(w.productId)?.name ?? "?", unit: products.get(w.productId)?.stockUnit ?? "", qty: D(w._sum.stockQty?.toString() ?? 0), cost: D(w._sum.costValue?.toString() ?? 0), records: w._count }))
+    .sort((a, b) => b.cost.comparedTo(a.cost));
+  let topVariance: Array<{ productId: string; product: string; unexplained: Decimal; variance: Decimal; actual: Decimal }> = [];
   if (can(actor, "variance:view")) {
     const v = await theoreticalVsActual(db, actor, hotelId, { from, to });
-    topVariance = [...v.products].sort((a, b) => b.unexplainedValue.abs().comparedTo(a.unexplainedValue.abs())).slice(0, 10).map((p) => ({ product: p.name, unexplained: p.unexplainedValue, variance: p.varianceValue, actual: p.actual.value }));
+    topVariance = [...v.products].sort((a, b) => b.unexplainedValue.abs().comparedTo(a.unexplainedValue.abs())).map((p) => ({ productId: p.productId, product: p.name, unexplained: p.unexplainedValue, variance: p.varianceValue, actual: p.actual.value }));
   }
-  let critical: Array<{ product: string; qty: Decimal; unit: string; level: string; openPo: Decimal }> = [];
+  let critical: Array<{ productId: string; product: string; qty: Decimal; unit: string; level: string; openPo: Decimal }> = [];
   if (can(actor, "inventory:view")) {
     const inv = await inventoryStatus(db, actor, hotelId);
-    critical = inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK").slice(0, 15).map((r) => ({ product: r.name, qty: r.quantity, unit: r.unit, level: r.level, openPo: r.openPo }));
+    critical = inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK").map((r) => ({ productId: r.productId, product: r.name, qty: r.quantity, unit: r.unit, level: r.level, openPo: r.openPo }));
   }
-  const recipeChanges = versions.map((v) => ({ recipe: v.recipe.name, version: v.version, approvedAt: v.approvedAt, portionCost: v.portionCost ? D(v.portionCost.toString()) : null }));
-  return { from, to, costIncreases, topWaste, topVariance, critical, priceChanges, recipeChanges, totals: { wasteCost: sum(topWaste.map((w) => w.cost)), costIncreaseImpact: sum(costIncreases.map((c) => c.impact)), unexplained: sum(topVariance.map((t) => (t.unexplained.gt(0) ? t.unexplained : ZERO))) } };
+  const recipeChanges = versions.map((v) => ({ recipeId: v.recipeId, recipe: v.recipe.name, version: v.version, approvedAt: v.approvedAt, portionCost: v.portionCost ? D(v.portionCost.toString()) : null }));
+  return {
+    from,
+    to,
+    costIncreases,
+    topWaste,
+    topVariance,
+    critical,
+    priceChanges,
+    recipeChanges,
+    totals: { wasteCost: sum(topWaste.map((w) => w.cost)), costIncreaseImpact: sum(costIncreases.map((c) => c.impact)), unexplained: sum(topVariance.map((t) => (t.unexplained.gt(0) ? t.unexplained : ZERO))) },
+  };
+}
+export type CostReview = Awaited<ReturnType<typeof costReview>>;
+
+/** The 7 days ending on `weekEnd` (the review before round 3), top 10 per section. */
+export async function weeklyReview(db: Db, actor: Actor, hotelId: string, weekEnd: Date) {
+  const to = new Date(utc(weekEnd).getTime() + DAY);
+  const r = await costReview(db, actor, hotelId, { from: new Date(to.getTime() - 7 * DAY), to });
+  return { ...r, costIncreases: r.costIncreases.slice(0, 10), topWaste: r.topWaste.slice(0, 10), topVariance: r.topVariance.slice(0, 10), critical: r.critical.slice(0, 15) };
 }

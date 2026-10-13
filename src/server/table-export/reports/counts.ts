@@ -66,7 +66,7 @@ export const countResultsReport: ReportDef = {
         ...(one ? [] : [{
           title: t("Approved counts"),
           columns: [
-            { key: "number", header: t("Count") }, { key: "date", header: t("Count date"), type: "date" as const }, { key: "warehouse", header: t("Warehouse") }, { key: "countedBy", header: t("Counted by") }, { key: "approvedBy", header: t("Approved by") },
+            { key: "number", header: t("Count no.") }, { key: "date", header: t("Count date"), type: "date" as const }, { key: "warehouse", header: t("Warehouse") }, { key: "countedBy", header: t("Counted by") }, { key: "approvedBy", header: t("Approved by") },
             { key: "products", header: t("Products"), type: "int" as const }, { key: "withDifference", header: t("With a difference"), type: "int" as const }, { key: "shortage", header: t("Shortage"), type: "money" as const }, { key: "surplus", header: t("Surplus"), type: "money" as const }, { key: "net", header: t("Total difference"), type: "money" as const },
           ],
           rows: list.map((c) => ({ number: c.number, date: c.countDate.toISOString().slice(0, 10), warehouse: c.warehouse, countedBy: c.countedBy, approvedBy: c.approvedBy, products: c.products, withDifference: c.withDifference, shortage: c.shortage, surplus: c.surplus, net: c.net })),

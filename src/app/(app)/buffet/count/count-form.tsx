@@ -50,9 +50,10 @@ export function CountForm({ sessionId, items, counted, editable }: { sessionId: 
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
   const toggles = useRef<Record<string, HTMLButtonElement | null>>({});
 
+  // ready to type the first row straight away (also when correcting a saved count)
   useEffect(() => {
-    if (editable && !counted) inputs.current[0]?.focus();
-  }, [editable, counted]);
+    if (editable) inputs.current[0]?.focus();
+  }, [editable]);
 
   const setMode = (key: string, mode: Mode, focus = false) => {
     setVals((v) => ({ ...v, [key]: { ...v[key]!, mode } }));

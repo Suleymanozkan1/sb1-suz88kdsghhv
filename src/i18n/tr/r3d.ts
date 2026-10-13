@@ -26,6 +26,8 @@ export const r3d: Record<string, string> = {
   "Stock movements before the count": "Sayımdan önceki stok hareketleri",
   "Stock value over the period": "Dönem içinde stok değeri",
   "Counted by": "Sayan",
+  "Count no.": "Sayım no",
+  "Reason: {reason}": "Gerekçe: {reason}",
   // ── stock counts page ──
   "Start a count sheet, enter the counted quantities and send it for approval. Stock changes only when an authorised manager approves it; approved counts are listed under Count results.": "Sayım föyü oluşturun, sayılan miktarları girin ve onaya gönderin. Stok yalnızca yetkili yönetici onayladığında değişir; onaylanmış sayımlar Sayım sonuçları ekranında listelenir.",
   "Approved counts: Count results": "Onaylanmış sayımlar: Sayım sonuçları",

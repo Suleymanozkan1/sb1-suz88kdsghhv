@@ -27,6 +27,8 @@ export interface DqItem {
   id: string;
   /** the record: product, recipe, POS code, store, request, period */
   name: string;
+  /** a product / recipe name (shown in title case like everywhere), not free text such as a request's reason */
+  isName: boolean;
   /** why it is a problem (one or more sentences) */
   problems: DqText[];
   /** the same in English with the params filled in (the full workbook export) */
@@ -95,7 +97,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   // links only to pages the user may open
   const link = (perm: Permission, href: string) => (can(actor, perm) ? href : null);
   const productLink = (name: string) => link("product:view", `/products?${new URLSearchParams({ q: name })}`);
-  const item = (id: string, name: string, problems: DqText[], href: string | null, fix: string): DqItem => ({ id, name, problems, problem: problems.map(fill).join("; "), href, fix });
+  const item = (id: string, name: string, problems: DqText[], href: string | null, fix: string, isName = true): DqItem => ({ id, name, isName, problems, problem: problems.map(fill).join("; "), href, fix });
 
   let complete = 0;
   const recipeItems: DqItem[] = [];
@@ -143,8 +145,8 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
     const lines: DqText = { text: "{n} sale lines this month without a recipe: their theoretical cost is missing", params: { n: s._count._all } };
     const name = itemName ? `${s.posCode} · ${itemName}` : s.posCode;
     return r
-      ? item(s.posCode, name, [lines, { text: "The recipe {recipe} does not carry POS code {code}: enter it on the recipe, then reprocess the sales under Calculation integrity", params: { recipe: r.name, code: s.posCode } }], link("recipe:manage", `/recipes/${r.id}/edit`) ?? recipeLink(r.id), "Recipes")
-      : item(s.posCode, name, [lines, { text: "No recipe has POS code {code}: create the recipe (or add the code to it), then reprocess the sales under Calculation integrity", params: { code: s.posCode } }], link("recipe:manage", "/recipes/new") ?? link("recipe:view", `/recipes?${new URLSearchParams({ q: itemName ?? s.posCode })}`), "Recipes");
+      ? item(s.posCode, name, [lines, { text: "The recipe {recipe} does not carry POS code {code}: enter it on the recipe, then reprocess the sales under Calculation integrity", params: { recipe: r.name, code: s.posCode } }], link("recipe:manage", `/recipes/${r.id}/edit`) ?? recipeLink(r.id), "Recipes", false)
+      : item(s.posCode, name, [lines, { text: "No recipe has POS code {code}: create the recipe (or add the code to it), then reprocess the sales under Calculation integrity", params: { code: s.posCode } }], link("recipe:manage", "/recipes/new") ?? link("recipe:view", `/recipes?${new URLSearchParams({ q: itemName ?? s.posCode })}`), "Recipes", false);
   });
 
   const lastBy = new Map(lastCounts.map((c) => [c.warehouseId, c._max.countDate]));
@@ -152,7 +154,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   const countItems = warehouses
     .map((w) => ({ w, last: lastBy.get(w.id) ?? null }))
     .sort((a, b) => (a.last?.getTime() ?? 0) - (b.last?.getTime() ?? 0))
-    .map(({ w, last }) => item(w.id, w.name, [last ? { text: "Last approved count {date} ({n} days ago)", params: { date: date(last), n: daysAgo(last) } } : { text: "No approved stock count yet" }], link("inventory:count", `/inventory/counts?warehouseId=${encodeURIComponent(w.id)}`), "Stock Counts"));
+    .map(({ w, last }) => item(w.id, w.name, [last ? { text: "Last approved count {date} ({n} days ago)", params: { date: date(last), n: daysAgo(last) } } : { text: "No approved stock count yet" }], link("inventory:count", `/inventory/counts?warehouseId=${encodeURIComponent(w.id)}`), "Stock Counts", false));
 
   const users = new Map((await db.user.findMany({ where: { id: { in: [...new Set(pending.map((a) => a.requestedById))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const wasteIds = pending.filter((a) => a.action === "WASTE").map((a) => a.entityId);
@@ -160,7 +162,10 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   const ACTION: Record<string, string> = { STOCK_ADJUSTMENT: "STOCK COUNT" };
   const approvalItems = pending.slice(0, MAX_ITEMS).map((a) => {
     const w = a.action === "WASTE" ? wasteRows.get(a.entityId) : undefined;
-    return item(a.id, w ? `${w.product.name} ${qty(w.quantity.toString(), w.unit)} · ${a.reason}` : a.reason, [{ text: "{action} request waiting for a decision since {date}, requested by {who}", params: { action: ACTION[a.action] ?? a.action.replace(/_/g, " "), date: date(a.requestedAt), who: users.get(a.requestedById) ?? "—" }, tParams: ["action"] }], "/approvals", "Approvals");
+    const waiting: DqText = { text: "{action} request waiting for a decision since {date}, requested by {who}", params: { action: ACTION[a.action] ?? a.action.replace(/_/g, " "), date: date(a.requestedAt), who: users.get(a.requestedById) ?? "—" }, tParams: ["action"] };
+    return w
+      ? item(a.id, `${w.product.name} ${qty(w.quantity.toString(), w.unit)}`, [waiting, { text: "Reason: {reason}", params: { reason: a.reason } }], "/approvals", "Approvals", false)
+      : item(a.id, a.reason, [waiting], "/approvals", "Approvals", false);
   });
 
   const daysSinceCount = lastCount ? daysAgo(lastCount.countDate) : null;
@@ -183,7 +188,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
     { key: "stock_count", label: "Days since last posted stock count", hint: "Days since the last approved stock count of the hotel; below, every store that holds stock with its last approved count.", count: daysSinceCount ?? -1, total: countItems.length, items: countItems.slice(0, MAX_ITEMS) },
     { key: "approvals", label: "Pending approvals", hint: "Requests waiting for a decision: until then their stock and cost effect is not posted.", count: pending.length, total: pending.length, items: approvalItems },
     { key: "no_supplier", label: "Stock products without default supplier", hint: "Purchase orders and order suggestions cannot pick a supplier for these products.", count: noSupplier.length, total: noSupplier.length, items: noSupplier.slice(0, MAX_ITEMS).map((p) => item(p.id, p.name, [{ text: "No default supplier on the product card (stock code {sku})", params: { sku: p.sku } }], productLink(p.name), "Products")) },
-    { key: "unclosed_periods", label: "Past periods not closed", hint: "Months that have ended but are still open: their figures can still change.", count: openPeriods.length, total: openPeriods.length, items: openPeriods.slice(0, MAX_ITEMS).map((p) => item(p.id, p.code, [{ text: "Ended on {date} and is still {status}", params: { date: date(p.endDate), status: p.status }, tParams: ["status"] }], link("period:manage", "/periods"), "Cost Periods")) },
+    { key: "unclosed_periods", label: "Past periods not closed", hint: "Months that have ended but are still open: their figures can still change.", count: openPeriods.length, total: openPeriods.length, items: openPeriods.slice(0, MAX_ITEMS).map((p) => item(p.id, p.code, [{ text: "Ended on {date} and is still {status}", params: { date: date(p.endDate), status: p.status }, tParams: ["status"] }], link("period:manage", "/periods"), "Cost Periods", false)) },
     { key: "missing_conversion", label: "Purchase unit without a conversion to the stock unit", hint: "Receipts in the purchase unit cannot be turned into stock units for these products.", count: missingConversion.length, total: missingConversion.length, items: missingConversion.slice(0, MAX_ITEMS).map((p) => item(p.id, p.name, [{ text: "1 {from} = ? {to}: no conversion from the purchase unit to the stock unit", params: { from: p.purchaseUnit, to: p.stockUnit } }], productLink(p.name), "Products")) },
     {
       key: "future_dated",
@@ -192,7 +197,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
       count: futureSalesCount + futureWasteCount,
       total: futureSalesCount + futureWasteCount,
       items: [
-        ...futureSales.map((s) => item(s.id, s.itemName ? `${s.posCode} · ${s.itemName}` : s.posCode, [{ text: "Sale dated {date}, after today", params: { date: date(s.saleDate) } }], link("sales:import", "/sales"), "Sales Import")),
+        ...futureSales.map((s) => item(s.id, s.itemName ? `${s.posCode} · ${s.itemName}` : s.posCode, [{ text: "Sale dated {date}, after today", params: { date: date(s.saleDate) } }], link("sales:import", "/sales"), "Sales Import", false)),
         ...futureWaste.map((w) => item(w.id, w.product.name, [{ text: "Waste record dated {date}, after today", params: { date: date(w.wasteDate) } }], link("waste:view", `/waste?${new URLSearchParams({ from: w.wasteDate.toISOString().slice(0, 10), to: w.wasteDate.toISOString().slice(0, 10) })}`), "Waste")),
       ].slice(0, MAX_ITEMS),
     },

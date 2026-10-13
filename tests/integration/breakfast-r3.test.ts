@@ -151,6 +151,23 @@ describe("breakfast day (r3 §4)", () => {
     expect(v.totals.unexplained.toString()).toBe("0");
   });
 
+  it("saving the same count again posts nothing; an issue after the count is counted when the count is saved again", async () => {
+    const txCount = () => prisma.stockTransaction.count({ where: { hotelId: h.hotel.id, sourceType: "BUFFET" } });
+    const lines = [{ key: eggsDish, remaining: "0", mode: "WASTE" as const }, { key: P.cheese, remaining: "2", mode: "WASTE" as const }, { key: P.olive, remaining: "6", mode: "CONSUMPTION" as const }];
+    const before = await txCount();
+    await saveBreakfastCount(prisma, cc, h.hotel.id, dayId, { lines });
+    expect(await txCount()).toBe(before);
+    // forgotten refill of olives after the count: until the count is saved again it counts as consumed
+    await addLine(prisma, cc, h.hotel.id, dayId, { productId: P.olive, quantity: 5, unit: "kg" });
+    await saveBreakfastCount(prisma, cc, h.hotel.id, dayId, { lines: lines.map((l) => (l.key === P.olive ? { ...l, remaining: "8" } : l)) });
+    const r = await sessionReport(prisma, cc, h.hotel.id, dayId);
+    expect(r.metrics.items.find((i) => i.key === P.olive)!.consumed.toString()).toBe("72"); // 80 − 8
+    expect(r.metrics.buffetFoodCost.toString()).toBe("15040"); // 15250 + 5 × 70 issued − 8 × 70 back (the 600 waste is food cost)
+    expect(r.reconciliation.ok).toBe(true);
+    expect((await ledgerInvariant(h.wh.main.id, P.olive!)).balanceQty).toBe("428");
+    expect(await wasteValue()).toBeCloseTo(600, 6);
+  });
+
   it("period report: counted days only, both cover columns; the export reconciles with the ledger", async () => {
     const open = await openBreakfastDay(prisma, cc, h.hotel.id, { serviceDate: "2026-08-21" });
     await addLine(prisma, cc, h.hotel.id, open.id, { productId: P.cheese, quantity: 5, unit: "kg" });
@@ -158,7 +175,7 @@ describe("breakfast day (r3 §4)", () => {
     expect(rep.sessions).toHaveLength(2);
     expect(rep.openSessions).toBe(1);
     expect(rep.totals).toMatchObject({ sessions: 1, covers: 1000, includedCovers: 800, paidCovers: 200 });
-    expect(rep.totals.costPerCover!.toString()).toBe("14.83");
+    expect(rep.totals.costPerCover!.toString()).toBe("15.04");
     expect(rep.totals.wastePerCover!.toString()).toBe("0.6");
     const e = await buildFullCostExport(prisma, cc, h.hotel.id, { from: day("2026-08-01"), to: new Date("2026-09-01T00:00:00Z") });
     expect(e.checks.find((c) => c.check === "Buffet: Σ session ledger cost = BUFFET ledger postings")?.status).toBe("PASS");
