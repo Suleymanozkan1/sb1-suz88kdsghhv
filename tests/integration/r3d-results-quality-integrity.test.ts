@@ -137,6 +137,13 @@ describe("data quality records (§15) and integrity findings (§18)", () => {
     const items = purchasing.checks.find((c) => c.key === "recipes")!.items;
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((i) => i.href === null && i.problems.length > 0)).toBe(true);
+
+    // a pastry chef only gets the records of the pastry department and its (and shared) stores
+    const pastry = await dataQuality(prisma, await h.actor("chef", [h.depts.pastry.id]), h.hotel.id);
+    const text = JSON.stringify(pastry.checks);
+    expect(text).not.toContain("Restaurant");
+    expect(text).not.toContain("SOUP9");
+    expect(pastry.checks.find((c) => c.key === "stock_count")!.items.map((i) => i.id).sort()).toEqual([h.wh.main.id, h.wh.pastryStore.id].sort());
   });
 
   it("integrity findings name the record, link to it and show expected vs found; the stored run keeps them", async () => {

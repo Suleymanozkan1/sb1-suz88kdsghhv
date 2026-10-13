@@ -1,7 +1,8 @@
 /**
  * Data Quality Center (spec §216–§218). Every check lists its records (feedback r3 §15): which record, why it is a
  * problem (a short sentence with the specifics, e.g. the ingredient without a cost) and the page where it is fixed.
- * Texts are English keys with {placeholders}: the page and its export translate them.
+ * Texts are English keys with {placeholders}: the page and its export translate them. Records follow the user's
+ * department / store scope (recipes, sales, waste, stores, approvals); products and periods are hotel master data.
  */
 import { defaultConverter } from "@/domain/uom";
 import { str } from "@/domain/money";
@@ -11,6 +12,8 @@ import type { Permission } from "../auth/permissions";
 import type { Db } from "../db";
 import { type Actor, authorize, can, departmentScope } from "../auth/actor";
 import { buildResolver, versionToDef } from "./recipes";
+import { scopeApprovals } from "./approvals";
+import { warehouseScope } from "../auth/scope";
 import { date, qty } from "@/lib/format";
 
 /** A translatable sentence: `text` is the English key, `tParams` the params that are keys themselves (translated first). */
@@ -64,24 +67,25 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
   const [products, recipes, salesTotal, salesUnmapped, negative, lastCount, pending, openPeriods, warehouses, lastCounts] = await Promise.all([
     db.product.findMany({ where: { hotelId, active: true }, select: { id: true, name: true, sku: true, isStockItem: true, defaultSupplierId: true, purchaseUnit: true, stockUnit: true, conversions: { select: { fromUnit: true, toUnit: true } } }, orderBy: { name: "asc" } }),
     db.recipe.findMany({ where: { hotelId, active: true, ...departmentScope(actor) }, include: { versions: { include: { lines: true } } }, orderBy: { name: "asc" } }),
-    db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart } } }),
-    db.saleLine.groupBy({ by: ["posCode"], where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null }, _count: { _all: true }, _max: { itemName: true }, orderBy: { posCode: "asc" } }),
-    db.stockBalance.findMany({ where: { hotelId, quantity: { lt: 0 } }, include: { product: true, warehouse: true }, orderBy: { product: { name: "asc" } } }),
-    db.stockCount.findFirst({ where: { hotelId, status: "POSTED", deletedAt: null }, orderBy: { countDate: "desc" } }),
-    db.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "asc" } }),
+    db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart }, ...departmentScope(actor) } }),
+    db.saleLine.groupBy({ by: ["posCode"], where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null, ...departmentScope(actor) }, _count: { _all: true }, _max: { itemName: true }, orderBy: { posCode: "asc" } }),
+    db.stockBalance.findMany({ where: { hotelId, quantity: { lt: 0 }, warehouse: warehouseScope(actor) }, include: { product: true, warehouse: true }, orderBy: { product: { name: "asc" } } }),
+    db.stockCount.findFirst({ where: { hotelId, status: "POSTED", deletedAt: null, warehouse: warehouseScope(actor) }, orderBy: { countDate: "desc" } }),
+    // the requests the user sees on /approvals (their departments, count approvals they may decide or asked for)
+    db.approval.findMany({ where: { hotelId, status: "PENDING" }, orderBy: { requestedAt: "asc" } }).then((rows) => scopeApprovals(db, actor, hotelId, rows)),
     db.costPeriod.findMany({ where: { hotelId, status: { in: ["OPEN", "REOPENED"] }, endDate: { lt: monthStart } }, orderBy: { startDate: "asc" } }),
     // stores that hold stock: their last approved count (count freshness)
-    db.warehouse.findMany({ where: { hotelId, active: true, balances: { some: { quantity: { not: 0 } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.stockCount.groupBy({ by: ["warehouseId"], where: { hotelId, status: "POSTED", deletedAt: null }, _max: { countDate: true } }),
+    db.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor), balances: { some: { quantity: { not: 0 } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.stockCount.groupBy({ by: ["warehouseId"], where: { hotelId, status: "POSTED", deletedAt: null, warehouse: warehouseScope(actor) }, _max: { countDate: true } }),
   ]);
   const unmappedCount = salesUnmapped.reduce((a, s) => a + s._count._all, 0);
   // master-data plausibility (spec 66, 113): purchase units without a conversion, future-dated records
   // (no yield checks: a recipe quantity is the raw quantity used, products carry no yield)
   const [futureSales, futureWaste] = await Promise.all([
-    db.saleLine.findMany({ where: { hotelId, saleDate: { gt: tomorrow } }, select: { id: true, posCode: true, itemName: true, saleDate: true }, orderBy: { saleDate: "desc" }, take: MAX_ITEMS }),
-    db.wasteRecord.findMany({ where: { hotelId, wasteDate: { gt: tomorrow } }, select: { id: true, wasteDate: true, product: { select: { name: true } } }, orderBy: { wasteDate: "desc" }, take: MAX_ITEMS }),
+    db.saleLine.findMany({ where: { hotelId, saleDate: { gt: tomorrow }, ...departmentScope(actor) }, select: { id: true, posCode: true, itemName: true, saleDate: true }, orderBy: { saleDate: "desc" }, take: MAX_ITEMS }),
+    db.wasteRecord.findMany({ where: { hotelId, wasteDate: { gt: tomorrow }, ...departmentScope(actor) }, select: { id: true, wasteDate: true, product: { select: { name: true } } }, orderBy: { wasteDate: "desc" }, take: MAX_ITEMS }),
   ]);
-  const [futureSalesCount, futureWasteCount] = await Promise.all([db.saleLine.count({ where: { hotelId, saleDate: { gt: tomorrow } } }), db.wasteRecord.count({ where: { hotelId, wasteDate: { gt: tomorrow } } })]);
+  const [futureSalesCount, futureWasteCount] = await Promise.all([db.saleLine.count({ where: { hotelId, saleDate: { gt: tomorrow }, ...departmentScope(actor) } }), db.wasteRecord.count({ where: { hotelId, wasteDate: { gt: tomorrow }, ...departmentScope(actor) } })]);
   const stock = products.filter((p) => p.isStockItem);
   const missingConversion = stock.filter((p) => p.purchaseUnit !== p.stockUnit && !defaultConverter.canConvert(p.purchaseUnit, p.stockUnit, p.conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: "1" }))));
   const noSupplier = stock.filter((p) => !p.defaultSupplierId);

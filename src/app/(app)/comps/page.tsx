@@ -176,7 +176,7 @@ export default async function CompsPage({ searchParams }: { searchParams: Promis
                   </Td>
                   <Td align="right">{r.lines.map((l) => <span key={l.id} className="block tabular-nums">{qty(l.quantity.toString())}</span>)}</Td>
                   <Td align="right" className="whitespace-nowrap">{money(r.totalCost.toString(), cur)}</Td>
-                  <Td><Badge tone={r.source === "MANUAL" ? "gray" : "green"}>{t(SOURCE_LABEL[r.source] ?? r.source)}</Badge>{r.enteredBy && <span className="block text-xs text-ink-500">{r.enteredBy}</span>}</Td>
+                  <Td><span title={r.enteredBy ?? undefined}><Badge tone={r.source === "MANUAL" ? "gray" : "green"}>{t(SOURCE_LABEL[r.source] ?? r.source)}</Badge></span></Td>
                   {manage && <Td><DeleteComp id={r.id} /></Td>}
                 </tr>
               ))}

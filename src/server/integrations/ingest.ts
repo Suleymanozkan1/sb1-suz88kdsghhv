@@ -393,8 +393,11 @@ export async function productPullStatus(db: Db, actor: Actor, hotelId: string) {
   return { lastPulledAt: hotel.productsPulledAt, waitingSince: waiting?.createdAt ?? null, automation: keys > 0 };
 }
 
-/** The bot runs ~45 min after the cut-off: the day just closed is expected only after this margin, not at the cut-off. */
-const DELIVERY_GRACE_MINUTES = 90;
+/**
+ * The bot runs at 05:00 by default and retries until the night audit's report is there (feedback r3 §7): with the usual
+ * 03:30 cut-off the day just closed is expected only after this margin, so a normal morning shows no "no data yet".
+ */
+const DELIVERY_GRACE_MINUTES = 180;
 /** A source that has not delivered for this long is no longer expected (switched off or never really used). */
 const SOURCE_ACTIVE_DAYS = 14;
 const DAY_MS = 86_400_000;
