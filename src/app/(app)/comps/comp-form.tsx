@@ -121,14 +121,14 @@ export function CompForm({ today, currency, departments, warehouses, recipes, re
       <div className="space-y-2">
         {lines.map((l, i) => (
           <div key={l.key} className="grid items-end gap-2 rounded-lg border border-ink-100 p-2 md:grid-cols-12">
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <Label htmlFor={`cm-${l.key}`}>{t("Item {n}", { n: i + 1 })}</Label>
               <Select id={`cm-${l.key}`} value={l.mode} onChange={(e) => set(l.key, { mode: e.target.value as Line["mode"], recipeId: "", product: null, unit: "" })}>
                 <option value="recipe">{t("Recipe (dish / drink)")}</option>
                 <option value="product">{t("Product")}</option>
               </Select>
             </div>
-            <div className="md:col-span-5">
+            <div className="md:col-span-4">
               {l.mode === "recipe" ? (
                 <>
                   <Label htmlFor={`cr-${l.key}`}>{t("Recipe")}</Label>
