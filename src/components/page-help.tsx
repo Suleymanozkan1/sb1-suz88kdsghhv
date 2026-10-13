@@ -66,7 +66,7 @@ export function PageInfo({ children }: { children: ReactNode }) {
         <Info className="h-4 w-4" aria-hidden />
       </button>
       {open && (
-        <span id={id} role="tooltip" className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-ink-200 bg-white p-3 text-sm font-normal leading-relaxed text-ink-700 shadow-lg">
+        <span id={id} role="tooltip" className="absolute left-0 top-full z-30 mt-1 w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-ink-200 bg-white p-3 text-sm font-normal leading-relaxed text-ink-700 shadow-lg">
           {children}
         </span>
       )}

@@ -2,13 +2,19 @@
  * One bot run for one business day.
  *
  * Kinds are grouped by the system they come from; each group is one run reported to HotelCost:
- *   MICROS: checks, invoices, covers   (invoices may come from files instead: INVOICE_SOURCE=file)
+ *   MICROS: checks, comps, invoices, covers   (invoices may come from files instead: INVOICE_SOURCE=file)
  *           products                   only on request ("Ürünleri çek" in HotelCost / --only products): the product
  *                                      cards added since the last pull; such a run has no business day
- *   OPERA:  minibar, occupancy         (only when OPERA_URL is set)
+ *   OPERA:  minibar, occupancy, comps  (only when OPERA_URL is set)
+ * comps (ödenmez / ikram) is read only when reports.json defines the report for that system; otherwise skipped.
  * For each group: report STARTED → sign in → read + post every kind → report SUCCEEDED or FAILED.
  * One kind failing never stops the others; the run is FAILED (with every message) if any kind failed.
  * On failure a screenshot + the page HTML are saved in runs/<runId>/ next to run.log.
+ *
+ * waitForData (the daemon's nightly run): the reports marked "waitForData" in reports.json (default: the checks)
+ * are read first. Still empty = the night audit has not finished: with "retry" nothing of that system is posted or
+ * reported and the run comes back NOT_READY (the daemon tries again later); with "final" (the last attempt) the
+ * empty report is a failure of that kind and the other kinds are sent as usual.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +22,7 @@ import { randomBytes } from "node:crypto";
 import type { Page } from "playwright";
 import { secretsOf, type Config } from "./config";
 import { validateItems, type IngestSource, type ItemsByKind, type Kind, type RunSource } from "./contract";
-import { describeError, LoginFailedError } from "./errors";
+import { BotError, describeError, LoginFailedError } from "./errors";
 import { addLogFile, configureLogger, log, redact } from "./logger";
 import { HotelCostClient } from "./hotelcost/client";
 import { captureFailure, openBrowser, type BrowserSession } from "./browser/session";
@@ -29,13 +35,18 @@ import { readProducts } from "./screens/micros/products";
 import { operaLogin, readOccupancy } from "./screens/opera/statistics";
 import { readMinibar } from "./screens/opera/minibar";
 import { createInvoiceReader, type InvoiceReader } from "./invoices/source";
+import { readComps } from "./screens/comps";
+import { compsDefined, describeReport, loadDefinitions, type ReportDefinitions, type ReportSystem } from "./reports";
 import { StateStore } from "./state";
 import { defaultBusinessDay } from "./util/time";
 
 export const KINDS_BY_SOURCE: Record<"MICROS" | "OPERA", Kind[]> = {
-  MICROS: ["checks", "invoices", "covers", "products"],
-  OPERA: ["minibar", "occupancy"],
+  MICROS: ["checks", "comps", "invoices", "covers", "products"],
+  OPERA: ["minibar", "occupancy", "comps"],
 };
+const SYSTEM: Record<"MICROS" | "OPERA", ReportSystem> = { MICROS: "micros", OPERA: "opera" };
+/** "comps report not defined" is logged once per process, not every night */
+const compsSkipLogged = new Set<string>();
 /** read only when asked for explicitly (a "Ürünleri çek" request or --only), never in the nightly run */
 export const ON_REQUEST_KINDS: Kind[] = ["products"];
 
@@ -53,6 +64,8 @@ export interface RunOptions {
   now?: Date;
   /** where dry-run output goes (default stdout) */
   print?: (text: string) => void;
+  /** nightly run: wait for the night audit (see the top of this file) */
+  waitForData?: "retry" | "final";
 }
 
 export interface KindResult {
@@ -70,7 +83,8 @@ export interface KindResult {
 export interface SourceRunReport {
   runId: string;
   source: "MICROS" | "OPERA";
-  status: "SUCCEEDED" | "FAILED";
+  /** NOT_READY: a waitForData report was still empty ("retry" mode); nothing was posted or reported */
+  status: "SUCCEEDED" | "FAILED" | "NOT_READY";
   message: string;
   kinds: KindResult[];
   evidence: string[];
@@ -133,6 +147,15 @@ export async function runBot(config: Config, opts: RunOptions = {}, deps: Deps =
   const explicit = new Set(opts.only ?? []);
   const wanted = (k: Kind) => (opts.only ? explicit.has(k) : !ON_REQUEST_KINDS.includes(k));
 
+  let defs: ReportDefinitions | null = null;
+  let defsError: string | null = null;
+  try {
+    defs = loadDefinitions(config.reportsFile);
+  } catch (err) {
+    defsError = describeError(err);
+    log.error(defsError);
+  }
+
   pruneRunDirs(config.runsDir, 30);
   const previous = state.get(day);
   if (previous) log.info(`business day ${day} was sent before (${Object.entries(previous).map(([k, v]) => `${k} at ${v.at}`).join(", ")}); sending again — HotelCost skips duplicates`);
@@ -140,15 +163,22 @@ export async function runBot(config: Config, opts: RunOptions = {}, deps: Deps =
   const report: RunReport = { day, ok: true, runs: [] };
   for (const source of ["MICROS", "OPERA"] as const) {
     if (opts.source && opts.source !== source && opts.source !== "OTHER") continue;
-    const kinds = KINDS_BY_SOURCE[source].filter(wanted);
+    let kinds = KINDS_BY_SOURCE[source].filter(wanted);
+    if (defs && kinds.includes("comps") && !explicit.has("comps") && !compsDefined(defs, SYSTEM[source])) {
+      kinds = kinds.filter((k) => k !== "comps");
+      if (!compsSkipLogged.has(source)) {
+        compsSkipLogged.add(source);
+        log.info(`${source}: no on-house / hospitality (comps) report defined in ${config.reportsFile}: comps not read`);
+      }
+    }
     if (kinds.length === 0) continue;
     if (source === "OPERA" && !config.opera && !kinds.some((k) => explicit.has(k)) && opts.source !== "OPERA") {
       log.info("OPERA_URL is not set: minibar / occupancy not read");
       continue;
     }
-    const r = await runSource(source, kinds, day, config, client, state, opts, explicit, print, deps);
+    const r = await runSource(source, kinds, day, config, client, state, opts, explicit, print, deps, defs, defsError);
     report.runs.push(r);
-    if (r.status === "FAILED") report.ok = false;
+    if (r.status !== "SUCCEEDED") report.ok = false;
   }
   if (report.runs.length === 0) log.warn("nothing to do (no kind selected / configured)");
   return report;
@@ -165,7 +195,14 @@ async function runSource(
   explicit: Set<Kind>,
   print: (t: string) => void,
   deps: Deps,
+  defs: ReportDefinitions | null,
+  defsError: string | null,
 ): Promise<SourceRunReport> {
+  const system = SYSTEM[source];
+  const defOf = (k: Kind) => defs?.[system][k];
+  // the reports that tell whether the night audit has finished are read first
+  const waitKinds = opts.waitForData ? kinds.filter((k) => defOf(k)?.waitForData) : [];
+  kinds = [...waitKinds, ...kinds.filter((k) => !waitKinds.includes(k))];
   // a product pull is not about a business day: reported without one (HotelCost keeps it out of the nightly health)
   const dayless = kinds.every((k) => ON_REQUEST_KINDS.includes(k));
   const runId = makeRunId(source, dayless ? "products" : day);
@@ -177,9 +214,17 @@ async function runSource(
   let session: BrowserSession | undefined;
   const runReport = (status: "STARTED" | "SUCCEEDED" | "FAILED", message?: string) =>
     opts.dryRun ? Promise.resolve(true) : client.reportRun({ runId, source, status, ...(dayless ? {} : { businessDay: day }), message, ...(opts.requestId ? { requestId: opts.requestId } : {}) });
+  // while waiting for the night audit STARTED is reported only once the day's data is there (or the run ends)
+  let started = false;
+  const ensureStarted = async () => {
+    if (started) return;
+    started = true;
+    await runReport("STARTED");
+  };
+  let notReady: string | null = null;
 
-  log.info(`run ${runId}: ${source} ${kinds.join(", ")} ${dayless ? `added since ${opts.since ?? "the start"}` : `for business day ${day}`}${opts.dryRun ? " (dry run)" : ""}${opts.requestId ? ` (request ${opts.requestId})` : ""}`);
-  await runReport("STARTED");
+  log.info(`run ${runId}: ${source} ${kinds.join(", ")} ${dayless ? `added since ${opts.since ?? "the start"}` : `for business day ${day}`}${opts.dryRun ? " (dry run)" : ""}${opts.requestId ? ` (request ${opts.requestId})` : ""}${opts.waitForData ? ` (waiting for the night audit: ${waitKinds.join(", ") || "no report marked waitForData"}${opts.waitForData === "final" ? ", last attempt" : ""})` : ""}`);
+  if (!waitKinds.length) await ensureStarted();
 
   const fail = (kind: Kind, error: string) => {
     log.error(`[${kind}] ${error}`);
@@ -187,6 +232,7 @@ async function runSource(
   };
 
   try {
+    if (defsError) for (const k of kinds) fail(k, defsError);
     // ---- which kinds need the browser, and the screen context ----------------------------------------------
     const invoiceReader = kinds.includes("invoices") ? deps.invoiceReader ?? createInvoiceReader(config) : undefined;
     let micros: ScreenContext<MicrosSelectors> | undefined;
@@ -249,15 +295,31 @@ async function runSource(
         let items: ItemsByKind[Kind][] = [];
         let warnings: string[] = [];
         let ingestSource: IngestSource = source;
-        if (kind === "checks") ({ items, warnings } = await readChecks(micros!));
-        else if (kind === "covers") ({ items, warnings } = await readCovers(micros!));
-        else if (kind === "products") ({ items, warnings } = await readProducts(micros!, opts.since));
+        const def = defOf(kind);
+        if (kind === "checks") ({ items, warnings } = await readChecks(micros!, def));
+        else if (kind === "covers") ({ items, warnings } = await readCovers(micros!, def));
+        else if (kind === "products") ({ items, warnings } = await readProducts(micros!, opts.since, def));
         else if (kind === "invoices") {
-          ({ items, warnings } = await invoiceReader!.read(day, micros));
+          ({ items, warnings } = await invoiceReader!.read(day, micros, def));
           ingestSource = invoiceReader!.ingestSource;
-        } else if (kind === "minibar") ({ items, warnings } = await readMinibar(opera!));
+        } else if (kind === "minibar") ({ items, warnings } = await readMinibar(opera!, def));
         else if (kind === "occupancy") items = [await readOccupancy(opera!)];
+        else if (kind === "comps") {
+          if (!def || !defs || !compsDefined(defs, system)) throw new BotError(`comps report is not defined for ${system} in ${config.reportsFile} (reportName)`);
+          ({ items, warnings } = await readComps((source === "MICROS" ? micros : opera)!, def));
+        }
 
+        if (waitKinds.includes(kind) && items.length === 0) {
+          const what = `report not ready: no ${kind} for business day ${day} yet${describeReport(def) ? ` in ${describeReport(def)}` : ""} (night audit not finished?)`;
+          if (opts.waitForData === "retry") {
+            notReady = what;
+            log.warn(`[${kind}] ${what}`);
+            break;
+          }
+          fail(kind, `${what}; still empty at ${config.retryUntil}`);
+          continue;
+        }
+        await ensureStarted();
         const result = await post(kind, items, warnings, ingestSource);
         results.push(result);
         if (result.ok && !result.rejected && kind === "invoices" && !opts.dryRun) await invoiceReader!.commit?.(day); // rejected invoices stay for the next run
@@ -272,6 +334,12 @@ async function runSource(
     await session?.close();
   }
 
+  if (notReady) {
+    log.info(`run ${runId} NOT_READY: ${notReady}`);
+    removeLog();
+    return { runId, source, status: "NOT_READY", message: notReady, kinds: results, evidence };
+  }
+  await ensureStarted();
   const failed = results.some((r) => !r.ok);
   const status = failed ? "FAILED" : "SUCCEEDED";
   let message = summarize(results);

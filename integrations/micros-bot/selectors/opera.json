@@ -60,5 +60,30 @@
     },
     "postedAtFormat": "DD.MM.YYYY HH:mm",
     "skipItemNamePattern": "^(Toplam|Total)\\b"
+  },
+
+  "comps": {
+    "_info": "Opera'da ödenmez / ikram olarak kapatılan hesapların kalem raporu. Yalnızca reports.json'da opera.comps.reportName doldurulunca okunur. Anahtarlar selectors/micros.json 'comps' bloğu ile aynıdır.",
+    "steps": [
+      { "goto": "TODO: ödenmez / ikram raporunun yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Göster düğmesi" }
+    ],
+    "table": "TODO: rapor tablosu",
+    "row": "TODO: rapor satırı (table'a göre)",
+    "noData": "TODO: kayıt yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "columns": {
+      "checkNo": "TODO: hesap / folyo / çek numarası hücresi",
+      "outlet": "TODO: satış noktası / departman hücresi",
+      "kind": "TODO: ödenmez / ikram türü hücresi (yoksa null)",
+      "reason": "TODO: neden hücresi (yoksa null)",
+      "person": "TODO: onaylayan / kişi hücresi (yoksa null)",
+      "note": "TODO: not hücresi (yoksa null)",
+      "itemCode": "TODO: ürün / işlem kodu hücresi (yoksa null)",
+      "itemName": "TODO: ürün adı hücresi",
+      "qty": "TODO: miktar hücresi"
+    },
+    "skipItemNamePattern": "^(Toplam|Total)\\b"
   }
 }

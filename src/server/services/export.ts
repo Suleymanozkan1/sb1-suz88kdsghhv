@@ -244,7 +244,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
       vrows(tva).map((x) => ({ sku: x.sku, product: x.name, category: x.categoryGroup, unit: x.unit, openingQty: s4(x.opening.qty), purchases: s4(x.purchases.qty), transferOutNet: s4(x.transfersOut.qty.minus(x.transfersIn.qty)), consumption: s4(x.actual.qty), waste: s4(x.waste.qty), adjustment: s4(x.countAdjustment.qty.neg()), closingQty: s4(x.closing.qty), unitCost: s4(x.closing.qty.gt(0) ? x.closing.value.div(x.closing.qty) : x.avgCost), openingValue: s4(x.opening.value), purchaseValue: s4(x.purchases.value), closingValue: s4(x.closing.value) }))),
   );
   add(
-    section("unexplainedVariance", "Unexplained Variance", "VarianceService.usageGap", [col("department", "Department"), col("product", "Product"), col("theoretical", "Theoretical", "money"), col("actual", "Actual", "money"), col("knownWaste", "Known Waste", "money"), col("knownAdjustments", "Known Adjustments (price/timing)", "money"), col("knownStaffMeal", "Known Staff Meal", "money"), col("knownComplimentary", "Known Complimentary", "money"), col("unexplained", "Unexplained", "money"), col("unexplainedPct", "Unexplained %", "pct")],
+    section("unexplainedVariance", "Unexplained Variance", "VarianceService.usageGap", [col("department", "Department"), col("product", "Product"), col("theoretical", "Theoretical", "money"), col("actual", "Actual", "money"), col("knownWaste", "Known Waste", "money"), col("knownAdjustments", "Known Adjustments (price/timing)", "money"), col("knownStaffMeal", "Known Staff Meal", "money"), col("knownComplimentary", "Known On-house / Hospitality", "money"), col("unexplained", "Unexplained", "money"), col("unexplainedPct", "Unexplained %", "pct")],
       vrows(tva).filter((x) => !x.unexplainedValue.isZero()).map((x) => ({ department: p.departmentId ? deptName.get(p.departmentId) ?? null : "All in scope", product: x.name, theoretical: s4(x.theoreticalValue), actual: s4(x.actual.value), knownWaste: s4(x.waste.value), knownAdjustments: "0", knownStaffMeal: s4(x.staffMeal.value), knownComplimentary: s4(x.complimentary.value), unexplained: s4(x.unexplainedValue), unexplainedPct: x.theoreticalValue.isZero() ? null : s4(x.unexplainedValue.div(x.theoreticalValue)) }))),
   );
 
@@ -254,7 +254,7 @@ export async function buildFullCostExport(db: Db, actor: Actor, hotelId: string,
     const t = r.totals;
     const rows: Row[] = [
       ["Opening Inventory", t.opening], ["Purchases", t.purchases], ["Transfers Out (net)", t.transfersOutNet.neg()], ["Closing Inventory", t.closing.neg()],
-      ["Actual Cost (= Opening + Purchases − Transfers Out (net) − Closing)", t.actualCost], ["  of which recorded waste", t.waste], ["  of which staff meals", t.staffMeal], ["  of which complimentary", t.complimentary],
+      ["Actual Cost (= Opening + Purchases − Transfers Out (net) − Closing)", t.actualCost], ["  of which recorded waste", t.waste], ["  of which staff meals", t.staffMeal], ["  of which on-house / hospitality", t.complimentary],
       ["Theoretical Cost", t.theoreticalCost], ["Variance (Actual − Theoretical)", t.variance], ["Unexplained Variance", t.unexplained], ["Revenue (net, mapped sales in scope)", t.revenue],
     ].map(([line, v]) => ({ line: line as string, value: s4(v as Decimal), kind: "money" }));
     rows.push({ line: "Actual Cost %", value: fr(t.actualCostPct), kind: "pct" }, { line: "Theoretical Cost %", value: fr(t.theoreticalCostPct), kind: "pct" }, { line: "Variance % (pts)", value: fr(t.costPctVariancePts), kind: "pct" });

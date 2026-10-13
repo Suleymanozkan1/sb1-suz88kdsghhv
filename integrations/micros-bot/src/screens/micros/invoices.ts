@@ -14,8 +14,9 @@ import type { MicrosSelectors } from "../../browser/selectors";
 import { ParseError, ScreenChangedError } from "../../errors";
 import { traverseListDetail, type DetailResult } from "../listDetail";
 import { num, optNum, screenOptions, toDay, type ScreenContext } from "../context";
+import type { ReportDefinition } from "../../reports";
 
-export async function readInvoicesFromWeb(ctx: ScreenContext<MicrosSelectors>): Promise<DetailResult<Invoice>> {
+export async function readInvoicesFromWeb(ctx: ScreenContext<MicrosSelectors>, def?: ReportDefinition): Promise<DetailResult<Invoice>> {
   const s = ctx.selectors;
   const screen = new Screen(ctx.page, "invoices", s.invoices as unknown as Record<string, unknown>, screenOptions(ctx));
   const fmt = s.numberFormat ?? "auto";
@@ -36,6 +37,8 @@ export async function readInvoicesFromWeb(ctx: ScreenContext<MicrosSelectors>): 
         unit: "detail.line.unit", unitPrice: "detail.line.unitPrice", taxRatePct: "detail.line.taxRatePct",
       },
       ["itemName", "qty", "unit", "unitPrice"],
+      undefined,
+      def?.columns,
     );
     // an invoice always has lines: none matched means the line selector is wrong
     if (rows.length === 0) throw new ScreenChangedError("invoices", "detail.lineRow", screen.sel("detail.lineRow"));

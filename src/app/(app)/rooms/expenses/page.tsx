@@ -3,7 +3,8 @@ import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { can } from "@/server/auth/actor";
 import { roomCostItems } from "@/server/services/room-costs";
 import { prisma } from "@/server/db";
-import { Alert, Button, Card, Input, Label, PageHeader } from "@/components/ui";
+import { Alert, Card, Input, Label, PageHeader } from "@/components/ui";
+import { FilterBar } from "@/components/filter-bar";
 import { localDay, money } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RoomCostItemsForm } from "./form";
@@ -34,12 +35,12 @@ export default async function RoomCostExpensesPage({ searchParams }: { searchPar
         title={t("Room cost expenses")}
         subtitle={t("Enter the month's room expenses that are not in the cost ledger. They are added to room cost automatically; a period that covers part of a month takes its share by days.")}
         actions={
-          <form method="get" className="flex flex-wrap items-end gap-2">
+          // a monthly entry form: one month (this month by default) instead of a date range
+          <FilterBar dates={false}>
             <Link href={`?month=${shift(month, -1)}`} className="rounded-lg px-2 py-2 text-sm text-ink-600 hover:bg-ink-100" aria-label={t("Previous month")}>←</Link>
             <div><Label htmlFor="rc-month">{t("Month")}</Label><Input id="rc-month" type="month" name="month" defaultValue={month} className="w-40" /></div>
             <Link href={`?month=${shift(month, 1)}`} className="rounded-lg px-2 py-2 text-sm text-ink-600 hover:bg-ink-100" aria-label={t("Next month")}>→</Link>
-            <Button type="submit" variant="secondary">{t("Apply")}</Button>
-          </form>
+          </FilterBar>
         }
       />
       <div className="grid gap-4 lg:grid-cols-3">

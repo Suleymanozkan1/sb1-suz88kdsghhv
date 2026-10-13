@@ -19,6 +19,7 @@ selectors.
    | `checks` | sales lines → recipe ingredients deducted from stock | check no. + business day + item |
    | `invoices` | goods receipt (source MICROS) | supplier + invoice no. |
    | `covers` | covers sold per outlet / meal → buffet form | overwritten per day |
+   | `comps` | Ödenmez / İkram records (checks closed as on-house or hospitality) → ingredients deducted from stock, no revenue; see *Comps* below | source + business day + outlet + check no. |
    | `minibar` | minibar consumption | folio reference |
    | `occupancy` | night-audit statistics; the sold room numbers mark the rooms on the minibar board | overwritten per day |
    | `products` | product cards (name, unit, pack size / weight, VAT, category) — only on a *Products → Pull products* request, no business day | name (Turkish case-insensitive) or stock code |
@@ -46,6 +47,38 @@ selectors.
   to it (tolerance 1.00 or 0.5 %); otherwise the invoice is rejected, so a line missed on a paged screen never
   posts a wrong receipt. The file export may carry it as a "Fatura Toplamı" / "Genel Toplam" column.
 - **Suppliers.** Matched by name; created when new.
+
+## Comps (Ödenmez ve İkram)
+
+A check closed in Micros as on-house (owner / investor, general manager, directors) or as hospitality (tea for a
+sales meeting, the chain's welcome drink), or a complimentary posting in Opera, is sent as kind `comps` — never also
+as `checks`, so it gets no revenue and is not counted in the theoretical cost of sales. Source `MICROS` (default),
+`OPERA` or `OTHER`; at most 5000 checks per delivery.
+
+```ts
+type CompsDelivery = {
+  kind: "comps"; source?: "MICROS" | "OPERA" | "OTHER"; businessDay: "YYYY-MM-DD"; runId?: string;
+  items: Array<{
+    checkNo: string;                      // 1–64 chars
+    outlet: string;                       // department code or name, as for checks
+    kind: "ON_HOUSE" | "HOSPITALITY";     // Ödenmez | İkram
+    reason?: string | null;               // matched to the hotel's reason list by name; other text goes to the note
+    person?: string | null;               // who authorised it / who it was for (≤ 120)
+    note?: string | null;                 // ≤ 500
+    closedAt?: string;                    // ISO with offset
+    lines: Array<{ itemCode?: string | null; itemName: string; qty: number | string }>; // qty ≠ 0, voids net out
+  }>;
+};
+```
+
+- **Idempotency.** `externalId = SOURCE:businessDay:OUTLETCODE:checkNo`; a re-sent check is counted as a duplicate.
+- **Items.** Matched like sales (recipe POS code, else recipe name), then as a product (stock code, else name). An
+  item that matches nothing is kept on the record without cost and is not deducted (the page shows it). Recipes are
+  exploded into their ingredients at the version effective on the business day; the store is the outlet's own
+  store, as for its sales.
+- **Reasons.** The reason list is set per hotel on the page (*Ödenmez ve İkram → Nedenler*). A reason that asks for an
+  explanation is not enforced on deliveries; the page flags the record instead.
+- **Errors.** Unknown outlet, closed cost period: that check is listed in `errors`, the others are written.
 
 Contract: `src/server/integrations/contract.ts`. Server: `src/server/integrations/ingest.ts`.
 Tests: `tests/integration/integrations.test.ts`, plus `npm test` in the bot.

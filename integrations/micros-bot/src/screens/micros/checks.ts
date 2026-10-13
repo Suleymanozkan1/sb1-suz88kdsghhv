@@ -16,8 +16,10 @@ import { ParseError, ScreenChangedError } from "../../errors";
 import { log } from "../../logger";
 import { traverseListDetail, type DetailResult } from "../listDetail";
 import { num, screenOptions, toIso, type ScreenContext } from "../context";
+import type { ReportDefinition } from "../../reports";
 
-export async function readChecks(ctx: ScreenContext<MicrosSelectors>): Promise<DetailResult<Check>> {
+/** `def`: the report definition (reports.json); its column headers replace the line CSS selectors. */
+export async function readChecks(ctx: ScreenContext<MicrosSelectors>, def?: ReportDefinition): Promise<DetailResult<Check>> {
   const s = ctx.selectors;
   const screen = new Screen(ctx.page, "checks", s.checks as unknown as Record<string, unknown>, screenOptions(ctx));
   const fmt = s.numberFormat ?? "auto";
@@ -34,6 +36,8 @@ export async function readChecks(ctx: ScreenContext<MicrosSelectors>): Promise<D
       "detail.lineRow",
       { itemCode: "detail.line.itemCode", itemName: "detail.line.itemName", qty: "detail.line.qty", amount: "detail.line.amount" },
       ["itemName", "qty", "amount"],
+      undefined,
+      def?.columns,
     );
     const lines: CheckLine[] = [];
     for (const r of rows) {

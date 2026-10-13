@@ -7,6 +7,7 @@ export interface MockInvoice { id: string; supplier: string; invoiceNo: string; 
 export interface MockCovers { outlet: string; meal: string; covers: number }
 export interface MockMinibar { room: string; code: string; item: string; qty: number; ref: string; time: string }
 export interface MockProduct { code: string; name: string; unit: string; pack: number | null; packUnit: string; vat: number; group: string; created: string /* YYYY-MM-DD */ }
+export interface MockComp { checkNo: string; outlet: string; type: string; reason: string; person: string; lines: Array<{ code: string; item: string; qty: number }> }
 export interface MockStats { available: number; occupied: number; guests: number; revenue: number; ooo: number; oos: number; rooms: string[] }
 
 const OUTLETS = ["Lobby Bar", "A la Carte Restoran", "Havuz Bar"];
@@ -80,6 +81,15 @@ export function productsAll(): MockProduct[] {
     { code: "ST-31", name: "Domates Salçası 830 gr", unit: "adet", pack: 830, packUnit: "gr", vat: 1, group: "Kuru Gıda", created: "2026-10-02" },
     { code: "B-40", name: "Maden Suyu 200 ml", unit: "koli", pack: 24, packUnit: "adet", vat: 20, group: "İçecek", created: "2026-10-05" },
     { code: "", name: "Dana Antrikot", unit: "kg", pack: null, packUnit: "", vat: 1, group: "Et", created: "2026-10-06" },
+  ];
+}
+
+/** Checks closed as on-house (Ödenmez) / hospitality (İkram); a void line (-1) the bot must ignore. */
+export function compsFor(day: string): MockComp[] {
+  const [, mm, dd] = day.split("-");
+  return [
+    { checkNo: `${mm}${dd}7001`, outlet: "Lobby Bar", type: "Ödenmez", reason: "Yönetim", person: "Genel Müdür", lines: [{ code: "1002", item: "Kola 33cl", qty: 2 }, { code: "3001", item: "Türk Kahvesi", qty: 1 }, { code: "1002", item: "Kola 33cl", qty: -1 }] },
+    { checkNo: `${mm}${dd}7002`, outlet: "A la Carte Restoran", type: "İkram", reason: "Misafir şikayeti", person: "F&B Müdürü", lines: [{ code: "4001", item: "Sezar Salata", qty: 1 }] },
   ];
 }
 

@@ -1,5 +1,6 @@
 import { pageContext, guarded, monthRange } from "@/server/page";
-import { theoreticalVsActual } from "@/server/services/variance";
+import Link from "next/link";
+import { causeLabel, theoreticalVsActual } from "@/server/services/variance";
 import { can, departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
@@ -26,28 +27,31 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader
         title={tr("Theoretical vs actual")}
-        subtitle={tr("What should have happened, what actually happened, and why they differ.")}
+        subtitle={<>
+          {tr("What should have happened, what actually happened, and why they differ.")}
+          <span className="mt-2 block">{tr("Actual usage comes from the stock ledger; closing stock is only physical when a stock count was posted at period end. Theoretical usage uses the recipe version effective on each sale date. Variance values are at period average cost. Unexplained usage is factual evidence for investigation, not an accusation.")}</span>
+        </>}
         exportKey="variance"
         canExport={can(actor, "report:export")}
+        actions={
+          <PeriodFilter
+            from={range.fromStr}
+            to={range.toStr}
+            departments={departments}
+            departmentId={sp.departmentId}
+            extra={
+              <div>
+                <Label htmlFor="group">{tr("Category")}</Label>
+                <Select id="group" name="group" defaultValue={sp.group ?? ""} className="w-36">
+                  <option value="">{tr("All")}</option>
+                  <option value="FOOD">{tr("Food")}</option>
+                  <option value="BEVERAGE">{tr("Beverage")}</option>
+                </Select>
+              </div>
+            }
+          />
+        }
       />
-      <Card className="mb-4">
-        <PeriodFilter
-          from={range.fromStr}
-          to={range.toStr}
-          departments={departments}
-          departmentId={sp.departmentId}
-          extra={
-            <div>
-              <Label htmlFor="group">{tr("Category")}</Label>
-              <Select id="group" name="group" defaultValue={sp.group ?? ""} className="w-36">
-                <option value="">{tr("All")}</option>
-                <option value="FOOD">{tr("Food")}</option>
-                <option value="BEVERAGE">{tr("Beverage")}</option>
-              </Select>
-            </div>
-          }
-        />
-      </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label={tr("Actual cost")} value={money(t.actualCost, cur, 0)} hint={tr("{pct} of revenue", { pct: pct(t.actualCostPct) })} />
@@ -81,7 +85,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
             {r.breakdown.components.map((c) => (
               <li key={c.cause} className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-1 py-2 ${c.cause === "UNEXPLAINED" ? "bg-amber-50 font-semibold" : ""}`}>
                 <span className="min-w-0 flex-1 basis-48 break-words">
-                  {c.cause === "UNEXPLAINED" ? tr("= Unexplained") : `− ${tr(c.cause.replace("_", " ").toLowerCase())}`}
+                  {c.cause === "UNEXPLAINED" ? tr("= Unexplained") : c.cause === "COMPLIMENTARY" && can(actor, "comp:view") ? <Link href={`/comps?from=${range.fromStr}&to=${range.toStr}${sp.departmentId ? `&departmentId=${sp.departmentId}` : ""}`} className="text-brand-700 hover:underline">− {tr(causeLabel(c.cause))}</Link> : `− ${tr(causeLabel(c.cause))}`}
                   {c.evidence && <span className="block text-xs font-normal text-ink-400">{tr(c.evidence)}</span>}
                 </span>
                 <span className="ml-auto whitespace-nowrap tabular-nums">{money(c.amount, cur)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></span>
@@ -126,9 +130,6 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
           </Table>
         )}
       </Card>
-      <p className="mt-3 text-xs text-ink-500">
-        {tr("Actual usage comes from the stock ledger; closing stock is only physical when a stock count was posted at period end. Theoretical usage uses the recipe version effective on each sale date. Variance values are at period average cost. Unexplained usage is factual evidence for investigation, not an accusation.")}
-      </p>
     </>
   );
 }

@@ -1,7 +1,8 @@
 /**
  * What the automation (Micros / Opera bot) sends is written here: checks → sales (and, through the recipes, stock
  * consumption), invoices → goods receipts, covers → buffet covers, minibar charges → minibar consumption,
- * occupancy → night-audit statistics, products → product cards ("Ürünleri çek"). Every kind is idempotent (see contract.ts): sending a business day again
+ * occupancy → night-audit statistics, products → product cards ("Ürünleri çek"), comps → Ödenmez / İkram records (stock
+ * deducted, no revenue). Every kind is idempotent (see contract.ts): sending a business day again
  * reports the known records as duplicates and writes nothing twice. One bad item never stops the others; it is
  * listed in the result and in the run log.
  */
@@ -19,6 +20,7 @@ import { postGoodsReceipt } from "../services/purchasing";
 import { addSupplier, runAutoOrders } from "../services/auto-order";
 import { createProduct } from "../services/products";
 import { recordMovement } from "../services/minibar";
+import { ingestComps } from "../services/comps";
 import { lastClosedBusinessDay } from "@/domain/business-day";
 import { ingestSchema, runStatusSchema, type IngestInput, type IngestResult } from "./contract";
 
@@ -46,8 +48,8 @@ export async function revokeIntegrationKey(db: Db, actor: Actor, hotelId: string
   return { ok: true };
 }
 
-/** What the automation may do: post sales, receipts, covers, minibar and occupancy — nothing else. */
-const BOT_PERMISSIONS: Permission[] = ["sales:import", "inventory:receive", "inventory:post", "supplier:view", "supplier:manage", "product:view", "product:manage", "minibar:view", "minibar:manage", "buffet:view", "pms:import", "purchase:view"];
+/** What the automation may do: post sales, comps, receipts, covers, minibar and occupancy — nothing else. */
+const BOT_PERMISSIONS: Permission[] = ["comp:manage", "sales:import", "inventory:receive", "inventory:post", "supplier:view", "supplier:manage", "product:view", "product:manage", "minibar:view", "minibar:manage", "buffet:view", "pms:import", "purchase:view"];
 
 /** `Authorization: Bearer hck_…` → the hotel and an actor for it (audited as the key's creator, "Automation"). */
 export async function integrationActor(db: Db, header: string | null): Promise<{ hotelId: string; actor: Actor; keyId: string } | null> {
@@ -305,6 +307,7 @@ export async function ingest(db: Db, actor: Actor, hotelId: string, raw: unknown
     : p.kind === "covers" ? await ingestCovers(db, hotelId, p)
     : p.kind === "minibar" ? await ingestMinibar(db, actor, hotelId, p)
     : p.kind === "products" ? await ingestProducts(db, actor, hotelId, p)
+    : p.kind === "comps" ? await ingestComps(db, actor, hotelId, p.source, p.businessDay, p.items, await departmentMatcher(db, hotelId))
     : await ingestOccupancy(db, hotelId, p);
   const result: IngestResult = { runId, kind: p.kind, ...out, errors: out.errors.slice(0, 200) };
   const prev = await db.integrationRun.findUnique({ where: { hotelId_runId: { hotelId, runId } } });

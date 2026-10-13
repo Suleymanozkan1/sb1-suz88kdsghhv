@@ -16,6 +16,7 @@ const EXEMPT: Record<string, string> = {
   "recipes/[id]/edit/page.tsx": "form only (edit a recipe)",
   "excel/page.tsx": "the workbook export page itself",
   "operations/page.tsx": "operating costs — on hold until the next meeting (no code changes)",
+  "inventory/counts/summary/page.tsx": "redirect to /inventory/counts/results (r3 §10)",
 };
 
 function pages(dir: string, out: string[] = []): string[] {

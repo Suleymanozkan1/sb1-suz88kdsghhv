@@ -3,7 +3,7 @@
  * HotelCost Micros/Opera bot — command line.
  *
  *   run [--day=YYYY-MM-DD] [--only=checks,invoices,covers,minibar,occupancy,products] [--dry-run]
- *   daemon                 nightly run at RUN_AT + "Şimdi çalıştır" polling
+ *   daemon                 nightly run at RUN_AT (retried while the night audit is not finished) + "Şimdi çalıştır" polling
  *   check-config [--login] show the configuration (secrets masked), TODO selectors, reachability;
  *                          --login also tries to sign in to Micros / Opera
  *
@@ -22,6 +22,7 @@ import { openBrowser } from "./browser/session";
 import { microsLogin } from "./screens/micros/login";
 import { operaLogin } from "./screens/opera/statistics";
 import { FileInvoiceReader } from "./invoices/fileReader";
+import { compsDefined, definitionPlaceholders, describeReport, loadDefinitions, REPORT_SYSTEMS, validateDefinitionsFile } from "./reports";
 
 const USAGE = `Kullanım:
   run [--day=YYYY-MM-DD] [--only=${ALL_KINDS.join(",")}] [--dry-run]
@@ -60,7 +61,7 @@ async function main(argv: string[]): Promise<number> {
     console.error(USAGE);
     return 2;
   }
-  const problems = validateConfig(config);
+  const problems = [...validateConfig(config), ...validateDefinitionsFile(config.reportsFile)];
   if (problems.length) {
     for (const p of problems) log.error(`config: ${p}`);
     if (!(command === "run" && flags["dry-run"] && problems.every((p) => /HOTELCOST_/.test(p)))) return 1;
@@ -115,6 +116,35 @@ async function checkConfig(config: Config, tryLogin: boolean): Promise<number> {
   for (const w of configWarnings(config)) out(`UYARI  ${w}`);
   bad += problems.length;
   out(`Bugün çalışılırsa varsayılan iş günü: ${defaultBusinessDay(new Date(), config.timezone, config.nightAuditCutoff)}`);
+  out(
+    `Gece çalışması: her gün ${config.runAt} (${config.timezone})` +
+      (config.retryMinutes > 0 ? `; gece kapanışı bitmemişse (rapor boşsa) ${config.retryMinutes} dakikada bir ${config.retryUntil}'a kadar yeniden dener` : "; yeniden deneme kapalı (RETRY_MINUTES=0)"),
+  );
+
+  // report definitions: which reports are read, what the hotel still has to show / fill in
+  const defProblems = validateDefinitionsFile(config.reportsFile);
+  for (const p of defProblems) out(`HATA   ${p}`);
+  bad += defProblems.length;
+  let compsOn: Record<string, boolean> = { micros: false, opera: false };
+  if (!defProblems.length) {
+    const defs = loadDefinitions(config.reportsFile);
+    compsOn = Object.fromEntries(REPORT_SYSTEMS.map((sys) => [sys, compsDefined(defs, sys)]));
+    out(`OK     Rapor tanımları: ${config.reportsFile}`);
+    for (const sys of REPORT_SYSTEMS) {
+      if (sys === "opera" && !config.opera) continue;
+      for (const [kind, def] of Object.entries(defs[sys])) {
+        if (!def) continue;
+        const cols = Object.entries(def.columns).map(([f, h]) => `${f}="${h}"`);
+        out(`         ${sys}.${kind}: ${describeReport(def) ?? "(rapor adı yok)"}${def.waitForData ? ", boşsa bekler" : ""}; sütunlar: ${cols.length ? cols.join(", ") : "seçici dosyasındaki CSS"}`);
+      }
+      if (!compsOn[sys]) out(`BİLGİ  ${sys}: ödenmez / ikram (comps) raporu tanımlı değil, okunmayacak`);
+    }
+    const todo = definitionPlaceholders(config.reportsFile);
+    if (todo.length) {
+      out(`UYARI  Rapor tanımlarında otel raporları gösterince doldurulacak ${todo.length} alan var:`);
+      for (const t of todo) out(`         - ${t}`);
+    }
+  }
 
   const selectorFiles: Array<[string, string]> = [["Micros", config.micros.selectorsFile]];
   if (config.opera) selectorFiles.push(["Opera", config.opera.selectorsFile]);
@@ -123,6 +153,8 @@ async function checkConfig(config: Config, tryLogin: boolean): Promise<number> {
       const sel = loadSelectors<Record<string, unknown>>(file);
       let todos = findTodos(sel);
       if (name === "Micros" && config.invoiceSource === "file") todos = todos.filter((t) => !t.startsWith("invoices"));
+      // the comps screen matters only once its report is defined in reports.json
+      if (!compsOn[name.toLowerCase()]) todos = todos.filter((t) => !t.startsWith("comps"));
       if (todos.length) {
         bad++;
         out(`HATA   ${name} seçicileri (${file}) içinde doldurulmamış ${todos.length} TODO var:`);

@@ -51,11 +51,14 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
       <PageHeader
         exportKey="rooms"
         title={t("Room cost")}
-        subtitle={t("Full room cost = rooms-division cost (direct + allocated) split by {basis}, plus monthly room expenses, room-tagged costs and channel cost. Occupancy: {note}.", { basis: t(r.basis), note: tServer(t, o.note) })}
+        subtitle={<>
+          {t("Full room cost = rooms-division cost (direct + allocated) split by {basis}, plus monthly room expenses, room-tagged costs and channel cost. Occupancy: {note}.", { basis: t(r.basis), note: tServer(t, o.note) })}
+          <span className="mt-2 block">{t("Housekeeping, laundry, amenities … columns are costs in {currency}, not revenue or counts: each room's share of the period's cost (split by {basis}) plus costs booked directly to the room.", { currency: cur, basis: t(r.basis) })}</span>
+        </>}
         actions={
           <>
-            <PeriodFilter from={range.fromStr} to={range.toStr} extra={<input type="hidden" name="view" value={view} />} />
             <Link href={expensesHref} className="inline-flex items-center rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-sm font-medium text-ink-800 hover:bg-ink-50">{t("Room cost expenses")}</Link>
+            <PeriodFilter from={range.fromStr} to={range.toStr} extra={<input type="hidden" name="view" value={view} />} />
           </>
         }
       />
@@ -127,7 +130,6 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
       </Card>
 
       <Card title={t("Rooms ({n})", { n: r.lines.length })} className="mt-4" padded={false}>
-        <p className="border-b border-ink-100 px-4 py-2 text-xs text-ink-500">{t("Housekeeping, laundry, amenities … columns are costs in {currency}, not revenue or counts: each room's share of the period's cost (split by {basis}) plus costs booked directly to the room.", { currency: cur, basis: t(r.basis) })}</p>
         {r.lines.length === 0 ? <div className="p-4"><Empty title={t("No rooms defined")} /></div> : (
           <div className="max-h-[32rem] overflow-auto" tabIndex={0} role="region" aria-label={t("Rooms")}>
             <Table>

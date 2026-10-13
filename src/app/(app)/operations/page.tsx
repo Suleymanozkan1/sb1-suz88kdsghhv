@@ -251,7 +251,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader title={t("Operating costs")} subtitle={t("Housekeeping, laundry, labor, energy and engineering. Each expense posts one cost-ledger row; corrections are reversals. Hotel-level costs reach departments only through the allocation engine.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={<input type="hidden" name="tab" value={tab} />} />} />
+      <PageHeader title={t("Operating costs")} subtitle={t("Housekeeping, laundry, labor, energy and engineering. Each expense posts one cost-ledger row; corrections are reversals. Hotel-level costs reach departments only through the allocation engine.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={<><input type="hidden" name="tab" value={tab} />{tab === "expenses" && sp.category && <input type="hidden" name="category" value={sp.category} />}</>} />} />
       <nav className="mb-4 flex flex-wrap gap-1 border-b border-ink-200" aria-label={t("Operating cost sections")}>
         {TABS.map(([k, l]) => <Link key={k} href={qs(k)} aria-current={k === tab ? "page" : undefined} className={cn("-mb-px border-b-2 px-3 py-2 text-sm font-medium", k === tab ? "border-brand-600 text-brand-700" : "border-transparent text-ink-500 hover:text-ink-800")}>{t(l)}</Link>)}
       </nav>

@@ -9,22 +9,6 @@ import { money, parseNum, qty } from "@/lib/format";
 import { useT } from "@/i18n/client";
 import { Title } from "@/components/title";
 
-/** Only the selected warehouse's counts are listed; changing it reloads the page (and the export) for that store. */
-export function WarehousePicker({ warehouses, selected }: { warehouses: { id: string; name: string }[]; selected: string }) {
-  const router = useRouter();
-  const t = useT();
-  return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div>
-        <Label htmlFor="cnt-wh">{t("Show counts of")}</Label>
-        <Select id="cnt-wh" className="w-64" value={selected} onChange={(e) => router.push(`/inventory/counts?warehouseId=${encodeURIComponent(e.target.value)}`)}>
-          {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </Select>
-      </div>
-    </div>
-  );
-}
-
 /** Soft delete (authorised users only; the server checks count:delete and refuses posted counts). */
 export function DeleteCount({ countId, number }: { countId: string; number: string }) {
   const router = useRouter();

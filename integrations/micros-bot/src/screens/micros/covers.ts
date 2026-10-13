@@ -15,8 +15,9 @@ import { BotError } from "../../errors";
 import { log } from "../../logger";
 import type { DetailResult } from "../listDetail";
 import { num, screenOptions, type ScreenContext } from "../context";
+import type { ReportDefinition } from "../../reports";
 
-export async function readCovers(ctx: ScreenContext<MicrosSelectors>): Promise<DetailResult<Covers>> {
+export async function readCovers(ctx: ScreenContext<MicrosSelectors>, def?: ReportDefinition): Promise<DetailResult<Covers>> {
   const s = ctx.selectors;
   const screen = new Screen(ctx.page, "covers", s.covers as unknown as Record<string, unknown>, screenOptions(ctx));
   const fmt = s.numberFormat ?? "auto";
@@ -29,7 +30,7 @@ export async function readCovers(ctx: ScreenContext<MicrosSelectors>): Promise<D
     return { items: [], warnings };
   }
   const table = await screen.need("table");
-  const rows = await screen.readRows("row", { outlet: "columns.outlet", meal: "columns.meal", covers: "columns.covers" }, ["outlet", "covers"], table);
+  const rows = await screen.readRows("row", { outlet: "columns.outlet", meal: "columns.meal", covers: "columns.covers" }, ["outlet", "covers"], table, def?.columns);
   const byKey = new Map<string, Covers>();
   for (const r of rows) {
     const outlet = r.outlet ?? "";

@@ -15,8 +15,7 @@ const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.ti
 export default async function SavingsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const sp = await searchParams;
   const t = await getT();
-  const now = new Date();
-  const range = monthRange({ from: sp.from ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10), to: sp.to ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).toISOString().slice(0, 10) });
+  const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
   const cur = hotel.baseCurrency;
   const [opps, acts] = await Promise.all([guarded(() => opportunities(prisma, actor, hotelId, { from: range.from, to: range.to })), guarded(() => listActions(prisma, actor, hotelId))]);

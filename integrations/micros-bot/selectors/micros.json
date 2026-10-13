@@ -124,5 +124,30 @@
     },
     "createdAtFormat": null,
     "skipNamePattern": "^(Toplam|Total)\\b"
+  },
+
+  "comps": {
+    "_info": "Ödenmez / ikram olarak kapatılan çeklerin kalem raporu (bir satır = bir kalem; aynı çekin satırları tek kayıt olur, çek no / satış noktası yalnız ilk satırda yazıyorsa aşağı doğru doldurulur). Yalnızca reports.json'da micros.comps.reportName doldurulunca okunur; o zamana kadar bu bloktaki TODO'lar check-config'te sorun sayılmaz. Sütun başlıkları reports.json'da verilirse aşağıdaki columns.* CSS'leri gerekmez. row ve columns.*, table'a göre.",
+    "steps": [
+      { "goto": "TODO: ödenmez / ikram raporunun yolu" },
+      { "fill": "TODO: tarih kutusu", "value": "{date}" },
+      { "click": "TODO: Raporu göster düğmesi" }
+    ],
+    "table": "TODO: rapor tablosu",
+    "row": "TODO: rapor satırı (table'a göre), ör. tbody tr",
+    "noData": "TODO: o gün ödenmez / ikram yoksa görünen mesaj (yoksa null)",
+    "nextPage": null,
+    "columns": {
+      "checkNo": "TODO: çek numarası hücresi",
+      "outlet": "TODO: satış noktası / revenue center hücresi",
+      "kind": "TODO: ödenmez / ikram türü hücresi (rapor tek tür gösteriyorsa null; reports.json defaultKind)",
+      "reason": "TODO: neden hücresi (yoksa null)",
+      "person": "TODO: onaylayan / kişi hücresi (yoksa null)",
+      "note": "TODO: not hücresi (yoksa null)",
+      "itemCode": "TODO: menü ürün numarası hücresi (yoksa null)",
+      "itemName": "TODO: ürün adı hücresi",
+      "qty": "TODO: miktar hücresi"
+    },
+    "skipItemNamePattern": "^(Toplam|Total|Genel Toplam)\\b"
   }
 }

@@ -100,5 +100,24 @@
     },
     "createdAtFormat": null,
     "skipNamePattern": "^(Toplam|Total)\\b"
+  },
+  "comps": {
+    "steps": [{ "goto": "/reports/comps?date={date}" }],
+    "table": "#compsReport",
+    "row": "tbody tr",
+    "noData": "#noComps",
+    "nextPage": null,
+    "columns": {
+      "checkNo": "td.check",
+      "outlet": "td.rvc",
+      "kind": "td.type",
+      "reason": "td.reason",
+      "person": "td.person",
+      "note": null,
+      "itemCode": "td.code",
+      "itemName": "td.item",
+      "qty": "td.qty"
+    },
+    "skipItemNamePattern": "^(Toplam|Total)\\b"
   }
 }

@@ -8,7 +8,7 @@
  *   GET  /api/integrations/runs/next   "run now" requests made by a user in HotelCost (the bot polls)
  *
  * Idempotency: a check is identified by its check number + business day, an invoice by supplier + invoice
- * number, a minibar charge by its folio reference, covers / occupancy by business day (+ outlet / meal), a product by its name
+ * number, a comp check (Ödenmez / İkram) by source + business day + outlet + check number, a minibar charge by its folio reference, covers / occupancy by business day (+ outlet / meal), a product by its name
  * (or code). Sending the same day again never duplicates;
  * a re-sent check or invoice is reported as a duplicate and skipped.
  */
@@ -93,12 +93,38 @@ export const productSchema = z.object({
   category: z.string().trim().max(100).optional().nullable(),
 });
 
+/**
+ * A check closed as Ödenmez (ON_HOUSE: owner, general manager, directors …) or İkram (HOSPITALITY: offered for a
+ * reason) in Micros, or a complimentary posting in Opera. Not a sale: no revenue is written, the items are deducted
+ * from stock through their recipes (or as products) and shown on the "Ödenmez ve İkram" page. Do not send the same
+ * check as `checks` too.
+ */
+export const compSchema = z.object({
+  checkNo: z.string().trim().min(1).max(64),
+  /** revenue center / outlet: matched to a HotelCost department by code or name, as for checks */
+  outlet: z.string().trim().min(1).max(100),
+  kind: z.enum(["ON_HOUSE", "HOSPITALITY"]),
+  /** the comp / discount reason as the POS names it: matched to the hotel's reason list by name; any other text is kept in the note */
+  reason: z.string().trim().max(100).optional().nullable(),
+  /** who authorised it or who it was for (the owner, the GM, the visiting company …) */
+  person: z.string().trim().max(120).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable(),
+  closedAt: z.string().datetime({ offset: true }).optional(),
+  lines: z.array(z.object({
+    /** Micros menu item number → recipe POS code (else the item name matches a recipe, then a product) */
+    itemCode: z.string().trim().max(64).optional().nullable(),
+    itemName: z.string().trim().min(1).max(200),
+    qty: num.refine((n) => n !== 0, "Quantity cannot be zero"),
+  })).min(1),
+});
+
 export const ingestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("checks"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(checkSchema).max(20000) }),
   z.object({ kind: z.literal("invoices"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(invoiceSchema).max(5000) }),
   z.object({ kind: z.literal("covers"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(coversSchema).max(500) }),
   z.object({ kind: z.literal("minibar"), source: z.enum(["OPERA", "MICROS", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(minibarSchema).max(5000) }),
   z.object({ kind: z.literal("occupancy"), source: z.enum(["OPERA", "OTHER"]).default("OPERA"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(occupancySchema).length(1) }),
+  z.object({ kind: z.literal("comps"), source: z.enum(["MICROS", "OPERA", "OTHER"]).default("MICROS"), businessDay: day, runId: z.string().max(64).optional(), items: z.array(compSchema).max(5000) }),
   // product cards are not tied to a business day
   z.object({ kind: z.literal("products"), source: z.enum(["MICROS", "OTHER"]).default("MICROS"), businessDay: day.optional(), runId: z.string().max(64).optional(), items: z.array(productSchema).max(5000) }),
 ]);

@@ -18,19 +18,23 @@ export function cn(...a: Parameters<typeof clsx>) {
  */
 export function PageHeader({ title, subtitle, actions, exportKey, exportParams, canExport = true }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined>; /** false hides the buttons for a user whose role may not export this report */ canExport?: boolean }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex flex-wrap items-center gap-2">
+    // the filters sit right of the title when they fit, else on their own row under it (the title never squeezes)
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold tracking-tight text-ink-950"><Title>{title}</Title></h1>
         {subtitle && <PageInfo>{subtitle}</PageInfo>}
         <HelpVideo />
       </div>
       {(actions || (exportKey && canExport)) && (
-        <div className="flex flex-wrap items-end gap-2 sm:shrink-0 sm:justify-end">
+        <div className="flex min-w-0 flex-wrap items-end gap-2">
           {actions}
           {exportKey && canExport && (
-            <Suspense fallback={null}>
-              <ExportButtons report={exportKey} params={exportParams} />
-            </Suspense>
+            // a wrapped export row keeps to the right edge
+            <div className="ml-auto">
+              <Suspense fallback={null}>
+                <ExportButtons report={exportKey} params={exportParams} />
+              </Suspense>
+            </div>
           )}
         </div>
       )}

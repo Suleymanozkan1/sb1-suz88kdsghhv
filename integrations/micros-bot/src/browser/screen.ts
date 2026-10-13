@@ -4,7 +4,8 @@
  * navigation steps and reads tables in one round-trip.
  */
 import type { Locator, Page } from "playwright";
-import { ScreenChangedError, SelectorNotConfiguredError } from "../errors";
+import { ColumnNotFoundError, ScreenChangedError, SelectorNotConfiguredError } from "../errors";
+import { normalizeHeader } from "../util/text";
 import { log } from "../logger";
 import { isTodo, type SelectorValue, type Step } from "./selectors";
 
@@ -151,19 +152,37 @@ export class Screen {
    * Read rows of a table in one go: for each element matching `rowSelector` (inside `scope`), the text of each
    * column selector (CSS, relative to the row; null column → null). A required column that matches in no row
    * at all means the column selector is wrong → ScreenChangedError.
+   * `headers` (from reports.json): field → column header text. Such a field is read from the cell under that header
+   * (the header row of the rows' table) instead of its CSS selector; a header that is not there → ColumnNotFoundError.
    */
-  async readRows<K extends string>(rowKey: string, columnKeys: Record<K, string>, required: NoInfer<K>[], scope?: Locator): Promise<Array<Record<K, string | null>>> {
+  async readRows<K extends string>(rowKey: string, columnKeys: Record<K, string>, required: NoInfer<K>[], scope?: Locator, headers: Partial<Record<K, string | null>> = {}): Promise<Array<Record<K, string | null>>> {
     const rowSelector = this.sel(rowKey);
+    const byHeader = (Object.entries(headers) as Array<[K, string | null | undefined]>).filter((e): e is [K, string] => typeof e[1] === "string" && e[1].trim() !== "");
+    const headerFields = new Set<string>(byHeader.map(([f]) => f));
     const cols: Record<string, string | null> = {};
     for (const [field, key] of Object.entries(columnKeys) as Array<[K, string]>) {
+      if (headerFields.has(field)) continue; // the header decides: the selector is not needed (may stay TODO)
       cols[field] = required.includes(field) ? this.sel(key) : this.sel(key, true);
     }
     const rows = (scope ?? this.page).locator(rowSelector);
-    const data = (await rows.evaluateAll(
-      (els, c) =>
-        els.map((el) => {
+    // runs in the browser: no named helper functions (the bundler would wrap them in a helper the page does not have)
+    const raw = (await rows.evaluateAll(
+      (els, arg) => {
+        let header: string[] | null = null;
+        if (arg.cells && els[0]) {
+          const table = els[0].closest("table");
+          const hr = table ? table.tHead?.rows[0] ?? Array.from(table.rows).find((r) => r.querySelector("th")) ?? null : null;
+          if (hr) {
+            header = [];
+            for (const cell of Array.from(hr.cells)) {
+              header.push(((cell as HTMLElement).innerText ?? cell.textContent ?? "").replace(/\s+/g, " ").trim());
+              for (let i = 1; i < (cell.colSpan || 1); i++) header.push("");
+            }
+          }
+        }
+        const data = els.map((el) => {
           const out: Record<string, string | null> = {};
-          for (const [field, sel] of Object.entries(c)) {
+          for (const [field, sel] of Object.entries(arg.c)) {
             if (!sel) {
               out[field] = null;
               continue;
@@ -177,12 +196,39 @@ export class Screen {
             const text = cell.tagName === "INPUT" || cell.tagName === "SELECT" || cell.tagName === "TEXTAREA" ? input.value : (cell as HTMLElement).innerText ?? cell.textContent;
             out[field] = (text ?? "").replace(/\s+/g, " ").trim();
           }
-          return out;
-        }),
-      cols,
-    )) as Array<Record<K, string | null>>;
+          const cells: string[] = [];
+          if (arg.cells) {
+            for (const cell of Array.from(el.children).filter((ch) => ch.tagName === "TD" || ch.tagName === "TH")) {
+              cells.push(((cell as HTMLElement).innerText ?? cell.textContent ?? "").replace(/\s+/g, " ").trim());
+              for (let i = 1; i < ((cell as HTMLTableCellElement).colSpan || 1); i++) cells.push("");
+            }
+          }
+          return { out, cells };
+        });
+        return { header, data };
+      },
+      { c: cols, cells: byHeader.length > 0 },
+    )) as { header: string[] | null; data: Array<{ out: Record<string, string | null>; cells: string[] }> };
+
+    let data = raw.data.map((r) => r.out as Record<K, string | null>);
+    if (byHeader.length && raw.data.length > 0) {
+      const seen = raw.header ?? [];
+      const normalized = seen.map(normalizeHeader);
+      const index = new Map<K, number>();
+      for (const [field, header] of byHeader) {
+        const i = normalized.indexOf(normalizeHeader(header));
+        if (i < 0 || !normalizeHeader(header)) throw new ColumnNotFoundError(this.name, field, header, seen);
+        index.set(field, i);
+      }
+      data = raw.data.map((r) => {
+        const out = { ...r.out } as Record<K, string | null>;
+        for (const [field, i] of index) out[field] = r.cells[i] ?? null;
+        return out;
+      });
+    }
     if (data.length > 0) {
       for (const field of required) {
+        if (headerFields.has(field)) continue;
         if (data.every((r) => r[field] === null)) throw new ScreenChangedError(this.name, columnKeys[field], cols[field]!);
       }
     }

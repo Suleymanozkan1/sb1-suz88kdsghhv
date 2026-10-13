@@ -20,11 +20,13 @@ import { log } from "../../logger";
 import type { DetailResult } from "../listDetail";
 import type { NumberFormat } from "../../util/numbers";
 import { num, screenOptions, toIso, type ScreenContext } from "../context";
+import type { ReportDefinition } from "../../reports";
 
 const MAX_PAGES = 200;
 
 export async function readMinibar(
   ctx: ScreenContext<{ dateFormat?: string; dateTimeFormat?: string; numberFormat?: NumberFormat; minibar?: MinibarScreen | null }>,
+  def?: ReportDefinition,
 ): Promise<DetailResult<MinibarCharge>> {
   const block = ctx.selectors.minibar;
   if (!block) throw new BotError("minibar screen is not configured (\"minibar\" block missing in the selectors file)");
@@ -48,6 +50,7 @@ export async function readMinibar(
       { room: "columns.room", itemCode: "columns.itemCode", itemName: "columns.itemName", qty: "columns.qty", reference: "columns.reference", postedAt: "columns.postedAt" },
       ["room", "itemName", "qty", "reference"],
       table,
+      def?.columns,
     );
     for (const r of rows) {
       const itemName = r.itemName ?? "";

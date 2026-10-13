@@ -1,0 +1,142 @@
+{
+  "_README": "Rapor tanımları: botun Micros / Opera'dan HANGİ raporları okuyacağı. Otel raporları gösterdikten sonra doldurulur; kod değişmez. 'TODO' ile başlayan değerler otel raporları gösterince doldurulacak yer tutuculardır. Ekrana nasıl gidileceği ve tablonun seçicileri (steps, table, row) selectors/*.json dosyalarındaki aynı adlı bloktadır. Bkz. README.md > Rapor tanımları.",
+  "_fields": "reportName = Micros/Opera raporlamasında görünen rapor adı; menuPath = rapora giden menü yolu (ör. 'Raporlar > Satış > Menü Ürün Satışları'); format = 'screen' (rapor ekrandan okunur); waitForData = true ise rapor boşken gece kapanışı bitmemiş sayılır ve gece çalışması sonra yeniden dener; columns = { alan: 'Rapordaki sütun başlığı' } — null bırakılan alan seçici dosyasındaki CSS ile okunur.",
+
+  "micros": {
+    "checks": {
+      "_info": "Satışlar: hangi üründen kaç adet satıldı (çek / adisyon satırları). Bu rapor boşsa gece kapanışı bitmemiş sayılır.",
+      "reportName": "TODO: otel gösterecek — satış (kapanmış çekler / menü ürün satışları) raporunun adı",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu, ör. Raporlar > Satış > ...",
+      "format": "screen",
+      "waitForData": true,
+      "columns": {
+        "itemCode": null,
+        "itemName": null,
+        "qty": null,
+        "amount": null
+      }
+    },
+
+    "comps": {
+      "_info": "Ödenmez (on-house) ve ikram (hospitality) olarak kapatılan çekler ve kalemleri → HotelCost 'Ödenmez ve İkram'. reportName doldurulana kadar bu rapor OKUNMAZ (atlanır). Doldurunca selectors/micros.json içindeki 'comps' bloğunu da doldurun.",
+      "reportName": "TODO: otel gösterecek — ödenmez / ikram çekleri raporunun adı",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "checkNo": null,
+        "outlet": null,
+        "kind": null,
+        "reason": null,
+        "person": null,
+        "note": null,
+        "itemCode": null,
+        "itemName": null,
+        "qty": null
+      },
+      "_kindMap": "Rapordaki 'tür' sütununda geçen metin → ON_HOUSE (ödenmez) / HOSPITALITY (ikram). Büyük/küçük harf önemsiz, metnin içinde geçmesi yeter. Rapor tek türü gösteriyorsa defaultKind yazın.",
+      "kindMap": {
+        "TODO: otel gösterecek — ödenmez metni, ör. Ödenmez": "ON_HOUSE",
+        "TODO: otel gösterecek — ikram metni, ör. İkram": "HOSPITALITY"
+      },
+      "defaultKind": null
+    },
+
+    "invoices": {
+      "_info": "Satınalma faturaları (INVOICE_SOURCE=web iken).",
+      "reportName": "TODO: otel gösterecek — satınalma faturaları / mal kabul ekranının adı",
+      "menuPath": "TODO: otel gösterecek — ekrana giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "itemCode": null,
+        "itemName": null,
+        "qty": null,
+        "unit": null,
+        "unitPrice": null,
+        "taxRatePct": null
+      }
+    },
+
+    "covers": {
+      "_info": "Satış noktası ve öğüne göre kişi (cover) sayısı, ör. satılan kahvaltılar.",
+      "reportName": "TODO: otel gösterecek — cover / kişi sayısı raporunun adı",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "outlet": null,
+        "meal": null,
+        "covers": null
+      }
+    },
+
+    "products": {
+      "_info": "Ürün (stok) kartları — yalnızca HotelCost'ta 'Ürünleri çek' istenince okunur.",
+      "reportName": "TODO: otel gösterecek — ürün / stok kartları listesinin adı",
+      "menuPath": "TODO: otel gösterecek — listeye giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "name": null,
+        "code": null,
+        "unit": null,
+        "packSize": null,
+        "packUnit": null,
+        "taxRatePct": null,
+        "category": null,
+        "createdAt": null
+      }
+    }
+  },
+
+  "opera": {
+    "occupancy": {
+      "_info": "Gece kapanışı istatistikleri (doluluk). Sütun eşleştirmesi yok: değerler selectors/opera.json 'statistics' bloğundan okunur.",
+      "reportName": "TODO: otel gösterecek — istatistik raporunun adı, ör. Manager Report",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu",
+      "format": "screen",
+      "waitForData": false
+    },
+
+    "minibar": {
+      "_info": "Odalara yazılan minibar hareketleri.",
+      "reportName": "TODO: otel gösterecek — minibar hareketleri raporunun adı",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "room": null,
+        "itemCode": null,
+        "itemName": null,
+        "qty": null,
+        "reference": null,
+        "postedAt": null
+      }
+    },
+
+    "comps": {
+      "_info": "Opera'da ödenmez / ikram olarak kapatılan hesaplar (ör. house use / complimentary). Otel bunları Opera'dan da gösterirse doldurun; reportName doldurulana kadar OKUNMAZ. Doldurunca selectors/opera.json içindeki 'comps' bloğunu da doldurun.",
+      "reportName": "TODO: otel gösterecek — Opera ödenmez / ikram raporunun adı (yoksa bu bloğu null yapın)",
+      "menuPath": "TODO: otel gösterecek — rapora giden menü yolu",
+      "format": "screen",
+      "waitForData": false,
+      "columns": {
+        "checkNo": null,
+        "outlet": null,
+        "kind": null,
+        "reason": null,
+        "person": null,
+        "note": null,
+        "itemCode": null,
+        "itemName": null,
+        "qty": null
+      },
+      "kindMap": {
+        "TODO: otel gösterecek — ödenmez metni": "ON_HOUSE",
+        "TODO: otel gösterecek — ikram metni": "HOSPITALITY"
+      },
+      "defaultKind": null
+    }
+  }
+}

@@ -43,10 +43,9 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   );
   return (
     <>
-      <PageHeader title={t("Stock movements")} subtitle={t("Append-only. Posted entries are never edited or deleted — corrections are reversals approved by a manager.")} />
-      <Card className="mb-4">
-        <LedgerFilters exportKey="ledger" view={f.view} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} types={LEDGER_TYPES} value={f} product={product ? { id: product.id, name: product.name, sku: product.sku, stockUnit: product.stockUnit, purchaseUnit: product.purchaseUnit, recipeUnit: product.recipeUnit } : null} />
-      </Card>
+      <PageHeader title={t("Stock movements")} subtitle={t("Append-only. Posted entries are never edited or deleted — corrections are reversals approved by a manager.")} exportKey="ledger" actions={
+        <LedgerFilters view={f.view} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} types={LEDGER_TYPES} value={f} product={product ? { id: product.id, name: product.name, sku: product.sku, stockUnit: product.stockUnit, purchaseUnit: product.purchaseUnit, recipeUnit: product.recipeUnit } : null} />
+      } />
       <div className="mb-2 flex gap-1 border-b border-ink-200">
         {tab("summary", t("Stock movements"))}
         {tab("detail", t("Stock movements – detailed"))}

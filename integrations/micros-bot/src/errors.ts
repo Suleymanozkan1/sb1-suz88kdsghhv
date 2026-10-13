@@ -21,6 +21,13 @@ export class ScreenChangedError extends BotError {
   }
 }
 
+/** A report column named in reports.json is not in the report's header row: the report changed or the header is misspelt. */
+export class ColumnNotFoundError extends BotError {
+  constructor(public screen: string, public field: string, public header: string, public seen: string[]) {
+    super(`screen changed: column "${header}" (${field}) not found on ${screen} screen (columns: ${seen.filter(Boolean).join(", ") || "no header row"})`);
+  }
+}
+
 /** A selector is still the TODO placeholder from the template: it was never set for this hotel. */
 export class SelectorNotConfiguredError extends BotError {
   constructor(public screen: string, public key: string) {

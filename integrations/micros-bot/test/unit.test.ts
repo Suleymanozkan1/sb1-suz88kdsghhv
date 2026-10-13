@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { addDays, defaultBusinessDay, formatDay, parseDateTime, zonedIso, isValidDay } from "../src/util/time";
 import { parseNumber } from "../src/util/numbers";
-import { buildConfig, maskedConfig, parseDotEnv, runAtAfter, validateConfig } from "../src/config";
+import { buildConfig, configWarnings, maskedConfig, parseDotEnv, validateConfig } from "../src/config";
 import { configureLogger, redact } from "../src/logger";
 import { summarize, makeRunId } from "../src/runner";
 import { parseCsv, readInvoiceFile, rowsToInvoices, normalizeHeader, decodeText } from "../src/invoices/fileReader";
@@ -80,7 +80,10 @@ describe("config & secrets", () => {
     const c = buildConfig({ MICROS_URL: "https://m", MICROS_USERNAME: "u", MICROS_PASSWORD: "topsecret", HOTELCOST_URL: "https://h/", HOTELCOST_API_KEY: "hc_key_abcdef" });
     assert.equal(c.timezone, "Europe/Istanbul");
     assert.equal(c.nightAuditCutoff, "03:30");
-    assert.equal(c.runAt, "04:15");
+    assert.equal(c.runAt, "05:00");
+    assert.equal(c.retryMinutes, 15);
+    assert.equal(c.retryUntil, "09:00");
+    assert.ok(c.reportsFile.endsWith("reports.json"));
     assert.equal(c.pollMinutes, 2);
     assert.equal(c.hotelcost.url, "https://h");
     assert.equal(c.opera, null);
@@ -89,11 +92,17 @@ describe("config & secrets", () => {
     assert.ok(!printed.includes("topsecret") && !printed.includes("hc_key_abcdef"));
     assert.ok(validateConfig(buildConfig({ RUN_AT: "4:15pm" })).some((p) => p.includes("RUN_AT")));
   });
-  test("RUN_AT defaults to cut-off + 45 min unless set", () => {
-    assert.equal(runAtAfter("03:30"), "04:15");
-    assert.equal(runAtAfter("23:30"), "00:15");
-    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAt, buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00" }).runAtFixed], ["05:45", false]);
-    assert.deepEqual([buildConfig({ NIGHT_AUDIT_CUTOFF: "05:00", RUN_AT: "06:30" }).runAt, buildConfig({ RUN_AT: "06:30" }).runAtFixed], ["06:30", true]);
+  test("RUN_AT defaults to 05:00 whatever the cut-off; retries are configurable and validated", () => {
+    assert.equal(buildConfig({ NIGHT_AUDIT_CUTOFF: "04:00" }).runAt, "05:00");
+    assert.equal(buildConfig({ RUN_AT: "04:45" }).runAt, "04:45");
+    const ok = { MICROS_URL: "https://m", MICROS_USERNAME: "u", MICROS_PASSWORD: "p", HOTELCOST_URL: "https://h", HOTELCOST_API_KEY: "k" };
+    assert.deepEqual(validateConfig(buildConfig({ ...ok, RETRY_MINUTES: "0" })), [], "0 = retries off");
+    assert.equal(buildConfig({ RETRY_MINUTES: "0" }).retryMinutes, 0);
+    assert.match(validateConfig(buildConfig({ ...ok, RETRY_MINUTES: "abc" })).join(), /RETRY_MINUTES 0 ile 240 arasında/);
+    assert.match(validateConfig(buildConfig({ ...ok, RETRY_UNTIL: "9" })).join(), /RETRY_UNTIL SS:DD biçiminde olmalı/);
+    assert.match(validateConfig(buildConfig({ ...ok, RUN_AT: "09:30" })).join(), /RETRY_UNTIL \(09:00\) aynı gün RUN_AT \(09:30\) saatinden sonra olmalı/);
+    assert.match(configWarnings(buildConfig({ ...ok, RUN_AT: "03:00", NIGHT_AUDIT_CUTOFF: "03:30" })).join(), /RUN_AT \(03:00\) gece kapanışından \(03:30\) sonra olmalı/);
+    assert.ok(!configWarnings(buildConfig(ok)).some((w) => w.includes("RUN_AT")));
   });
   test("redaction of secrets and bearer tokens", () => {
     configureLogger({ secrets: ["topsecret"], silent: true });
