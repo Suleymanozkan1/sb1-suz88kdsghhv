@@ -394,11 +394,6 @@ async function main() {
     pid[sku] = created.id;
     brk.set(name, { id: created.id, unit, purchaseUnit: pu ?? unit, size: pu && size ? size : 1, price, supplier: SEED_SUPPLIER[b.cat]! });
   }
-  const dish = await createRecipe(prisma, fb, H, {
-    code: BREAKFAST_DISH.code, name: BREAKFAST_DISH.name, type: "BREAKFAST", departmentId: dept.BRKF,
-    version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Buffet standard", lines: BREAKFAST_DISH.lines.map(([name, q, unit]) => ({ productId: brk.get(name)!.id, quantity: q, unit })) },
-  });
-  await approveVersion(prisma, admin, H, dish.versions[0]!.id, { effectiveFrom: new Date(start.getTime() - 86400000) });
   const dishParts = BREAKFAST_DISH.lines.map(([name, q, unit]) => ({ name, perKg: unit === "g" ? q / 1000 : q }));
   const plans = days.map((d) => {
     const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
@@ -420,6 +415,12 @@ async function main() {
     }
     for (const [sup, items] of bySupplier) await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[sup], warehouseId: wh.MAIN, receiptDate: at(days[w]!, 5), invoiceNo: `BRK-${days[w]!.toISOString().slice(0, 10)}-${sup + 1}`, items });
   }
+  // the hot dish, once its ingredients have a cost
+  const dish = await createRecipe(prisma, fb, H, {
+    code: BREAKFAST_DISH.code, name: BREAKFAST_DISH.name, type: "BREAKFAST", departmentId: dept.BRKF,
+    version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Buffet standard", lines: BREAKFAST_DISH.lines.map(([name, q, unit]) => ({ productId: brk.get(name)!.id, quantity: q, unit })) },
+  });
+  await approveVersion(prisma, admin, H, dish.versions[0]!.id, { effectiveFrom: new Date(start.getTime() - 86400000) });
   const mainQty = async (productId: string) => Number((await prisma.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: wh.MAIN!, productId } } }))?.quantity.toString() ?? 0);
   let sessionsCreated = 0;
   for (const pl of plans) {
