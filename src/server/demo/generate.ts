@@ -1129,7 +1129,7 @@ async function buffetPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   for (const b of sim.buffetPlan) {
     const stocked = await db.stockBalance.count({ where: { warehouseId: ctx.wh.KITCH!, productId: { in: b.items.map((x) => x.productId) }, quantity: { gt: 1 } } });
     if (!stocked) continue;
-    const s = await createSession(db, admin, H, { departmentId: ctx.dept.BRKF, warehouseId: ctx.wh.KITCH, type: "BREAKFAST", serviceDate: b.day, expectedCovers: b.expected, occupiedRooms: rint(b.covers / 1.9), inHouseGuests: rint(b.covers * 1.1), boardBasis: ctx.hotel.resort ? "AI" : "BB" });
+    const s = await createSession(db, admin, H, { departmentId: ctx.dept.BRKF, warehouseId: ctx.wh.KITCH, type: "BREAKFAST", serviceDate: b.day, expectedCovers: b.expected, includedCovers: b.covers - rint(b.covers * 0.08), paidCovers: rint(b.covers * 0.08), occupiedRooms: rint(b.covers / 1.9), inHouseGuests: rint(b.covers * 1.1), boardBasis: ctx.hotel.resort ? "AI" : "BB" });
     const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
     for (const it of b.items) {
       const pos = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: ctx.wh.KITCH!, productId: it.productId } } });

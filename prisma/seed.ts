@@ -398,7 +398,9 @@ async function main() {
     ];
     if (d.getUTCDay() === 6) sessions.push({ type: "THEME_NIGHT", deptCode: "REST", covers: Math.round(between(120, 160)), expected: 140, items: themeItems });
     for (const ss of sessions) {
-      const session = await createSession(prisma, fb, H, { departmentId: dept[ss.deptCode], warehouseId: wh.MAIN, type: ss.type, serviceDate: d, expectedCovers: ss.expected, occupiedRooms: ss.type === "BREAKFAST" ? Math.round(ss.covers / 1.8) : null, inHouseGuests: ss.type === "BREAKFAST" ? Math.round(ss.covers * 1.05) : null, boardBasis: ss.type === "BREAKFAST" ? "BB" : "HB" });
+      // breakfast covers in two numbers (r3 §4): ~8 % sold separately, the rest inside the room rate
+      const paid = ss.type === "BREAKFAST" ? Math.round(ss.covers * 0.08) : null;
+      const session = await createSession(prisma, fb, H, { departmentId: dept[ss.deptCode], warehouseId: wh.MAIN, type: ss.type, serviceDate: d, expectedCovers: ss.expected, includedCovers: paid === null ? null : ss.covers - paid, paidCovers: paid, occupiedRooms: ss.type === "BREAKFAST" ? Math.round(ss.covers / 1.8) : null, inHouseGuests: ss.type === "BREAKFAST" ? Math.round(ss.covers * 1.05) : null, boardBasis: ss.type === "BREAKFAST" ? "BB" : "HB" });
       const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
       for (const it of ss.items) {
         const need = ss.expected * it.perCover;
@@ -415,7 +417,7 @@ async function main() {
         if (staff > 0) leftovers.push({ key: it.key, quantity: String(staff), class: "STAFF_MEAL" });
         if (reuse > 0) leftovers.push({ key: it.key, quantity: String(reuse), class: "REFRIGERATED" });
       }
-      // leave yesterday's breakfast open on the last day to show the open-session workflow
+      // the last breakfast day is left without its count, to show the breakfast count (r3 §4)
       if (d.getTime() === end.getTime() && ss.type === "BREAKFAST") continue;
       await closeSession(prisma, fb, H, session.id, { actualCovers: ss.covers, leftovers });
       sessionsCreated++;

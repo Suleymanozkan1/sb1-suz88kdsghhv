@@ -70,6 +70,13 @@ export const r3b: Record<string, string> = {
   "All breakfast counts entered": "Tüm kahvaltı sayımları girildi",
   // breakfast leftovers are the only buffet leftovers now (waste records, waste reports)
   "BUFFET_LEFTOVER": "KAHVALTI FİRESİ",
+  "buffet leftover": "kahvaltı firesi",
+  // the rest of the app names the module the same way (ledger source, dashboard cause, KPI, control calendar)
+  "BUFFET": "KAHVALTI",
+  "Buffet (per cover)": "Kahvaltı (kişi başı)",
+  "BUFFET_CONSUMPTION": "Kahvaltı tüketimi",
+  "Buffet food cost per cover": "Kuver başı kahvaltı yiyecek maliyeti",
+  "Buffet cost review": "Kahvaltı maliyet değerlendirmesi",
   // audit trail action codes
   "BUFFET_COVERS": "Kahvaltı kuverleri girildi",
   "BREAKFAST_COUNT": "Kahvaltı sayımı kaydedildi",
@@ -87,10 +94,11 @@ export const r3bMessages: Record<string, string> = {
   "Invalid date": "Geçersiz tarih",
   "All breakfast counts entered": "Tüm kahvaltı sayımları girildi",
   "{0} breakfast days without a count": "{0} kahvaltı gününün sayımı girilmedi",
+  "Buffet cost review": "Kahvaltı maliyet değerlendirmesi",
+  "Buffet food cost per cover": "Kuver başı kahvaltı yiyecek maliyeti",
   // stock-ledger and waste reasons written by the breakfast service
   "Breakfast issue {0}": "Kahvaltı çıkışı {0}",
   "Breakfast count {0}: {1} returned to stock": "Kahvaltı sayımı {0}: {1} depoya döndü",
   "Breakfast count {0}: {1} waste": "Kahvaltı sayımı {0}: {1} fire",
   "Breakfast count corrected {0}": "Kahvaltı sayımı düzeltildi {0}",
-  "Breakfast waste {0}: {1}": "Kahvaltı firesi {0}: {1}",
 };

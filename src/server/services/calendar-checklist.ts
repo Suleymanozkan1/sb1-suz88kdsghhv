@@ -18,7 +18,7 @@ export interface ChecklistRow {
   status: string;
 }
 
-export async function renderChecklistPdf(input: { title: string; subtitle: string; generated: string; rows: ChecklistRow[]; hotel: string; t: T; timeZone: string }): Promise<Buffer> {
+export async function renderChecklistPdf(input: { title: string; subtitle: string; generated: string; rows: ChecklistRow[]; hotel: string; t: T; locale: string }): Promise<Buffer> {
   const { t } = input;
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true, info: { Title: input.title, Author: "HotelCost", Subject: input.hotel } });
   doc.registerFont("body", FONT);
@@ -29,7 +29,7 @@ export async function renderChecklistPdf(input: { title: string; subtitle: strin
   const left = doc.page.margins.left;
   const width = doc.page.width - left - doc.page.margins.right;
   const bottom = () => doc.page.height - doc.page.margins.bottom - 20;
-  const day = new Intl.DateTimeFormat("tr-TR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+  const day = new Intl.DateTimeFormat(input.locale === "en" ? "en-GB" : "tr-TR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 
   doc.font("bold").fontSize(15).fillColor("#111827").text(input.title, left, doc.page.margins.top);
   doc.font("body").fontSize(9.5).fillColor("#4b5563").text(`${input.hotel} · ${input.subtitle}`);

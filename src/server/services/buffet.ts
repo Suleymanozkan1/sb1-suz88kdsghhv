@@ -320,7 +320,7 @@ async function postLeftovers(tx: Tx, actor: Actor, s: BuffetSession, inputLines:
       const out = await postMovement(tx, actor, { hotelId, warehouseId: e.warehouseId, productId, type: wasted ? "WASTE" : "STAFF_MEAL", quantity: rq.neg(), exactTotal: rc.neg(), reverseLayerOfTxId: back.id, txDate: at, departmentId: s.departmentId, sourceType: "BUFFET", sourceId: leftover.id, reason: breakfast && wasted ? `Breakfast count ${day}: ${item.name} waste` : `Buffet leftover ${lo.class}${item.isDish ? ` (${item.name})` : ""}` });
       if (wasted) {
         await tx.wasteRecord.create({
-          data: { hotelId, departmentId: s.departmentId, warehouseId: e.warehouseId, productId, wasteType: "BUFFET_LEFTOVER", wasteDate: at, quantity: rq.toString(), unit: (await tx.product.findUniqueOrThrow({ where: { id: productId } })).stockUnit, stockQty: rq.toString(), unitCost: out.unitCost, costValue: rc.toString(), reason: breakfast ? `Breakfast waste ${day}: ${item.name}` : `${s.type} buffet ${day}: ${item.name} (${lo.class})`, status: "APPROVED", userId: actor.userId, approvedById: actor.userId, approvedAt: new Date(), stockTxId: out.id },
+          data: { hotelId, departmentId: s.departmentId, warehouseId: e.warehouseId, productId, wasteType: "BUFFET_LEFTOVER", wasteDate: at, quantity: rq.toString(), unit: (await tx.product.findUniqueOrThrow({ where: { id: productId } })).stockUnit, stockQty: rq.toString(), unitCost: out.unitCost, costValue: rc.toString(), reason: breakfast ? (item.isDish ? item.name : null) : `${s.type} buffet ${day}: ${item.name} (${lo.class})`, status: "APPROVED", userId: actor.userId, approvedById: actor.userId, approvedAt: new Date(), stockTxId: out.id },
         });
       }
     }

@@ -1,7 +1,7 @@
 /**
- * Cost control calendar (spec 257) and weekly cost review (spec 258).
+ * Cost control calendar (spec 257) and cost review (spec 258).
  * Recurring control tasks with due dates, completion log and system evidence (e.g. a posted stock count),
- * and a weekly review of the movements a cost controller must look at.
+ * and the cost review of the movements a cost controller must look at, for any date range.
  */
 import { z } from "zod";
 import { D, Decimal, ZERO, sum } from "@/domain/money";
@@ -136,7 +136,7 @@ export function monthWeeks(year: number, month: number): Array<{ week: number; f
 }
 
 /** The week block (1–5) of a day of the month. */
-export const weekOfMonth = (d: Date) => Math.min(5, Math.floor((d.getUTCDate() - 1) / 7) + 1);
+export const weekOfMonth = (d: Date) => Math.min(5, ((d.getUTCDate() - 1 - ((d.getUTCDate() - 1) % 7)) / 7) + 1);
 
 /**
  * The control calendar of one month, grouped by week. Completed controls stay in their week with the completion
@@ -194,6 +194,32 @@ export async function createTask(db: Db, actor: Actor, hotelId: string, raw: unk
 // ── Cost review (spec 258; round 3: any date range, full lists, "top 5" on screen) ──
 export type ReviewRange = { from: Date; to: Date };
 
+const isoDay = (v: string | null | undefined): Date | null => {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? d : null;
+};
+
+/**
+ * The review's dates from the URL: from / to (both inclusive, default 1st of this month … today). An old link with
+ * ?week=<last day> (dashboard, bookmarks) still opens that 7-day week. Reversed dates are swapped.
+ */
+export function reviewRange(q: { from?: string | null; to?: string | null; week?: string | null }, now = new Date()) {
+  const week = isoDay(q.week);
+  let first: Date;
+  let last: Date;
+  if (week && !q.from && !q.to) {
+    last = week;
+    first = new Date(week.getTime() - 6 * DAY);
+  } else {
+    first = isoDay(q.from) ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    last = isoDay(q.to) ?? utc(now);
+    if (first > last) [first, last] = [last, first];
+  }
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: first, to: new Date(last.getTime() + DAY), fromStr: iso(first), toStr: iso(last) };
+}
+
 /**
  * The cost review of [from, to): cost increases, waste, unexplained usage, critical stock and recipe changes, each
  * sorted most important first and complete (the page shows the first 5). Every section follows the user's own rights:
@@ -215,7 +241,7 @@ export async function costReview(db: Db, actor: Actor, hotelId: string, range: R
       const prev = D(p.previousUnitPrice!.toString());
       const cur = D(p.unitPrice.toString());
       const qty = D(p.quantity?.toString() ?? 0);
-      return { productId: p.productId, product: p.product.name, supplier: p.supplier.name, date: p.priceDate, previous: prev, current: cur, changePct: prev.gt(0) ? cur.minus(prev).div(prev) : null, impact: cur.minus(prev).times(qty) };
+      return { productId: p.productId, product: p.product.name, supplierId: p.supplierId, supplier: p.supplier.name, date: p.priceDate, previous: prev, current: cur, changePct: prev.gt(0) ? cur.minus(prev).div(prev) : null, impact: cur.minus(prev).times(qty) };
     })
     .filter((x) => x.current.gt(x.previous))
     .sort((a, b) => b.impact.comparedTo(a.impact));

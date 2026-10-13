@@ -102,7 +102,11 @@ export async function renderCountTemplate(o: { hotel: string; date: string; rows
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(i);
-    doc.font("body").fontSize(7).fillColor("#9ca3af").text(`HotelCost · ${t("Breakfast count sheet")} · ${dateText} · ${t("Page")} ${i + 1}/${range.count}`, left, doc.page.height - doc.page.margins.bottom - 4, { width, align: "right", lineBreak: false });
+    // written into the bottom margin: without lifting the margin pdfkit would open a new page for it
+    const bottomMargin = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font("body").fontSize(7).fillColor("#9ca3af").text(`HotelCost · ${t("Breakfast count sheet")} · ${dateText} · ${t("Page")} ${i + 1}/${range.count}`, left, doc.page.height - bottomMargin + 10, { width, align: "right", lineBreak: false });
+    doc.page.margins.bottom = bottomMargin;
   }
   doc.end();
   return done;

@@ -28,7 +28,7 @@ test("imports: product master preview from CSV flags duplicates and invalid rows
   await expect(page.getByRole("button", { name: /^Import/ })).toBeDisabled();
 });
 
-test("control calendar: overdue control can be marked done; weekly review renders (spec 257–258)", async ({ page }) => {
+test("control calendar: overdue control can be signed off and stays in its week; cost review renders (spec 257–258)", async ({ page }) => {
   await login(page, "controller");
   await page.goto("/calendar");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Cost control calendar", { ignoreCase: true }); // headings are shown in title case
@@ -37,10 +37,10 @@ test("control calendar: overdue control can be marked done; weekly review render
     answerDialogs(page, ["E2E check"]);
     const title = (await overdue.getByRole("cell").nth(1).textContent()) ?? "";
     const due = (await overdue.getByRole("cell").nth(0).textContent()) ?? "";
-    await overdue.getByRole("button", { name: "Mark done" }).click();
+    await overdue.getByRole("button", { name: "Sign off" }).click();
     await expect(page.getByRole("row").filter({ hasText: title }).filter({ hasText: due }).first()).toContainText("DONE");
   }
   await page.goto("/review");
-  await expect(page.getByRole("heading", { name: "Top 10 waste items" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Top waste items" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Critical stock" })).toBeVisible();
 });

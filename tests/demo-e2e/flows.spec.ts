@@ -195,34 +195,34 @@ test("POS sales import (controller): preview and commit two lines", async ({ pag
   await expect(page.getByRole("row").filter({ hasText: `demo-${id}.csv` })).toContainText("POSTED");
 });
 
-test("buffet (F&B manager): open session, issue, leftovers, close → cost per cover", async ({ page }) => {
+test("breakfast (F&B manager): day, covers, issue, breakfast count → cost per cover", async ({ page }) => {
   await signIn(page, "fbm@test.local");
   await page.goto("/buffet");
-  await page.getByLabel("Meal").selectOption("SPECIAL_EVENT");
-  await page.getByLabel("Issue from").selectOption({ label: "Main Warehouse" });
-  await page.getByLabel("Covers sold").fill("120");
-  for (let back = 0; back < 25; back++) {
-    const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
-    await page.getByLabel("Date", { exact: true }).fill(d);
-    // decide on this attempt's answer: the "already exists" alert of a previous attempt can still be on screen
-    const answer = page.waitForResponse((r) => r.url().endsWith("/api/buffet/sessions") && r.request().method() === "POST");
-    await page.getByRole("button", { name: "Open session" }).click();
-    if ((await answer).ok()) {
-      await page.waitForURL(/\/buffet\/[^/]+$/);
-      break;
-    }
-  }
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet", { ignoreCase: true }); // headings are shown in title case
+  // meal (breakfast only) and date (today by default): the day's record is opened, or created the first time
+  await expect(page.getByLabel("Meal").locator("option")).toHaveText(["Breakfast"]);
+  await page.getByRole("button", { name: "Create" }).click();
+  await page.waitForURL(/\/buffet\/[^/]+$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Breakfast ·");
+  await page.getByLabel(/^Package-included breakfast/).fill("110");
+  await page.getByLabel(/^Breakfast not included/).fill("10");
+  await page.getByRole("button", { name: "Save covers" }).click();
+  await expect(page.getByTestId("breakfast-covers").getByText("Saved.")).toBeVisible();
   await pickProduct(page, "Product", "Chicken Wings", /Chicken Wings/);
   await page.getByLabel("Quantity").fill("2");
-  await page.getByRole("button", { name: "Issue to buffet" }).click();
+  await page.getByRole("button", { name: "Issue to breakfast" }).click();
   await expect(page.getByRole("cell", { name: /Chicken Wings/ }).first()).toBeVisible();
-  await page.getByLabel("Actual covers").fill("100");
-  await page.getByRole("textbox", { name: /^Waste.*Chicken Wings/ }).fill("0.2");
-  answerDialogs(page, [true]);
-  await page.getByRole("button", { name: "Close session" }).click();
-  await expect(page.getByText("CLOSED", { exact: true })).toBeVisible();
+  // the count: remaining quantity, F marks the remainder as waste, Enter moves on (last row → Save)
+  await page.getByRole("link", { name: /Breakfast count/ }).first().click();
+  await page.waitForURL(/\/buffet\/count/);
+  const box = page.getByRole("textbox", { name: /^Remaining .*Chicken Wings/ });
+  await box.fill("0.2");
+  await box.press("f");
+  await expect(page.getByRole("radiogroup", { name: /Chicken Wings/ }).getByRole("radio", { name: "Waste" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: /^Save count/ }).click();
+  await expect(page.getByText("Breakfast count saved.")).toBeVisible();
+  await page.getByRole("link", { name: "Open the breakfast day" }).click();
   await expect(page.getByText("Cost / cover")).toBeVisible();
+  await expect(page.getByText("CLOSED", { exact: true })).toHaveCount(0); // no open / closed service any more
 });
 
 test("minibar (warehouse): restock a room to par and charge consumption", async ({ page }) => {

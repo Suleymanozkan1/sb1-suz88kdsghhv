@@ -1,40 +1,34 @@
 import { expect, test } from "@playwright/test";
-import { answerDialogs, login, pickProduct } from "./helpers";
+import { login, pickProduct } from "./helpers";
 
-test("buffet flow: open session, issue production, classify leftovers, close → cost per cover (spec §280)", async ({ page }) => {
+test("breakfast flow: day, covers, issue, breakfast count → cost per cover (r3 §4)", async ({ page }) => {
   await login(page, "fb");
   await page.goto("/buffet");
-  await page.getByLabel("Meal").selectOption("SPECIAL_EVENT");
-  await page.getByLabel("Issue from").selectOption({ label: "Main Store" });
-  // The E2E database persists between runs and a meal/outlet/date is unique: walk back one day until a free date is found.
-  for (let back = 0; back < 25; back++) {
-    const d = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
-    await page.getByLabel("Date", { exact: true }).fill(d);
-    // covers sold are filled in from Micros when known; the test types its own once the defaults for this date have loaded
-    await expect(page.getByTestId("new-buffet-session")).toHaveAttribute("aria-busy", "false");
-    await page.getByLabel("Covers sold").fill("100");
-    await page.getByRole("button", { name: "Open session" }).click();
-    const opened = await Promise.race([
-      page.waitForURL(/\/buffet\/[^/]+$/, { timeout: 10_000 }).then(() => true),
-      page.getByRole("alert").filter({ hasText: `${d} already exists` }).waitFor({ timeout: 10_000 }).then(() => false),
-    ]);
-    if (opened) break;
-  }
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("SPECIAL_EVENT buffet", { ignoreCase: true }); // headings are shown in title case
-
+  // meal (breakfast only) and date (today by default): the day's record is opened, or created the first time
+  await expect(page.getByLabel("Meal").locator("option")).toHaveText(["Breakfast"]);
+  await page.getByRole("button", { name: "Create" }).click();
+  await page.waitForURL(/\/buffet\/[^/]+$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Breakfast ·");
+  await page.getByLabel(/^Package-included breakfast/).fill("110");
+  await page.getByLabel(/^Breakfast not included/).fill("10");
+  await page.getByRole("button", { name: "Save covers" }).click();
+  await expect(page.getByTestId("breakfast-covers").getByText("Saved.")).toBeVisible();
   await pickProduct(page, "Product", "Cheddar", /Cheddar Slices/);
   await page.getByLabel("Quantity").fill("2");
-  await page.getByRole("button", { name: "Issue to buffet" }).click();
+  await page.getByRole("button", { name: "Issue to breakfast" }).click();
   await expect(page.getByRole("cell", { name: /Cheddar Slices/ }).first()).toBeVisible();
-
-  await page.getByLabel("Actual covers").fill("80");
-  await page.getByRole("textbox", { name: /^Waste.*Cheddar Slices/ }).fill("0.3");
-  answerDialogs(page, [true]); // confirm close
-  await page.getByRole("button", { name: "Close session" }).click();
-  await expect(page.getByText("CLOSED", { exact: true })).toBeVisible();
+  // the count: remaining quantity, F marks the remainder as waste, Enter moves on (last row → Save)
+  await page.getByRole("link", { name: /Breakfast count/ }).first().click();
+  await page.waitForURL(/\/buffet\/count/);
+  const box = page.getByRole("textbox", { name: /^Remaining .*Cheddar/ });
+  await box.fill("0.2");
+  await box.press("f");
+  await expect(page.getByRole("radiogroup", { name: /Cheddar/ }).getByRole("radio", { name: "Waste" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: /^Save count/ }).click();
+  await expect(page.getByText("Breakfast count saved.")).toBeVisible();
+  await page.getByRole("link", { name: "Open the breakfast day" }).click();
   await expect(page.getByText("Cost / cover")).toBeVisible();
-  // closed sessions accept no further lines
-  await expect(page.getByRole("button", { name: "Issue to buffet" })).toHaveCount(0);
+  await expect(page.getByText("CLOSED", { exact: true })).toHaveCount(0); // no open / closed service any more
 });
 
 test("minibar flow: restock a room to par and charge consumption (spec §282)", async ({ page }) => {
