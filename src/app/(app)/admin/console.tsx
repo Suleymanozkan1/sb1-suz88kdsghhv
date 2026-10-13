@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
+import { NAV } from "@/components/nav";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
 
@@ -24,9 +25,11 @@ interface Props {
   warehouses: Array<{ id: string; code: string; name: string; active: boolean; department: string | null; countApprovers: string[] }>;
   categories: Array<{ id: string; code: string; name: string; group: string; parentId: string | null }>;
   groups: string[];
+  /** page path → training video URL (organization-wide) */
+  trainingVideos: Record<string, string>;
 }
 
-const TABS = ["Users", "Invitations", "Hotels", "Departments", "Warehouses", "Categories", "Hotel settings"] as const;
+const TABS = ["Users", "Invitations", "Hotels", "Departments", "Warehouses", "Categories", "Hotel settings", "Training videos"] as const;
 type Tab = (typeof TABS)[number];
 const val = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const multi = (f: FormData, k: string) => f.getAll(k).map(String);
@@ -324,6 +327,20 @@ export function AdminConsole(p: Props) {
             <div><Label htmlFor="s-bd" hint={t("night audit")}>{t("Business day ends at")}</Label><Input id="s-bd" name="businessDayCutoff" type="time" defaultValue={String(p.hotel.businessDayCutoff ?? "03:30")} /></div>
             <label className="flex items-center gap-2 text-sm text-ink-700 md:col-span-3"><input type="checkbox" name="autoDeductSales" defaultChecked={Number(p.hotel.autoDeductSales ?? 1) === 1} />{t("Deduct sold dishes' recipe ingredients from stock automatically (Micros sales)")}</label>
             <div className="md:col-span-4"><Button type="submit">{t("Save settings")}</Button></div>
+          </form>
+        </Card>
+      )}
+      {tab === "Training videos" && (
+        <Card title={t("Training videos")}>
+          <p className="mb-3 text-sm text-ink-500">{t("A short how-to video per page. Paste a YouTube, Vimeo or video file address; the page then shows a \"How to use?\" button next to its title. Leave a page empty to show no button. The addresses apply to every hotel of the company.")}</p>
+          <form className="grid gap-x-4 gap-y-2 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/training-videos", { videos: Object.fromEntries(NAV.map((n) => [n.href, val(f, `v:${n.href}`)])) }), "Settings saved"); }}>
+            {NAV.map((n) => (
+              <div key={n.href} className="flex items-center gap-2">
+                <label htmlFor={`v-${n.href}`} className="w-48 shrink-0 text-sm text-ink-700">{t(n.label)}</label>
+                <Input id={`v-${n.href}`} name={`v:${n.href}`} type="url" placeholder="https://" defaultValue={p.trainingVideos[n.href] ?? ""} />
+              </div>
+            ))}
+            <div className="md:col-span-2"><Button type="submit">{t("Save settings")}</Button></div>
           </form>
         </Card>
       )}

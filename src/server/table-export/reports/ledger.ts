@@ -20,7 +20,10 @@ export function parseLedgerQuery(q: URLSearchParams | Record<string, string | un
   const get = (k: string) => (q instanceof URLSearchParams ? q.get(k) : q[k]) || undefined;
   const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
   const type = get("type");
-  return { view: get("view") === "detail" ? "detail" : "summary", warehouseId: get("warehouseId"), productId: get("productId"), type: type && LEDGER_TYPES.includes(type) ? type : undefined, from: day(get("from")), to: day(get("to")) };
+  // no dates given: the current month up to today (feedback r3 §0.2), like every other page
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  return { view: get("view") === "detail" ? "detail" : "summary", warehouseId: get("warehouseId"), productId: get("productId"), type: type && LEDGER_TYPES.includes(type) ? type : undefined, from: day(get("from")) ?? monthStart, to: day(get("to")) ?? now.toISOString().slice(0, 10) };
 }
 
 export const ledgerRange = (f: LedgerQuery) => ({ from: f.from ? new Date(`${f.from}T00:00:00Z`) : undefined, to: f.to ? new Date(new Date(`${f.to}T00:00:00Z`).getTime() + 86_400_000) : undefined });

@@ -4,13 +4,13 @@ import { inventoryStatus, LEVEL_LABEL, STOCK_LEVELS, stockLevelParam } from "@/s
 import { can, departmentScope } from "@/server/auth/actor";
 import { warehouseScope } from "@/server/auth/scope";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Card, Input, Label, PageHeader, Select, Stat, Table, Td, Th, cn, levelTone } from "@/components/ui";
+import { Alert, Badge, Card, Label, PageHeader, Select, Stat, Table, Td, Th, cn, levelTone } from "@/components/ui";
 import { money, qty } from "@/lib/format";
 import { sum } from "@/domain/money";
 import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { MovementForm } from "./movement-form";
-import { AutoSubmitForm } from "./auto-submit-form";
+import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 
 export const metadata = { title: "Inventory" };
@@ -34,12 +34,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title={t("Inventory")} subtitle={t("Opening, in, out and closing stock for the selected dates; current quantity, unit cost and stock value from the ledger.")} exportKey="inventory" actions={
-        <AutoSubmitForm className="flex flex-wrap items-end gap-2">
-          <div><Label htmlFor="from">{t("From")}</Label><Input id="from" name="from" type="date" defaultValue={range.fromStr} className="w-40" /></div>
-          <div><Label htmlFor="to">{t("To")}</Label><Input id="to" name="to" type="date" defaultValue={range.toStr} className="w-40" /></div>
+        <FilterBar from={range.fromStr} to={range.toStr}>
           <div><Label htmlFor="group">{t("Group")}</Label><Select id="group" name="group" defaultValue={sp.group ?? ""} className="w-36"><option value="">{t("All")}</option>{["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING"].map((g) => <option key={g} value={g}>{t(g)}</option>)}</Select></div>
           <div><Label htmlFor="level">{t("Status")}</Label><Select id="level" name="level" defaultValue={level ?? ""} className="w-36"><option value="">{t("All")}</option>{STOCK_LEVELS.map((l) => <option key={l} value={l}>{t(LEVEL_LABEL[l]!)}</option>)}</Select></div>
-        </AutoSubmitForm>
+        </FilterBar>
       } />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Stock value")} value={money(inv.totalValue, cur, 0)} hint={t("Current, from the stock ledger")} />

@@ -23,7 +23,7 @@ export function LedgerFilters({ exportKey, view, warehouses, types, value, produ
       <div><Label htmlFor="lf-to">{t("To")}</Label><Input id="lf-to" type="date" name="to" defaultValue={value.to ?? ""} /></div>
       <div><Label htmlFor="lf-type">{t("Type")}</Label><Select id="lf-type" name="type" defaultValue={value.type ?? ""}><option value="">{t("All")}</option>{types.slice(0, 2).map((x) => <option key={x} value={x}>{t(x)}</option>)}<optgroup label={t("Other")}>{types.slice(2).map((x) => <option key={x} value={x}>{t(x)}</option>)}</optgroup></Select></div>
       <div><Label htmlFor="lf-p">{t("Product")}</Label><ProductPicker id="lf-p" value={picked} onChange={setPicked} placeholder={t("All products — search…")} /></div>
-      <div className="flex items-end gap-2"><Button type="submit">{t("Filter")}</Button>{(value.warehouseId || value.type || value.from || value.to || picked) && <a href={`?view=${view}`} className="px-2 py-2 text-sm text-ink-500 hover:underline">{t("Clear")}</a>}</div>
+      <div className="flex items-end gap-2"><Button type="submit">{t("Filter")}</Button>{(value.warehouseId || value.type || picked) && <a href={`?view=${view}`} className="px-2 py-2 text-sm text-ink-500 hover:underline">{t("Clear")}</a>}</div>
       </div>
       <div className="flex flex-wrap xl:shrink-0"><ExportButtons report={exportKey} /></div>
     </form>

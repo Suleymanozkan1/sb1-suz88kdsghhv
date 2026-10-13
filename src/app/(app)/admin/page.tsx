@@ -1,7 +1,7 @@
 import { pageContext, guarded } from "@/server/page";
 import { prisma } from "@/server/db";
 import { can } from "@/server/auth/actor";
-import { adminOverview, CATEGORY_GROUPS } from "@/server/services/admin";
+import { adminOverview, CATEGORY_GROUPS, trainingVideosOf } from "@/server/services/admin";
 import { listInvites } from "@/server/services/tenancy";
 import { Alert, PageHeader } from "@/components/ui";
 import { AdminConsole } from "./console";
@@ -21,6 +21,7 @@ export default async function AdminPage() {
     orderBy: { name: "asc" },
     select: { id: true, code: true, name: true, active: true },
   });
+  const org = await prisma.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { trainingVideos: true } });
   return (
     <>
       <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} exportKey="admin" />
@@ -37,6 +38,7 @@ export default async function AdminPage() {
         warehouses={o.warehouses.map((w) => ({ id: w.id, code: w.code, name: w.name, active: w.active, department: w.department?.name ?? null, countApprovers: w.countApprovers.map((a) => a.roleKey) }))}
         categories={o.categories.map((c) => ({ id: c.id, code: c.code, name: c.name, group: c.group, parentId: c.parentId }))}
         groups={[...CATEGORY_GROUPS]}
+        trainingVideos={trainingVideosOf(org.trainingVideos)}
       />
     </>
   );

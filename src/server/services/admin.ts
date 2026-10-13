@@ -423,3 +423,26 @@ export async function bootstrapInstallation(db: Db, input: unknown) {
     { timeout: 60_000 },
   );
 }
+
+// ── training videos (feedback r3 §0.4): one short "how to use" video per page, for the whole company ──
+
+/** Stored map path → URL; anything malformed in the column reads as "no videos". */
+export function trainingVideosOf(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].length > 0));
+}
+
+const videoUrl = z.string().trim().max(500).refine((v) => v === "" || /^https?:\/\//i.test(v) || v.startsWith("/"), "Video address must start with https://");
+const trainingVideosInput = z.object({ videos: z.record(z.string().regex(/^\/[a-z0-9\-/]*$/i).max(120), videoUrl) });
+
+export async function updateTrainingVideos(db: Db, actor: Actor, hotelId: string, input: unknown) {
+  guard(actor, hotelId);
+  const p = trainingVideosInput.parse(input);
+  const videos = Object.fromEntries(Object.entries(p.videos).filter(([, v]) => v));
+  return inTx(db, async (tx) => {
+    const before = await tx.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { trainingVideos: true } });
+    await tx.organization.update({ where: { id: actor.organizationId }, data: { trainingVideos: videos } });
+    await audit(tx, actor, { hotelId, action: "TRAINING_VIDEOS", entityType: "Organization", entityId: actor.organizationId, before: { videos: before.trainingVideos }, after: { videos } });
+    return { videos };
+  });
+}

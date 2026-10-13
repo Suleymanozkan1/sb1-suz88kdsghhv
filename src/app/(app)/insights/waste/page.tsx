@@ -2,10 +2,10 @@ import Link from "next/link";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { topWasteProducts } from "@/server/services/insights";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Card, Empty, Input, Label, PageHeader, Table, Td, Th } from "@/components/ui";
+import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
-import { AutoSubmitForm } from "../../inventory/auto-submit-form";
+import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 
 export const metadata = { title: "Top waste products" };
@@ -23,10 +23,7 @@ export default async function TopWastePage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader title={t("Top waste products")} subtitle={t("The 20 products with the highest waste cost in the selected dates (approved waste records).")} exportKey="top-waste" actions={
-        <AutoSubmitForm className="flex flex-wrap items-end gap-2">
-          <div><Label htmlFor="from">{t("From")}</Label><Input id="from" name="from" type="date" defaultValue={range.fromStr} className="w-40" /></div>
-          <div><Label htmlFor="to">{t("To")}</Label><Input id="to" name="to" type="date" defaultValue={range.toStr} className="w-40" /></div>
-        </AutoSubmitForm>
+        <FilterBar from={range.fromStr} to={range.toStr} />
       } />
       <Card padded={false} title={t("Total waste cost {amount}", { amount: money(total, cur, 0) })} actions={<Link href={`/waste?from=${range.fromStr}&to=${range.toStr}`} className="text-xs font-medium text-brand-700 hover:underline">{t("Waste records")}</Link>}>
         {rows.length === 0 ? <Empty title={t("No waste recorded")} /> : (

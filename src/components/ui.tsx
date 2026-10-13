@@ -1,6 +1,8 @@
 import { clsx } from "clsx";
 import { Suspense } from "react";
+import Link from "next/link";
 import { ExportButtons } from "./export-buttons";
+import { HelpVideo, PageInfo } from "./page-help";
 import { Title } from "./title";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
 
@@ -9,15 +11,18 @@ export function cn(...a: Parameters<typeof clsx>) {
 }
 
 /**
- * Page title row. `exportKey`: the page's report (src/server/table-export/reports) — PDF, Excel and CSV buttons at the
+ * Page title row. The description (`subtitle`) sits behind an info icon next to the title, and the page's training
+ * video (Administration → Training videos) opens from the "How to use?" button beside it (feedback r3 §0.3, §0.4).
+ * `exportKey`: the page's report (src/server/table-export/reports) — PDF, Excel and CSV buttons at the
  * top right, after the page's own actions; every list/report page has one.
  */
 export function PageHeader({ title, subtitle, actions, exportKey, exportParams, canExport = true }: { title: string; subtitle?: ReactNode; actions?: ReactNode; exportKey?: string; exportParams?: Record<string, string | undefined>; /** false hides the buttons for a user whose role may not export this report */ canExport?: boolean }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold tracking-tight text-ink-950"><Title>{title}</Title></h1>
-        {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
+        {subtitle && <PageInfo>{subtitle}</PageInfo>}
+        <HelpVideo />
       </div>
       {(actions || (exportKey && canExport)) && (
         <div className="flex flex-wrap items-end gap-2 sm:shrink-0 sm:justify-end">
@@ -47,9 +52,20 @@ export function Card({ title, actions, children, className, padded = true }: { t
   );
 }
 
-export function Stat({ label, value, hint, tone = "default", badge }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "default" | "good" | "bad" | "warn"; badge?: ReactNode }) {
+/**
+ * Summary card. With `href` the whole card is a link to the detail behind the number (feedback r3 §0.5), with
+ * `onClick` it opens an in-page detail; without either it is plain.
+ */
+export function Stat({ label, value, hint, tone = "default", badge, href, onClick, active }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "default" | "good" | "bad" | "warn"; badge?: ReactNode; href?: string; onClick?: () => void; /** highlighted as the selected card */ active?: boolean }) {
+  const body = <StatBody label={label} value={value} hint={hint} tone={tone} badge={badge} clickable={!!(href || onClick)} active={active} />;
+  if (href) return <Link href={href} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</Link>;
+  if (onClick) return <button type="button" onClick={onClick} aria-pressed={active} className="block w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</button>;
+  return body;
+}
+
+function StatBody({ label, value, hint, tone, badge, clickable, active }: { label: string; value: ReactNode; hint?: ReactNode; tone: "default" | "good" | "bad" | "warn"; badge?: ReactNode; clickable: boolean; active?: boolean }) {
   return (
-    <div className="rounded-xl border border-ink-200 bg-white p-4 shadow-sm">
+    <div className={cn("h-full rounded-xl border border-ink-200 bg-white p-4 shadow-sm", clickable && "cursor-pointer transition hover:border-brand-300 hover:shadow", active && "ring-2 ring-brand-600 ring-offset-2")}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{label}</p>
         {badge}
