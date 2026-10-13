@@ -403,7 +403,7 @@ export async function saveBreakfastCount(db: Db, actor: Actor, hotelId: string, 
       if (!inputLines.length) throw new DomainError("VALIDATION", "Nothing was issued to this breakfast yet");
       const seen = new Set<string>();
       for (const l of input.lines) {
-        if (!inputLines.some((i) => keyOf(i) === l.key)) throw new DomainError("VALIDATION", "Leftover refers to an item that was not produced in this session");
+        if (!inputLines.some((i) => keyOf(i) === l.key)) throw new DomainError("VALIDATION", "This item was not issued to this breakfast");
         if (seen.has(l.key)) throw new DomainError("VALIDATION", "An item is counted twice");
         seen.add(l.key);
       }

@@ -29,6 +29,7 @@ import { periodFor } from "../src/server/services/period";
 import { createBudget, setBudgetLines, approveBudget, createTarget } from "../src/server/services/planning";
 import { createAction, updateAction } from "../src/server/services/savings";
 import { departmentRevenue } from "../src/server/services/revenue";
+import { seedDemoComps } from "../src/server/demo/comps";
 
 const prisma = new PrismaClient();
 const PASSWORD = "HotelCost!2026";
@@ -341,8 +342,9 @@ async function main() {
   }
   for (const d of days.filter((_, i) => i % 7 === 2)) {
     await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.MAIN!, productId: pid["DRY-RICE"]!, type: "STAFF_MEAL", quantity: -3, txDate: at(d, 13), departmentId: dept.KITCH, sourceType: "MANUAL", reason: "Staff canteen" });
-    await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.BAR!, productId: pid["BEV-COLA"]!, type: "COMPLIMENTARY", quantity: -6, txDate: at(d, 18), departmentId: dept.BAR, sourceType: "MANUAL", reason: "VIP welcome" }).catch(() => null);
   }
+  // Ödenmez / İkram: comp checks from Micros, welcome drinks from Opera, a manual entry (through the comps service)
+  console.log(`On-house & hospitality records: ${await seedDemoComps(prisma, admin, H, days)}`);
 
   // ── Month-end stock count for the restaurant store (previous month) ──
   const monthEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0, 23));

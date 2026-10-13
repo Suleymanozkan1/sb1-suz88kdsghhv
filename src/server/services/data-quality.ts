@@ -140,7 +140,7 @@ export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
     const name = itemName ? `${s.posCode} · ${itemName}` : s.posCode;
     return r
       ? item(s.posCode, name, [lines, { text: "The recipe {recipe} does not carry POS code {code}: enter it on the recipe, then reprocess the sales under Calculation integrity", params: { recipe: r.name, code: s.posCode } }], link("recipe:manage", `/recipes/${r.id}/edit`) ?? recipeLink(r.id), "Recipes")
-      : item(s.posCode, name, [lines, { text: "No recipe has POS code {code}: create the recipe (or add the code to it), then reprocess the sales under Calculation integrity", params: { code: s.posCode } }], link("recipe:view", `/recipes?${new URLSearchParams({ q: itemName ?? s.posCode })}`), "Recipes");
+      : item(s.posCode, name, [lines, { text: "No recipe has POS code {code}: create the recipe (or add the code to it), then reprocess the sales under Calculation integrity", params: { code: s.posCode } }], link("recipe:manage", "/recipes/new") ?? link("recipe:view", `/recipes?${new URLSearchParams({ q: itemName ?? s.posCode })}`), "Recipes");
   });
 
   const lastBy = new Map(lastCounts.map((c) => [c.warehouseId, c._max.countDate]));

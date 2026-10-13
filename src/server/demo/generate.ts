@@ -29,6 +29,7 @@ import { createRule, postAllocation } from "../services/allocation";
 import { createBudget, setBudgetLines, approveBudget, createTarget } from "../services/planning";
 import { createAction, updateAction } from "../services/savings";
 import { ensureDefaultTasks } from "../services/calendar";
+import { ensureDefaultReasons } from "../services/comps";
 import { CATALOG, DEMO_DEPARTMENTS, DEMO_WAREHOUSES, DISH_WORDS, FIRST_NAMES, LAST_NAMES, POSITIONS, ROOM_TYPES, SEMI_FINISHED, SUPPLIER_WORDS, type CatalogCategory, type CatalogItem } from "./catalog";
 import { demoNames, type DemoLocale, type DemoNames } from "./catalog-tr";
 import { BulkLedger } from "./engine";
@@ -798,6 +799,11 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   const invoiceItems: Prisma.InvoiceItemCreateManyInput[] = [];
   const alerts: Prisma.AlertCreateManyInput[] = [];
   const wasteRows: Prisma.WasteRecordCreateManyInput[] = [];
+  // Ödenmez / İkram: the bar's comps are records of the comps page (written like the comps service writes them)
+  const compRows: Prisma.CompRecordCreateManyInput[] = [];
+  const compLines: Prisma.CompLineCreateManyInput[] = [];
+  await ensureDefaultReasons(db, H);
+  const compReason = new Map((await db.compReason.findMany({ where: { hotelId: H } })).map((r) => [r.name, r.id]));
   const saleRows: Prisma.SaleLineCreateManyInput[] = [];
   const imports: Prisma.SalesImportCreateManyInput[] = [];
   const counts: Prisma.StockCountCreateManyInput[] = [];
@@ -993,7 +999,16 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     }
     if (rnd() < 0.5) {
       const p = (ctx.byCat.get("BEV") ?? []).find((x) => L.position(ctx.wh.BAR!, x.id).quantity.gte(2));
-      if (p) L.post({ warehouseId: ctx.wh.BAR!, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "MANUAL", reason: N.t("VIP welcome") });
+      if (p) {
+        // every fourth day the general manager's drinks (Micros), else the chain's welcome drink (Opera); no extra rnd() so the rest of the data stays the same
+        const onHouse = d.getUTCDate() % 4 === 0;
+        const id = randomUUID();
+        const source = onHouse ? "MICROS" : "OPERA";
+        const stx = L.post({ warehouseId: ctx.wh.BAR!, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "COMP", sourceId: id, reason: N.t("VIP welcome"), idempotencyKey: `comp:${id}:0:${p.id}` });
+        const cost = stx.totalCost.neg().toString();
+        compRows.push({ id, hotelId: H, kind: onHouse ? "ON_HOUSE" : "HOSPITALITY", businessDate: new Date(`${ymd(d)}T00:00:00Z`), departmentId: ctx.dept.BAR!, warehouseId: ctx.wh.BAR!, reasonId: compReason.get(onHouse ? "Genel müdür" : "Karşılama içeceği") ?? null, person: onHouse ? "Genel Müdür" : "VIP", source, externalId: `${source}:${ymd(d)}:BAR:C${ymd(d).replace(/-/g, "")}`, totalCost: cost, createdById: userId, createdAt: at(d, 19) });
+        compLines.push({ recordId: id, productId: p.id, itemName: N.product(p.name), quantity: "2", unitCost: stx.unitCost.toString(), totalCost: cost, stockTxId: stx.id });
+      }
     }
 
     // POS sales (weekly import file), theoretical cost at the end of the sale day (= costTableAsOf)
@@ -1068,6 +1083,8 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
   await chunk(prices, (c) => db.supplierPrice.createMany({ data: c }));
   await chunk(alerts, (c) => db.alert.createMany({ data: c }));
   await chunk(wasteRows, (c) => db.wasteRecord.createMany({ data: c }));
+  await chunk(compRows, (c) => db.compRecord.createMany({ data: c }));
+  await chunk(compLines, (c) => db.compLine.createMany({ data: c }));
   const byImport = new Map<string, number>();
   for (const s of saleRows) byImport.set(s.importId!, (byImport.get(s.importId!) ?? 0) + 1);
   await chunk(imports.map((x) => ({ ...x, rowCount: byImport.get(x.id!) ?? 0, validCount: byImport.get(x.id!) ?? 0 })), (c) => db.salesImport.createMany({ data: c }));

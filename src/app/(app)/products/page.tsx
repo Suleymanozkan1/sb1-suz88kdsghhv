@@ -42,7 +42,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <PageHeader exportKey="products" title={t("Product master")} subtitle={t("Purchase → stock → recipe units with explicit conversions. Costs come from the ledger (FIFO: the oldest batch in stock).")} actions={<>
         {manage ? <PullProductsButton lastPulled={pull.lastPulledAt ? when(pull.lastPulledAt) : null} waiting={!!pull.waitingSince} automation={pull.automation} /> : pull.lastPulledAt ? <span className="self-center text-xs text-ink-500">{t("Last pulled: {when}", { when: when(pull.lastPulledAt) })}</span> : null}
         <FilterBar dates={false}>
-          <div><Label htmlFor="pf-q">{t("Search")}</Label><Input id="pf-q" name="q" defaultValue={q} placeholder={t("Name, stock code, brand, category")} className="w-72" /></div>
+          <div className="w-72"><Label htmlFor="pf-q">{t("Search")}</Label><Input id="pf-q" name="q" defaultValue={q} placeholder={t("Name, stock code, brand, category")} /></div>
         </FilterBar>
       </>} />
       {manage && <Card title={t("New product (manual)")} className="mb-4"><ProductForm categories={categories.map((c) => ({ id: c.id, name: `${c.group} › ${c.name}` }))} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} /></Card>}

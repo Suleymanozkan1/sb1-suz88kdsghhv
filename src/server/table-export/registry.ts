@@ -11,7 +11,7 @@ import { orders, purchasing } from "./reports/purchasing";
 import { counts, countResultsReport } from "./reports/counts";
 import { waste } from "./reports/waste";
 import { comps } from "./reports/comps";
-import { buffet, buffetSession } from "./reports/buffet";
+import { buffet, buffetCount, buffetSession } from "./reports/buffet";
 import { minibar } from "./reports/minibar";
 import { rooms, roomExpenses } from "./reports/rooms";
 import { imports } from "./reports/imports";
@@ -46,6 +46,7 @@ export const REPORTS: Record<string, ReportDef> = {
   comps,
   buffet,
   "buffet-session": buffetSession,
+  "buffet-count": buffetCount,
   minibar,
   rooms,
   "room-expenses": roomExpenses,

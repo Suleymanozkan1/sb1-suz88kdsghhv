@@ -278,7 +278,9 @@ export async function deleteComp(db: Db, actor: Actor, hotelId: string, id: stri
       requireDepartment(actor, rec.departmentId);
       const at = txDateOf(rec.businessDate);
       await assertPostable(tx, actor, hotelId, at);
-      const moves = await tx.stockTransaction.findMany({ where: { hotelId, sourceType: COMP_SOURCE, sourceId: rec.id, type: "COMPLIMENTARY", reversedBy: null } });
+      // the record's own movements; a line may also point at a movement booked before the record (backfilled data)
+      const linked = rec.lines.flatMap((l) => (l.stockTxId ? [l.stockTxId] : []));
+      const moves = await tx.stockTransaction.findMany({ where: { hotelId, type: "COMPLIMENTARY", reversedBy: null, OR: [{ sourceType: COMP_SOURCE, sourceId: rec.id }, { id: { in: linked } }] } });
       for (const m of moves) await reverseMovement(tx, actor, { hotelId, stockTxId: m.id, reason: `Ödenmez / İkram silindi: ${reason.trim()}`, txDate: at });
       await tx.compRecord.delete({ where: { id: rec.id } });
       await audit(tx, actor, {

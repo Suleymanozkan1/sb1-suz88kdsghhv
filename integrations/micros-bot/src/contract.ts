@@ -73,21 +73,22 @@ export const productSchema = z.object({
 
 /**
  * A check closed as on-house (ödenmez) or hospitality (ikram), with the items given away: HotelCost deducts their
- * recipes from stock and books the cost as on-house / hospitality ("Ödenmez ve İkram").
+ * recipes from stock and books the cost as on-house / hospitality ("Ödenmez ve İkram"). Never sent as `checks` too.
  */
 export const compSchema = z.object({
   checkNo: z.string().trim().min(1).max(64),
   outlet: z.string().trim().min(1).max(100),
   kind: z.enum(["ON_HOUSE", "HOSPITALITY"]),
   /** comp / void reason as printed on the check */
-  reason: z.string().trim().max(200).optional().nullable(),
+  reason: z.string().trim().max(100).optional().nullable(),
   /** who approved / for whom (employee, guest) */
-  person: z.string().trim().max(200).optional().nullable(),
+  person: z.string().trim().max(120).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
+  closedAt: z.string().datetime({ offset: true }).optional(),
   lines: z.array(z.object({
     itemCode: z.string().trim().max(64).optional().nullable(),
     itemName: z.string().trim().min(1).max(200),
-    qty: num.refine((n) => n > 0, "Quantity must be positive"),
+    qty: num.refine((n) => n !== 0, "Quantity cannot be zero"),
   })).min(1),
 });
 
@@ -95,7 +96,7 @@ export type Kind = "checks" | "invoices" | "covers" | "minibar" | "occupancy" | 
 export const ALL_KINDS: Kind[] = ["checks", "invoices", "covers", "minibar", "occupancy", "products", "comps"];
 export const ITEM_SCHEMAS = { checks: checkSchema, invoices: invoiceSchema, covers: coversSchema, minibar: minibarSchema, occupancy: occupancySchema, products: productSchema, comps: compSchema } as const;
 /** server-side maximum items per request */
-export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, minibar: 5000, occupancy: 1, products: 5000, comps: 20000 };
+export const MAX_ITEMS: Record<Kind, number> = { checks: 20000, invoices: 5000, covers: 500, minibar: 5000, occupancy: 1, products: 5000, comps: 5000 };
 
 export interface CheckLine { itemCode?: string | null; itemName: string; qty: number; amount: number }
 export interface Check { checkNo: string; outlet: string; closedAt?: string; lines: CheckLine[] }
@@ -110,7 +111,7 @@ export interface MinibarCharge { room: string; itemCode?: string | null; itemNam
 export interface ProductCard { name: string; code?: string | null; unit: string; packSize?: number | null; packUnit?: string | null; taxRatePct?: number | null; category?: string | null }
 export type CompKind = "ON_HOUSE" | "HOSPITALITY";
 export interface CompLine { itemCode?: string | null; itemName: string; qty: number }
-export interface Comp { checkNo: string; outlet: string; kind: CompKind; reason?: string | null; person?: string | null; note?: string | null; lines: CompLine[] }
+export interface Comp { checkNo: string; outlet: string; kind: CompKind; reason?: string | null; person?: string | null; note?: string | null; closedAt?: string; lines: CompLine[] }
 export interface ItemsByKind { checks: Check; invoices: Invoice; covers: Covers; minibar: MinibarCharge; occupancy: Occupancy; products: ProductCard; comps: Comp }
 
 export type IngestSource = "MICROS" | "OPERA" | "OTHER";

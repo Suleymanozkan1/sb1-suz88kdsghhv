@@ -271,12 +271,12 @@ async function describeFindings(db: Db, actor: Actor, hotelId: string, checks: I
       return { record: r ? `${day(r.fromDate)} – ${day(r.toDate)}` : String(e.runId), href: r ? link("opex:view", `/operations?${new URLSearchParams({ from: day(r.fromDate), to: day(r.toDate) })}`) : null, values: [{ label: "Net of the allocation run", kind: "money", expected: "0", found: num(e.net) }] };
     },
     recipe_snapshots: (e) => ({ record: `${REC.get(String(e.recipeId)) ?? String(e.recipeId)} · v${num(e.version)}`, href: link("recipe:view", `/recipes/${String(e.recipeId)}`), values: [{ label: "Frozen requirement snapshot", kind: "text", expected: "present", found: "missing" }] }),
-    negative_stock: (e) => ({ record: where(e.warehouseId, e.productId), href: stockLedger(e), values: [{ label: "Quantity", kind: "qty", expected: "0", found: num(e.quantity), unit: unit(e.productId) }] }),
+    negative_stock: (e) => ({ record: where(e.warehouseId, e.productId), href: stockLedger(e), values: [{ label: "Quantity (must not be below zero)", kind: "qty", expected: "0", found: num(e.quantity), unit: unit(e.productId) }] }),
     minibar: (e) => ({ record: product(e.productId), href: minibarWh ? ledger(minibarWh.id, String(e.productId)) : link("minibar:view", "/minibar"), values: [{ label: "Quantity (rooms → in-room store)", kind: "qty", expected: num(e.rooms), found: num(e.warehouse), unit: unit(e.productId) }] }),
     unmapped_sales: (e) => {
       const code = String(e.posCode);
       const r = recipeFor(code, e.itemName);
-      return { record: e.itemName ? `${code} · ${String(e.itemName)}` : code, href: r ? (link("recipe:manage", `/recipes/${r.id}/edit`) ?? link("recipe:view", `/recipes/${r.id}`)) : link("recipe:view", `/recipes?${new URLSearchParams({ q: String(e.itemName ?? code) })}`), values: [{ label: "Sale lines without a recipe version", kind: "int", expected: "0", found: num(e.lines) }] };
+      return { record: e.itemName ? `${code} · ${String(e.itemName)}` : code, href: r ? (link("recipe:manage", `/recipes/${r.id}/edit`) ?? link("recipe:view", `/recipes/${r.id}`)) : (link("recipe:manage", "/recipes/new") ?? link("recipe:view", `/recipes?${new URLSearchParams({ q: String(e.itemName ?? code) })}`)), values: [{ label: "Sale lines without a recipe version", kind: "int", expected: "0", found: num(e.lines) }] };
     },
     runs: (e) => ({ record: `${String(e.kind)} · ${e.startedAt instanceof Date ? e.startedAt.toISOString().slice(0, 16).replace("T", " ") : String(e.startedAt).slice(0, 16).replace("T", " ")}`, href: `/integrity?${new URLSearchParams({ run: String(e.id) })}#run`, values: [{ label: "Status", kind: "text", expected: "COMPLETED", found: String(e.status) }] }),
     tenant: (e) => ({ record: `${String(e.table)}.${String(e.column)} → ${String(e.ref)}`, href: null, values: [{ label: "Rows pointing into another hotel", kind: "int", expected: "0", found: num(e.rows) }] }),

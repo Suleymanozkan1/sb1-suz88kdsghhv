@@ -33,6 +33,7 @@ export default async function CountResultsPage({ searchParams }: { searchParams:
   const overview = (await countSummary(prisma, actor, hotelId, range)).rows.filter((x) => ids.includes(x.warehouseId));
   const cur = hotel.baseCurrency;
   const m = (v: { toString(): string }) => money(v.toString(), cur);
+  const m0 = (v: { toString(): string }) => money(v.toString(), cur, 0);
   const whParam = r.all ? "all" : r.current?.id;
   const href = (l: string) => `?${new URLSearchParams(Object.entries({ warehouseId: whParam, from: range.fromStr, to: range.toStr, lines: l }).filter((e): e is [string, string] => !!e[1]))}`;
   // a card filters the lines listed; clicking the active one shows every line again
@@ -52,14 +53,14 @@ export default async function CountResultsPage({ searchParams }: { searchParams:
           <FilterBar from={range.fromStr} to={range.toStr}>
             <div>
               <Label htmlFor="cr-wh">{t("Warehouse")}</Label>
-              <Select id="cr-wh" name="warehouseId" defaultValue={whParam ?? ""} className="w-52">
+              <Select key={whParam} id="cr-wh" name="warehouseId" defaultValue={whParam ?? ""} className="w-52">
                 {r.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 {r.warehouses.length > 1 && <option value="all">{t("All warehouses")}</option>}
               </Select>
             </div>
             <div>
               <Label htmlFor="cr-lines">{t("Lines")}</Label>
-              <Select id="cr-lines" name="lines" defaultValue={lines} className="w-44">
+              <Select key={lines} id="cr-lines" name="lines" defaultValue={lines} className="w-44">
                 <option value="">{t("All lines")}</option>
                 <option value="any">{t("With a difference")}</option>
                 <option value="short">{t("Shortages")}</option>
@@ -126,13 +127,13 @@ export default async function CountResultsPage({ searchParams }: { searchParams:
             <tbody className="divide-y divide-ink-100">
               {overview.map((o) => (
                 <tr key={o.warehouseId}>
-                  <Td className="font-medium">{o.warehouse}</Td><Td align="right">{m(o.opening)}</Td><Td align="right">{m(o.received)}</Td><Td align="right">{m(o.consumed)}</Td><Td align="right">{m(o.waste)}</Td><Td align="right">{m(o.otherOut)}</Td>
-                  <Td align="right" className={tone(o.countDiff)}>{m(o.countDiff)}</Td><Td align="right">{m(o.otherAdjustments)}</Td><Td align="right" className="font-medium">{m(o.closing)}</Td>
+                  <Td className="font-medium">{o.warehouse}</Td><Td align="right">{m0(o.opening)}</Td><Td align="right">{m0(o.received)}</Td><Td align="right">{m0(o.consumed)}</Td><Td align="right">{m0(o.waste)}</Td><Td align="right">{m0(o.otherOut)}</Td>
+                  <Td align="right" className={tone(o.countDiff)}>{m0(o.countDiff)}</Td><Td align="right">{m0(o.otherAdjustments)}</Td><Td align="right" className="font-medium">{m0(o.closing)}</Td>
                 </tr>
               ))}
             </tbody>
             {overview.length > 1 && (
-              <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td>{t("Total")}</Td>{(["opening", "received", "consumed", "waste", "otherOut", "countDiff", "otherAdjustments", "closing"] as const).map((k) => <Td key={k} align="right">{m(sum(overview.map((o) => o[k])))}</Td>)}</tr></tfoot>
+              <tfoot className="border-t-2 border-ink-200 font-medium"><tr><Td>{t("Total")}</Td>{(["opening", "received", "consumed", "waste", "otherOut", "countDiff", "otherAdjustments", "closing"] as const).map((k) => <Td key={k} align="right">{m0(sum(overview.map((o) => o[k])))}</Td>)}</tr></tfoot>
             )}
           </Table>
         </Card>

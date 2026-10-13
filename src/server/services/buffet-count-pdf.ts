@@ -91,7 +91,7 @@ export async function renderCountTemplate(o: { hotel: string; date: string; rows
   if (doc.y + 70 > doc.page.height - doc.page.margins.bottom) doc.addPage();
   const sy = doc.y + 28;
   const half = width / 2;
-  for (const [i, label] of [t("Counted by"), t("Entered by")].entries()) {
+  for (const [i, label] of [t("Counted by"), t("Entered into the system by")].entries()) {
     const x = left + i * half;
     doc.font("body").fontSize(9).fillColor("#111827").text(`${label}:`, x, sy, { lineBreak: false });
     doc.lineWidth(0.6).strokeColor("#6b7280").moveTo(x + 78, sy + 10).lineTo(x + half - 16, sy + 10).stroke();

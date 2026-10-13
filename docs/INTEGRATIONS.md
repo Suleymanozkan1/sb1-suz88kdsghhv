@@ -1,17 +1,22 @@
 # Micros / Opera automation
 
 Hotels have no Micros or Opera API. A browser bot (`integrations/micros-bot`, Playwright) signs in to the
-Micros and Opera web screens every night after the night audit, reads the last closed business day and posts it to
-HotelCost. Its own README (Turkish) covers installing it on the hotel's machine, the `.env` settings and the screen
-selectors.
+Micros and Opera web screens every night after the night audit, reads the last closed business day from the reports
+the hotel points out and posts it to HotelCost. It runs on the hotel's office computer where the Micros back office /
+reporting is installed (always on); it never connects to the POS terminals. Its own README (Turkish) covers
+installing it, the `.env` settings, the report definitions and the screen selectors.
 
 ## Flow
 
 1. **Key.** An administrator creates a key under *Imports → Automation keys* (`admin:hotels`). It is shown once
    and stored hashed. It goes into the bot's `.env` as `HOTELCOST_API_KEY`. Revoking it stops the bot at once.
-2. **Nightly run.** The bot runs 45 minutes after the night-audit cut-off (04:15 for the default 03:30) for the
-   business day that ended at the cut-off. The cut-off is a hotel setting, *Admin → Business day ends at*; the bot
-   picks it up on every poll and its run time moves with it. Setting `RUN_AT` in the bot's `.env` pins the run time.
+2. **Nightly run.** The bot runs at 05:00 local time (`RUN_AT` in its `.env`) for the business day that ended at the
+   night-audit cut-off. The cut-off is a hotel setting, *Admin → Business day ends at* (default 03:30); the bot picks
+   it up on every poll — it decides which day is read, not when the bot runs. The night audit is sometimes late: when
+   the day's sales report is still empty the bot posts and reports nothing for that system and tries again every
+   15 minutes (`RETRY_MINUTES`) until 09:00 (`RETRY_UNTIL`); the last attempt reports the empty report as a failure
+   and sends the other kinds. A day that is done is not run again by the schedule. See *Bot schedule and report
+   definitions* below.
 3. **Delivery.** Each kind is sent to `POST /api/integrations/ingest`:
 
    | kind | becomes | idempotency |
@@ -29,11 +34,33 @@ selectors.
 5. **Warnings.** Health is checked per source (Micros, Opera — every source that ever reported a run) and the worst
    one is shown: the dashboard and the imports page warn when a source's last run failed, when records were
    rejected, or when a source has not delivered the last closed business day. That day is expected from 90 minutes
-   after the cut-off (the bot runs at +45 min); before that the day before is checked.
+   after the cut-off; before that the day before is checked. (The bot runs at 05:00 and may retry until 09:00, so a
+   late night audit shows as "no data yet" until the day arrives.)
 6. **Run now.** The buttons on the imports page create a request. The bot polls `GET /api/integrations/runs/next`
    every few minutes and runs it. *Products → Pull products* creates a request of kind `PRODUCTS`: the bot reads the
    product cards added in Micros since the last successful pull (`since` in the request) and the pull time is stored
    when its run reports `SUCCEEDED`. Product pulls are not part of the nightly health check.
+
+## Bot schedule and report definitions
+
+- **Where.** The office PC with the Micros back office / reporting (always on, power-saving off), not a POS terminal.
+  Windows Task Scheduler (*At startup*, `deploy/run-daemon.cmd`), systemd or pm2 keep the `daemon` running.
+- **Schedule** (bot `.env`): `RUN_AT` (default `05:00`), `RETRY_MINUTES` (`15`, `0` = no retries), `RETRY_UNTIL`
+  (`09:00`, the last attempt), `CATCH_UP` (`true`: a PC that was off at `RUN_AT` runs when it is back). The business
+  day is fixed at the first attempt; the progress is kept in `state/meta.json`, so a restart carries on. Failures
+  other than "report still empty" (login, changed screen) are not retried — they are reported at once. "Run now"
+  requests run immediately and never wait for the night audit.
+- **Report definitions** (`reports.json`, `REPORTS_FILE`): per system (`micros`, `opera`) and kind the report's name
+  as shown in Micros / Opera reporting (`reportName`), its menu path (`menuPath`), `format` (`screen`),
+  `waitForData` (an empty report = night audit not finished; on for the sales report) and a column mapping
+  report header → field (`columns`; a field without a header is read with the CSS selector of the selectors file,
+  the behaviour before definitions existed). The file is validated at start-up with Turkish messages. The shipped
+  file has placeholders (`TODO: otel gösterecek …`) to be filled in once the hotel shows its reports;
+  `check-config` lists them.
+- **Comps** (`micros.comps`, `opera.comps`): read only when the definition's `reportName` is filled in (otherwise
+  skipped, logged once). One row per item; rows of a check (check no. + outlet) form one `comps` item
+  `{ checkNo, outlet, kind, reason?, person?, note?, lines: [{ itemCode, itemName, qty }] }`; `kindMap` maps the report's
+  text to `ON_HOUSE` / `HOSPITALITY` (or `defaultKind`). A check sent as a comp in the same run is left out of `checks`.
 
 ## Matching
 

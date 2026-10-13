@@ -30,6 +30,7 @@ export function RunNow({ waiting }: { waiting: string[] }) {
   }
   return (
     <div className="space-y-2">
+      <p className="text-xs text-ink-500">{t("Runs every night at 05:00 on the office computer where the Micros reporting is installed. If the night audit has not finished yet, it tries again every 15 minutes until 09:00 (the times can be changed in the automation's settings).")}</p>
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy} onClick={() => run("MICROS")}>{t("Run Micros now")}</Button>
         <Button variant="secondary" disabled={busy} onClick={() => run("OPERA")}>{t("Run Opera now")}</Button>

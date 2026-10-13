@@ -122,7 +122,7 @@ function CheckRows({ check: c, t, currency }: { check: NonNullable<Awaited<Retur
                 })}
                 {c.count > c.findings.length && <li className="text-xs text-ink-500">{t("The first {n} of {total} are listed.", { n: c.findings.length, total: c.count })}</li>}
               </ul>
-            ) : <span className="font-mono text-xs text-ink-500">{JSON.stringify(c.examples.slice(0, 3))}</span>}
+            ) : <span className="text-xs text-ink-500">{t("This check ran before findings were linked: run the check again to list them with their records.")}</span>}
           </Td>
         </tr>
       )}

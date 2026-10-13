@@ -13,7 +13,7 @@ import { runBot } from "../src/runner";
 import { Daemon } from "../src/daemon";
 import { startMockMicros, type MockMicros } from "./mock-micros/server";
 import { startMockHotelCost, type MockHotelCost } from "./mock-hotelcost/server";
-import { checksFor, invoicesFor } from "./mock-micros/data";
+import { checksFor, compsFor, invoicesFor } from "./mock-micros/data";
 
 configureLogger({ silent: true });
 const PKG = path.resolve(import.meta.dirname, "..");
@@ -62,6 +62,7 @@ beforeEach(() => {
   micros.state.removed.clear();
   micros.state.emptyDays.clear();
   micros.state.checksPerDay = 12;
+  micros.state.checkLineHeaders = ["No", "Ürün", "Adet", "Net"];
 });
 
 describe("end-to-end against the mock Micros / Opera", () => {
@@ -278,7 +279,7 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const c = cfg({ NIGHT_AUDIT_CUTOFF: "03:30" });
     await new Daemon(c).pollOnce();
     assert.equal(c.nightAuditCutoff, "04:00");
-    assert.equal(c.runAt, "04:45"); // no RUN_AT in the env: the nightly run follows the cut-off
+    assert.equal(c.runAt, "05:00"); // the run time does not move with the cut-off (default 05:00)
     const fixed = cfg({ NIGHT_AUDIT_CUTOFF: "03:30", RUN_AT: "06:00" });
     await new Daemon(fixed).pollOnce();
     assert.deepEqual([fixed.nightAuditCutoff, fixed.runAt], ["04:00", "06:00"]);
@@ -289,8 +290,69 @@ describe("end-to-end against the mock Micros / Opera", () => {
     const daemon = new Daemon(cfg({ RUN_AT: "04:15", TIMEZONE: "Europe/Istanbul" }));
     assert.equal(daemon.isNightlyDue(new Date("2026-10-07T04:00:00+03:00")).due, false);
     assert.deepEqual(daemon.isNightlyDue(new Date("2026-10-07T04:16:00+03:00")), { due: true, today: "2026-10-07" });
+    const byDefault = new Daemon(cfg({ TIMEZONE: "Europe/Istanbul" }));
+    assert.equal(byDefault.isNightlyDue(new Date("2026-10-07T04:59:00+03:00")).due, false);
+    assert.equal(byDefault.isNightlyDue(new Date("2026-10-07T05:00:00+03:00")).due, true);
     const noCatchUp = new Daemon(cfg({ CATCH_UP: "false" }));
     assert.equal(noCatchUp.isNightlyDue(new Date("2026-10-07T09:00:00+03:00")).due, false);
+  });
+
+  test("report definitions: columns matched by header give the same data; comps sent, comp checks not sold twice", async () => {
+    const report = await runBot(cfg({ REPORTS_FILE: "reports.mock.json" }), { day: DAY });
+    assert.equal(report.ok, true, JSON.stringify(report.runs.map((r) => r.message)));
+    const comps = hc.ingests("comps");
+    assert.equal(comps.length, 1);
+    assert.equal(comps[0]!.source, "MICROS");
+    assert.equal(comps[0]!.businessDay, DAY);
+    const [onHouse, hosp] = compsFor(DAY);
+    assert.deepEqual(comps[0]!.items, [
+      { checkNo: onHouse!.checkNo, outlet: "Lobby Bar", kind: "ON_HOUSE", reason: "Yönetim", person: "Genel Müdür", note: null, lines: [{ itemCode: "1002", itemName: "Kola 33cl", qty: 1 }, { itemCode: "3001", itemName: "Türk Kahvesi", qty: 1 }] },
+      { checkNo: hosp!.checkNo, outlet: "Havuz Bar", kind: "HOSPITALITY", reason: "Misafir şikayeti", person: "F&B Müdürü", note: null, lines: [{ itemCode: "4001", itemName: "Sezar Salata", qty: 1 }] },
+    ]);
+    // the checks read through the header mapping are the same as with CSS, minus the check closed as hospitality
+    const checks = hc.ingests("checks")[0]!.items;
+    const expected = checksFor(DAY, 12).filter((c) => c.checkNo !== hosp!.checkNo);
+    assert.equal(checks.length, 11);
+    for (const exp of expected) {
+      const got = checks.find((c: any) => c.checkNo === exp.checkNo);
+      assert.deepEqual(got.lines, exp.lines.map((l) => ({ itemCode: l.code, itemName: l.name, qty: l.qty, amount: l.amount })));
+    }
+    assert.equal(hc.ingests("covers")[0]!.items.length, 3);
+    assert.deepEqual(hc.ingests("minibar")[0]!.items.map((m: any) => m.reference), ["F-88121", "F-88122", "F-88140"]);
+    assert.equal(hc.runs()[1]!.message, "checks 11, comps 2, invoices 3, covers 3");
+    assert.equal(hc.contract, "hotelcost-repo");
+    assert.deepEqual([...hc.fallbackKinds], [], "comps validated with HotelCost's own contract");
+  });
+
+  test("report definitions: a renamed report column → FAILED naming the column and the headers found", async () => {
+    micros.state.checkLineHeaders = ["No", "Ürün", "Miktar", "Net"];
+    const report = await runBot(cfg({ REPORTS_FILE: "reports.mock.json" }), { day: DAY, only: ["checks"] });
+    assert.equal(report.ok, false);
+    assert.match(hc.runs()[1]!.message!, /checks FAILED: screen changed: column "Adet" \(qty\) not found on checks screen \(columns: No, Ürün, Miktar, Net\)/);
+  });
+
+  test("nightly: report still empty → NOT_READY, nothing posted or reported; last attempt reports it, other kinds sent", async () => {
+    micros.state.emptyDays.add(DAY);
+    micros.state.hits.length = 0;
+    const waiting = await runBot(cfg(), { day: DAY, source: "MICROS", waitForData: "retry" });
+    assert.deepEqual(waiting.runs.map((r) => `${r.source}:${r.status}`), ["MICROS:NOT_READY"]);
+    assert.match(waiting.runs[0]!.message, /report not ready: no checks for business day 2026-10-06 yet \(night audit not finished\?\)/);
+    assert.equal(hc.state.requests.length, 0, "a waiting attempt sends nothing to HotelCost");
+    assert.ok(!micros.state.hits.some((h) => h.startsWith("/reports/covers?date=2026-10-06")), "the other reports are not read while waiting");
+
+    const last = await runBot(cfg(), { day: DAY, source: "MICROS", waitForData: "final" });
+    assert.equal(last.ok, false);
+    const runs = hc.runs();
+    assert.deepEqual(runs.map((r) => r.status), ["STARTED", "FAILED"]);
+    assert.match(runs[1]!.message!, /^invoices 0, covers 0; checks FAILED: report not ready: no checks for business day 2026-10-06 yet \(night audit not finished\?\); still empty at 09:00$/);
+
+    // once the night audit is done the same attempt goes through
+    micros.state.emptyDays.clear();
+    hc.state.requests.length = 0;
+    const ready = await runBot(cfg(), { day: DAY, source: "MICROS", waitForData: "retry" });
+    assert.equal(ready.ok, true);
+    assert.deepEqual(hc.runs().map((r) => r.status), ["STARTED", "SUCCEEDED"]);
+    assert.equal(hc.ingests("checks")[0]!.items.length, 12);
   });
 });
 
@@ -350,5 +412,10 @@ describe("CLI", () => {
     assert.equal(todo.status, 1);
     assert.match(todo.stdout, /checks\.list/);
     assert.match(todo.stdout, /minibar\.columns\.reference/);
+    assert.ok(!/comps\./.test(todo.stdout.split("seçicileri")[1] ?? ""), "the comps screen's TODOs do not count while the report is not defined");
+    assert.match(todo.stdout, /Gece çalışması: her gün 05:00 \(Europe\/Istanbul\); gece kapanışı bitmemişse \(rapor boşsa\) 15 dakikada bir 09:00'a kadar yeniden dener/);
+    assert.match(todo.stdout, /Rapor tanımlarında otel raporları gösterince doldurulacak \d+ alan var/);
+    assert.match(todo.stdout, /micros\.comps\.reportName/);
+    assert.match(todo.stdout, /micros: ödenmez \/ ikram \(comps\) raporu tanımlı değil, okunmayacak/);
   });
 });

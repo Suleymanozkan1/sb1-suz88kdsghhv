@@ -32,7 +32,7 @@ export default async function CountsPage({ searchParams }: { searchParams: Promi
       <Card title={t("Start a count")} className="mb-4"><NewCount warehouses={warehouses} selected={current?.id ?? ""} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} /></Card>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <FilterBar dates={false}>
-          <div><Label htmlFor="cnt-wh">{t("Show counts of")}</Label><Select id="cnt-wh" name="warehouseId" defaultValue={current?.id ?? ""} className="w-64">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
+          <div><Label htmlFor="cnt-wh">{t("Show counts of")}</Label><Select key={current?.id} id="cnt-wh" name="warehouseId" defaultValue={current?.id ?? ""} className="w-64">{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
         </FilterBar>
         <Link href={`/inventory/counts/results${current ? `?warehouseId=${encodeURIComponent(current.id)}` : ""}`} className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-800 hover:bg-ink-50"><ClipboardPen className="h-4 w-4" /> {t("Approved counts: Count results")}</Link>
       </div>

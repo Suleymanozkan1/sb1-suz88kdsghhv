@@ -89,7 +89,8 @@ export function compsFor(day: string): MockComp[] {
   const [, mm, dd] = day.split("-");
   return [
     { checkNo: `${mm}${dd}7001`, outlet: "Lobby Bar", type: "Ödenmez", reason: "Yönetim", person: "Genel Müdür", lines: [{ code: "1002", item: "Kola 33cl", qty: 2 }, { code: "3001", item: "Türk Kahvesi", qty: 1 }, { code: "1002", item: "Kola 33cl", qty: -1 }] },
-    { checkNo: `${mm}${dd}7002`, outlet: "A la Carte Restoran", type: "İkram", reason: "Misafir şikayeti", person: "F&B Müdürü", lines: [{ code: "4001", item: "Sezar Salata", qty: 1 }] },
+    // also in the closed-checks list (check 2 of the day): sent as a comp, not as a sale
+    { checkNo: `${mm}${dd}0002`, outlet: "Havuz Bar", type: "İkram", reason: "Misafir şikayeti", person: "F&B Müdürü", lines: [{ code: "4001", item: "Sezar Salata", qty: 1 }] },
   ];
 }
 

@@ -258,7 +258,7 @@ export async function countSummary(db: Db, actor: Actor, hotelId: string, range:
   const ids = warehouses.map((w) => w.id);
   const [before, during, counts] = await Promise.all([
     db.stockTransaction.groupBy({ by: ["warehouseId"], where: { hotelId, warehouseId: { in: ids }, txDate: { lt: range.from } }, _sum: { totalCost: true } }),
-    db.stockTransaction.groupBy({ by: ["warehouseId", "type"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
+    db.stockTransaction.groupBy({ by: ["warehouseId", "type", "sourceType"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
     db.stockCount.findMany({ where: { hotelId, warehouseId: { in: ids }, deletedAt: null, countDate: { gte: range.from, lt: range.to } }, include: { lines: { select: { systemQty: true, countedQty: true, varianceValue: true, unitCost: true } } } }),
   ]);
   const IN = ["PURCHASE", "TRANSFER_IN", "OPENING", "PRODUCTION_IN"];
@@ -272,8 +272,10 @@ export async function countSummary(db: Db, actor: Actor, hotelId: string, range:
     const used = sumOf(OUT).neg();
     const consumed = sumOf(["CONSUMPTION"]).neg();
     const waste = sumOf(["WASTE"]).neg();
-    const countDiff = sumOf(["COUNT_ADJUSTMENT"]);
-    const other = mine.filter((d) => !IN.includes(d.type) && !OUT.includes(d.type) && d.type !== "COUNT_ADJUSTMENT").reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    // only stock counts: the minibar check also posts COUNT_ADJUSTMENT (room losses), which is an other adjustment here
+    const fromCount = (d: (typeof mine)[number]) => d.type === "COUNT_ADJUSTMENT" && d.sourceType === "COUNT";
+    const countDiff = mine.filter(fromCount).reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    const other = mine.filter((d) => !IN.includes(d.type) && !OUT.includes(d.type) && !fromCount(d)).reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
     const closing = opening.plus(received).minus(used).plus(countDiff).plus(other);
     const wc = counts.filter((c) => c.warehouseId === w.id);
     const posted = wc.filter((c) => c.status === "POSTED");

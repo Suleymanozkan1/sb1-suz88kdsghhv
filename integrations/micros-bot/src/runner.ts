@@ -21,7 +21,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Page } from "playwright";
 import { secretsOf, type Config } from "./config";
-import { validateItems, type IngestSource, type ItemsByKind, type Kind, type RunSource } from "./contract";
+import { validateItems, type Check, type Comp, type IngestSource, type ItemsByKind, type Kind, type RunSource } from "./contract";
 import { BotError, describeError, LoginFailedError } from "./errors";
 import { addLogFile, configureLogger, log, redact } from "./logger";
 import { HotelCostClient } from "./hotelcost/client";
@@ -289,6 +289,23 @@ async function runSource(
     }
 
     // ---- read + post each kind --------------------------------------------------------------------------------
+    // a check closed as on-house / hospitality must not also be sent as a sale: with comps in the same run the
+    // checks are posted after the comps were read, without the comp checks
+    let heldChecks: { items: ItemsByKind[Kind][]; warnings: string[] } | null = null;
+    const compChecks = new Set<string>();
+    const postHeldChecks = async () => {
+      if (!heldChecks) return;
+      const { items, warnings } = heldChecks;
+      heldChecks = null;
+      const sales = (items as Check[]).filter((c) => !compChecks.has(`${c.checkNo}\u0000${c.outlet}`));
+      if (sales.length < items.length) log.info(`[checks] ${items.length - sales.length} check(s) closed as on-house / hospitality sent as comps, not as sales`);
+      try {
+        await ensureStarted();
+        results.push(await post("checks", sales, warnings, source));
+      } catch (err) {
+        fail("checks", describeError(err));
+      }
+    };
     for (const kind of kinds) {
       if (results.some((r) => r.kind === kind)) continue; // already failed / skipped above
       try {
@@ -319,6 +336,11 @@ async function runSource(
           fail(kind, `${what}; still empty at ${config.retryUntil}`);
           continue;
         }
+        if (kind === "checks" && kinds.includes("comps") && !results.some((r) => r.kind === "comps")) {
+          heldChecks = { items, warnings };
+          continue;
+        }
+        if (kind === "comps") for (const c of items as Comp[]) compChecks.add(`${c.checkNo}\u0000${c.outlet}`);
         await ensureStarted();
         const result = await post(kind, items, warnings, ingestSource);
         results.push(result);
@@ -329,7 +351,11 @@ async function runSource(
         const page: Page | undefined = session?.page;
         if (page && (kind !== "invoices" || invoiceReader?.needsBrowser)) evidence.push(...(await captureFailure(page, runDir, kind)));
       }
+      if (kind === "comps") await postHeldChecks();
     }
+    await postHeldChecks();
+    // results in the order of the kinds (held checks are posted after the comps)
+    results.sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind));
   } finally {
     await session?.close();
   }

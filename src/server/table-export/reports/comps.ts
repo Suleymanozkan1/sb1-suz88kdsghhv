@@ -13,7 +13,7 @@ export const comps: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const range = monthRange({ from: q.get("from") || undefined, to: q.get("to") || undefined });
     const k = q.get("kind");
-    const kind = k === "ON_HOUSE" || k === "HOSPITALITY" ? k : null;
+    const kind = k === "ON_HOUSE" || k === "HOSPITALITY" ? (k as "ON_HOUSE" | "HOSPITALITY") : null;
     const f = { from: range.from, to: range.to, kind, reasonId: q.get("reasonId") || null, departmentId: q.get("departmentId") || null };
     const [rows, s] = await Promise.all([listComps(prisma, actor, hotelId, f), compSummary(prisma, actor, hotelId, f)]);
     const [dept, reason] = await Promise.all([

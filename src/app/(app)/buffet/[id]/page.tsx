@@ -83,7 +83,7 @@ export default async function BreakfastDayPage({ params }: { params: Promise<{ i
               {lines.map((l) => (
                 <tr key={l.id}>
                   <Td>{dateTime(l.recordedAt, hotel.timezone)}</Td>
-                  <Td>{l.kind === "LEFTOVER" ? <Badge tone="violet">{t("Count")} · {l.leftoverClass === "WASTE" || l.leftoverClass === "MUST_DISCARD" ? t("Waste") : l.leftoverClass === "STAFF_MEAL" ? t("Staff meal") : t("Consumption")}</Badge> : <Badge tone={l.kind === "REFILL" ? "blue" : "gray"}>{l.kind === "REFILL" ? t("Additional issue") : t("Issue")}</Badge>}</Td>
+                  <Td>{l.kind === "LEFTOVER" ? <Badge tone="violet">{t("Count entry")} · {l.leftoverClass === "WASTE" || l.leftoverClass === "MUST_DISCARD" ? t("Waste") : l.leftoverClass === "STAFF_MEAL" ? t("Staff meal") : t("Consumption")}</Badge> : <Badge tone={l.kind === "REFILL" ? "blue" : "gray"}>{l.kind === "REFILL" ? t("Additional issue") : t("Issue")}</Badge>}</Td>
                   <Td><Title>{names[(l.productId ?? l.recipeId)!]}</Title></Td>
                   <Td align="right">{qty(l.quantity.toString(), l.unit)}</Td>
                   <Td align="right">{money(l.totalCost?.toString(), cur)}</Td>
