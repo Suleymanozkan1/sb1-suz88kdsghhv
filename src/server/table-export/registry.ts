@@ -8,9 +8,10 @@ import { recipe, recipes } from "./reports/recipes";
 import { products } from "./reports/products";
 import { ledger } from "./reports/ledger";
 import { orders, purchasing } from "./reports/purchasing";
-import { counts, countSummaryReport } from "./reports/counts";
+import { counts, countResultsReport } from "./reports/counts";
 import { waste } from "./reports/waste";
-import { buffet, buffetSession } from "./reports/buffet";
+import { comps } from "./reports/comps";
+import { buffet, buffetCount, buffetSession } from "./reports/buffet";
 import { minibar } from "./reports/minibar";
 import { rooms, roomExpenses } from "./reports/rooms";
 import { imports } from "./reports/imports";
@@ -40,10 +41,12 @@ export const REPORTS: Record<string, ReportDef> = {
   orders,
   imports,
   counts,
-  "count-summary": countSummaryReport,
+  "count-results": countResultsReport,
   waste,
+  comps,
   buffet,
   "buffet-session": buffetSession,
+  "buffet-count": buffetCount,
   minibar,
   rooms,
   "room-expenses": roomExpenses,

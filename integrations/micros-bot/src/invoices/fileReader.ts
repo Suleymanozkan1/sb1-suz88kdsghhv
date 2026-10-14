@@ -23,6 +23,7 @@ import { BotError } from "../errors";
 import { log } from "../logger";
 import type { DetailResult } from "../screens/listDetail";
 import { parseNumber, type NumberFormat } from "../util/numbers";
+import { normalizeHeader } from "../util/text";
 import { parseDateTime, ymd } from "../util/time";
 import type { InvoiceReader } from "./source";
 
@@ -44,13 +45,7 @@ const ALIASES: Record<Field, string[]> = {
 };
 const REQUIRED: Field[] = ["supplierName", "invoiceNo", "invoiceDate", "itemName", "qty", "unit", "unitPrice"];
 
-export function normalizeHeader(h: string): string {
-  return h
-    .toLocaleLowerCase("tr-TR")
-    .replace(/ç/g, "c").replace(/ğ/g, "g").replace(/ı/g, "i").replace(/ö/g, "o").replace(/ş/g, "s").replace(/ü/g, "u")
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
+export { normalizeHeader };
 
 export type Cell = string | number | Date | null;
 

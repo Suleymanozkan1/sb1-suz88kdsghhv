@@ -28,7 +28,7 @@ export function DoneButton({ taskId, dueDate }: { taskId: string; dueDate: strin
         } finally {
           setBusy(false);
         }
-      }}>{t("Mark done")}</Button>
+      }}>{t("Sign off")}</Button>
       {err && <span className="text-xs text-red-700">{err}</span>}
     </span>
   );

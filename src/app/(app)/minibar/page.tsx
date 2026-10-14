@@ -10,19 +10,24 @@ import { RoomBoard } from "./room-board";
 
 export const metadata = { title: "Minibar" };
 
-export default async function MinibarPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+export default async function MinibarPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; occupied?: string }> }) {
   const t = await getT();
-  const range = monthRange(await searchParams);
+  const sp = await searchParams;
+  const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
   const rep = await guarded(() => minibarReport(prisma, actor, hotelId, { from: range.from, to: range.to }));
   const grid = await guarded(() => roomGrid(prisma, actor, hotelId));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   if (!grid.ok) return <Alert>{grid.error}</Alert>;
   const tot = rep.data.totals;
+  // Opera's list of rooms sold last night: only those minibars need checking (no list → no marks, no filter)
+  const known = grid.data.some((r) => r.occupied !== null);
+  const onlyOccupied = known && sp.occupied === "1";
+  const rooms = onlyOccupied ? grid.data.filter((r) => r.occupied) : grid.data;
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader exportKey="minibar" title={t("Minibar cost")} subtitle={t("Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage — shown, never hidden.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} />} />
+      <PageHeader exportKey="minibar" title={t("Minibar cost")} subtitle={t("Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage — shown, never hidden.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={known && <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" name="occupied" value="1" defaultChecked={onlyOccupied} /> {t("Show occupied rooms only")}</label>} />} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="minibar-occupancy">
         <Stat label={t("Occupied room nights")} value={tot.occupancyDays ? qty(tot.occupiedRoomNights) : "—"} hint={tot.occupancyDays ? t("from {source} · {n} days", { source: t(tot.occupancySource ?? "Opera"), n: tot.occupancyDays }) : t("no Opera occupancy yet for this period")} />
         <Stat label={t("Revenue / occupied room")} value={money(tot.revenuePerOccupiedRoom, cur)} />
@@ -41,7 +46,8 @@ export default async function MinibarPage({ searchParams }: { searchParams: Prom
         {grid.data.length === 0 ? <Empty title={t("No rooms defined")} /> : (
           <RoomBoard
             canManage={can(actor, "minibar:manage")}
-            rooms={grid.data.map((r) => ({ id: r.id, number: r.number, roomType: t(r.roomType), floor: r.floor, complete: r.complete, missing: r.missing.toString(), occupied: r.occupied, items: r.items.map((i) => ({ productId: i.productId, product: i.product, par: i.par.toString(), qty: i.qty.toString() })) }))}
+            known={known}
+            rooms={rooms.map((r) => ({ id: r.id, number: r.number, roomType: t(r.roomType), floor: r.floor, complete: r.complete, missing: r.missing.toString(), occupied: r.occupied, items: r.items.map((i) => ({ productId: i.productId, product: i.product, par: i.par.toString(), qty: i.qty.toString() })) }))}
           />
         )}
       </Card>

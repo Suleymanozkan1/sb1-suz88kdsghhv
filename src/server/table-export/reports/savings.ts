@@ -7,11 +7,11 @@ import { metricTable } from "./metrics";
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 
-/** /savings — opportunities of the period on screen (default: last month) and the saving actions. */
+/** /savings — opportunities of the period on screen (default: this month up to today) and the saving actions. */
 export const savings: ReportDef = {
   async load({ actor, hotelId, t, q }) {
-    const now = new Date();
-    const range = monthRange({ from: q.get("from") || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10), to: q.get("to") || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).toISOString().slice(0, 10) });
+    // same default as the page: the current month up to today (feedback r3 §0.2)
+    const range = monthRange({ from: q.get("from") ?? undefined, to: q.get("to") ?? undefined });
     const [opps, a] = await Promise.all([opportunities(prisma, actor, hotelId, { from: range.from, to: range.to }), listActions(prisma, actor, hotelId)]);
     const A = opps.assumptions;
     return {

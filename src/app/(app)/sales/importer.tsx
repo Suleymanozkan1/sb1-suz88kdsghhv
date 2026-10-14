@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
+import { translateMessage } from "@/i18n/core";
 
 interface Preview { summary: { rows: number; valid: number; invalid: number; duplicates: number; warnings: number }; rows: { row: number; status: string; messages: string[] }[] }
 
 export function SalesImporter() {
   const t = useT();
+  const locale = useLocale();
   const router = useRouter();
   const [csv, setCsv] = useState<string | null>(null);
   const [file, setFile] = useState("");
@@ -56,7 +58,7 @@ export function SalesImporter() {
           {preview.rows.some((r) => r.status !== "VALID") && (
             <Table className="max-h-64">
               <thead><tr><Th>{t("Row")}</Th><Th>{t("Status")}</Th><Th>{t("Messages")}</Th></tr></thead>
-              <tbody className="divide-y divide-ink-100">{preview.rows.filter((r) => r.status !== "VALID").slice(0, 100).map((r) => <tr key={r.row}><Td>{r.row}</Td><Td><Badge tone={r.status === "INVALID" ? "red" : r.status === "DUPLICATE" ? "violet" : "amber"}>{t(r.status)}</Badge></Td><Td className="whitespace-normal text-xs">{r.messages.join("; ")}</Td></tr>)}</tbody>
+              <tbody className="divide-y divide-ink-100">{preview.rows.filter((r) => r.status !== "VALID").slice(0, 100).map((r) => <tr key={r.row}><Td>{r.row}</Td><Td><Badge tone={r.status === "INVALID" ? "red" : r.status === "DUPLICATE" ? "violet" : "amber"}>{t(r.status)}</Badge></Td><Td className="whitespace-normal text-xs">{r.messages.map((m) => translateMessage(locale, m)).join("; ")}</Td></tr>)}</tbody>
             </Table>
           )}
           <Button onClick={commit} disabled={busy || preview.summary.valid === 0}>{t("Commit {n} lines", { n: preview.summary.valid })}</Button>

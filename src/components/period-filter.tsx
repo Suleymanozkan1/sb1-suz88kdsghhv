@@ -1,19 +1,12 @@
-import { Button, Input, Label, Select } from "./ui";
+import { Label, Select } from "./ui";
+import { FilterBar } from "./filter-bar";
 import { getT } from "@/i18n/server";
 
-/** Plain GET form: works without JavaScript, keeps the URL shareable. */
-export async function PeriodFilter({ from, to, extra, departments, departmentId }: { from: string; to: string; extra?: React.ReactNode; departments?: { id: string; name: string }[]; departmentId?: string }) {
+/** Date range (+ optional department) filter: the shared FilterBar, applied only with its "Filter" button. */
+export async function PeriodFilter({ from, to, extra, departments, departmentId, hidden }: { from: string; to: string; extra?: React.ReactNode; departments?: { id: string; name: string }[]; departmentId?: string; /** values kept as they are (e.g. a product picked from another page) */ hidden?: Record<string, string | undefined> }) {
   const t = await getT();
   return (
-    <form method="get" className="flex flex-wrap items-end gap-2">
-      <div>
-        <Label htmlFor="from">{t("From")}</Label>
-        <Input id="from" name="from" type="date" defaultValue={from} className="w-40" />
-      </div>
-      <div>
-        <Label htmlFor="to">{t("To")}</Label>
-        <Input id="to" name="to" type="date" defaultValue={to} className="w-40" />
-      </div>
+    <FilterBar from={from} to={to} hidden={hidden}>
       {departments && (
         <div>
           <Label htmlFor="departmentId">{t("Department")}</Label>
@@ -26,7 +19,6 @@ export async function PeriodFilter({ from, to, extra, departments, departmentId 
         </div>
       )}
       {extra}
-      <Button type="submit" variant="secondary">{t("Apply")}</Button>
-    </form>
+    </FilterBar>
   );
 }

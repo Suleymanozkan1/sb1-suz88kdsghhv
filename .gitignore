@@ -10,3 +10,4 @@ next-env.d.ts
 .env.local
 .DS_Store
 dist
+.video-work/

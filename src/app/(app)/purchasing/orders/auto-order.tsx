@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { filterRules } from "./filter-rules";
+import { FilterBar } from "@/components/filter-bar";
 import { Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Label, Select, Table, Td, Th, cn } from "@/components/ui";
 import { ProductPicker, type PickedProduct } from "@/components/product-picker";
@@ -113,27 +114,11 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
   const router = useRouter();
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
+  // the search and "only at reorder point" filters are in the URL (applied with "Filter"), so PDF / Excel / CSV export
+  // exactly the rows on screen
   const sp = useSearchParams();
-  const [filter, setFilterState] = useState(sp?.get("q") ?? "");
-  const [onlyDue, setOnlyDueState] = useState(sp?.get("due") === "1");
-  // the filters live in the URL as well, so PDF / Excel / CSV export exactly the rows on screen
-  const syncUrl = (q: string, d: boolean) => {
-    const u = new URLSearchParams(window.location.search);
-    if (q.trim()) u.set("q", q.trim());
-    else u.delete("q");
-    if (d) u.set("due", "1");
-    else u.delete("due");
-    const qs = u.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  };
-  const setFilter = (v: string) => {
-    setFilterState(v);
-    syncUrl(v, onlyDue);
-  };
-  const setOnlyDue = (v: boolean) => {
-    setOnlyDueState(v);
-    syncUrl(filter, v);
-  };
+  const filter = sp?.get("q") ?? "";
+  const onlyDue = sp?.get("due") === "1";
   const [add, setAdd] = useState<{ product: PickedProduct | null; supplierId: string; reorderPoint: string; safetyStock: string; orderQty: string; email: string }>({ product: null, supplierId: suppliers[0]?.id ?? "", reorderPoint: "", safetyStock: "", orderQty: "", email: "" });
 
   const shown = filterRules(rules, filter, onlyDue);
@@ -179,10 +164,10 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       )}
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       <div className="flex flex-wrap items-end gap-2">
-        <div className="w-64"><Label htmlFor="ao-q">{t("Search")}</Label><Input id="ao-q" value={filter} placeholder={t("Product, category or supplier")} onChange={(e) => setFilter(e.target.value)} /></div>
-        <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} />{t("Only at reorder point")} <Badge tone={due ? "amber" : "gray"}>{due}</Badge></label>
-        {/* right of the filters: the export takes them from the URL (synced above) */}
-        <div className="flex flex-wrap"><ExportButtons report="orders" params={{ tab: "auto" }} /></div>
+        <FilterBar dates={false} hidden={{ tab: "auto" }} after={<div className="flex flex-wrap"><ExportButtons report="orders" params={{ tab: "auto" }} /></div>}>
+          <div className="w-64"><Label htmlFor="ao-q">{t("Search")}</Label><Input id="ao-q" name="q" defaultValue={filter} placeholder={t("Product, category or supplier")} /></div>
+          <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" name="due" value="1" defaultChecked={onlyDue} />{t("Only at reorder point")} <Badge tone={due ? "amber" : "gray"}>{due}</Badge></label>
+        </FilterBar>
         <div className="ml-auto flex gap-2">
           {canManage && <Button variant="secondary" disabled={busy} onClick={fill}>{t("Fill from recommendations")}</Button>}
           {canManage && <Button disabled={busy} onClick={check}>{t("Check now")}</Button>}

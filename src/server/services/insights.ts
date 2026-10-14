@@ -3,17 +3,14 @@
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
 import { type AlertSeverity, Prisma } from "@prisma/client";
-import { defaultConverter } from "@/domain/uom";
 import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
 import { stockLevel, daysOfStock } from "@/domain/costing";
-import { completenessScore } from "@/domain/quality";
-import { costRecipe } from "@/domain/recipe-cost";
 import type { Db } from "../db";
 import { type Actor, authorize, can, departmentScope, requirePermission } from "../auth/actor";
 import { theoreticalVsActual } from "./variance";
+import { dataQuality } from "./data-quality";
 import { openPoQuantities, RECEIPT_SOURCES } from "./purchasing";
-import { buildResolver, versionToDef } from "./recipes";
 import { emptyMovement, periodMovements } from "./inventory";
 import { titleTr } from "@/lib/format";
 
@@ -100,88 +97,8 @@ export async function inventoryStatus(db: Db, actor: Actor, hotelId: string, opt
   };
 }
 
-/** Data Quality Center (spec §216–§218). */
-export async function dataQuality(db: Db, actor: Actor, hotelId: string) {
-  authorize(actor, "dashboard:view", { hotelId });
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [products, recipes, salesTotal, salesUnmapped, negative, lastCount, pendingApprovals, noSupplier, openPeriods] = await Promise.all([
-    db.product.findMany({ where: { hotelId, active: true }, select: { id: true, name: true, isStockItem: true, defaultSupplierId: true } }),
-    db.recipe.findMany({ where: { hotelId, active: true, ...departmentScope(actor) }, include: { versions: { include: { lines: true } } } }),
-    db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart } } }),
-    db.saleLine.findMany({ where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null }, select: { posCode: true }, distinct: ["posCode"] }),
-    db.stockBalance.findMany({ where: { hotelId, quantity: { lt: 0 } }, include: { product: true, warehouse: true } }),
-    db.stockCount.findFirst({ where: { hotelId, status: "POSTED" }, orderBy: { countDate: "desc" } }),
-    db.approval.count({ where: { hotelId, status: "PENDING" } }),
-    db.product.count({ where: { hotelId, active: true, defaultSupplierId: null, isStockItem: true } }),
-    db.costPeriod.count({ where: { hotelId, status: { in: ["OPEN", "REOPENED"] }, endDate: { lt: monthStart } } }),
-  ]);
-  const unmappedCount = await db.saleLine.count({ where: { hotelId, saleDate: { gte: monthStart }, recipeVersionId: null } });
-  // master-data plausibility (spec 66, 113): purchase units without a conversion, future-dated records
-  // (no yield checks: a recipe quantity is the raw quantity used, products carry no yield)
-  const [convProducts, futureSales, futureWaste] = await Promise.all([
-    db.product.findMany({ where: { hotelId, active: true, isStockItem: true }, select: { id: true, name: true, purchaseUnit: true, stockUnit: true, conversions: { select: { fromUnit: true, toUnit: true } } } }),
-    db.saleLine.count({ where: { hotelId, saleDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
-    db.wasteRecord.count({ where: { hotelId, wasteDate: { gt: new Date(now.getTime() + 86_400_000) } } }),
-  ]);
-  const missingConversion = convProducts.filter((p) => p.purchaseUnit !== p.stockUnit && !defaultConverter.canConvert(p.purchaseUnit, p.stockUnit, p.conversions.map((c) => ({ fromUnit: c.fromUnit, toUnit: c.toUnit, factor: "1" }))));
-  const resolver = await buildResolver(db, hotelId);
-  const missingCost = products.filter((p) => p.isStockItem && (resolver.products.get(p.id)?.unitCost ?? null) === null);
-  let complete = 0;
-  const recipeIssues: Array<{ id: string; name: string; problem: string }> = [];
-  for (const r of recipes) {
-    const v = resolver.versionFor(r.id);
-    if (!v) {
-      recipeIssues.push({ id: r.id, name: r.name, problem: "No approved version" });
-      continue;
-    }
-    if (!v.lines.length) {
-      recipeIssues.push({ id: r.id, name: r.name, problem: "No ingredients" });
-      continue;
-    }
-    try {
-      const c = costRecipe(versionToDef(r, v), resolver);
-      if (c.complete) complete++;
-      else recipeIssues.push({ id: r.id, name: r.name, problem: c.issues.map((i) => `${i.issue} (${i.path})`).join(", ") });
-    } catch (e) {
-      recipeIssues.push({ id: r.id, name: r.name, problem: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  const daysSinceCount = lastCount ? Math.trunc((now.getTime() - lastCount.countDate.getTime()) / 86400000) : null;
-  const score = completenessScore({
-    recipesTotal: recipes.length,
-    recipesComplete: complete,
-    productsTotal: products.filter((p) => p.isStockItem).length,
-    productsWithCost: products.filter((p) => p.isStockItem).length - missingCost.length,
-    salesLinesTotal: salesTotal,
-    salesLinesMapped: salesTotal - unmappedCount,
-    daysSinceLastCount: daysSinceCount,
-    pendingAdjustments: pendingApprovals,
-    unexplainedVariancePct: null,
-  });
-  return {
-    score: {
-      ...score,
-      recipeCompleteness: str(score.recipeCompleteness, 1),
-      costCompleteness: str(score.costCompleteness, 1),
-      salesMappingCompleteness: str(score.salesMappingCompleteness, 1),
-      countFreshness: str(score.countFreshness, 1),
-      accuracyScore: str(score.accuracyScore, 1),
-    },
-    checks: [
-      { key: "recipes", label: "Recipes with issues", count: recipeIssues.length, items: recipeIssues.slice(0, 50) },
-      { key: "missing_cost", label: "Products without cost", count: missingCost.length, items: missingCost.slice(0, 50).map((p) => ({ id: p.id, name: p.name })) },
-      { key: "unmapped_sales", label: "Unmapped sales (POS codes) this month", count: unmappedCount, items: salesUnmapped.map((s) => ({ id: s.posCode, name: s.posCode })) },
-      { key: "negative_stock", label: "Negative inventory", count: negative.length, items: negative.map((n) => ({ id: n.id, name: `${n.product.name} @ ${n.warehouse.name}: ${n.quantity.toString()}` })) },
-      { key: "stock_count", label: "Days since last posted stock count", count: daysSinceCount ?? -1, items: [] },
-      { key: "approvals", label: "Pending approvals", count: pendingApprovals, items: [] },
-      { key: "no_supplier", label: "Stock products without default supplier", count: noSupplier, items: [] },
-      { key: "unclosed_periods", label: "Past periods not closed", count: openPeriods, items: [] },
-      { key: "missing_conversion", label: "Purchase unit without a conversion to the stock unit", count: missingConversion.length, items: missingConversion.slice(0, 50).map((p) => ({ id: p.id, name: `${p.name}: 1 ${p.purchaseUnit} = ? ${p.stockUnit}` })) },
-      { key: "future_dated", label: "Sales or waste dated in the future", count: futureSales + futureWaste, items: [] },
-    ],
-  };
-}
+/** Data Quality Center (spec §216–§218): its own module since every check lists its records (r3 §15). */
+export { dataQuality };
 
 /** Waste per product over [from, to) (approved records, the actor's departments), highest cost first. */
 async function wasteByProduct(db: Db, actor: Actor, hotelId: string, q: { from: Date; to: Date }, take: number) {

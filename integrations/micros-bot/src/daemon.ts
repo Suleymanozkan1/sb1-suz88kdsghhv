@@ -1,18 +1,22 @@
 /**
- * Long-running mode:
- *   - every 30 s: if the local time (TIMEZONE) is past RUN_AT (default: cut-off + 45 min, following the cut-off set
- *     in HotelCost) and today's nightly run has not happened yet,
- *     run for the default business day (D-1 relative to the night-audit cut-off). With CATCH_UP=false a missed
- *     RUN_AT (machine was off) is not made up later that day.
- *   - every POLL_MINUTES: ask HotelCost for a pending "Şimdi çalıştır" request and run it at once.
- * Runs never overlap: requests that come in during a run wait for it.
+ * Long-running mode, on the office computer where the Micros back office / reporting is installed (always on):
+ *   - every 30 s: the nightly run. From RUN_AT (default 05:00, local TIMEZONE) once a day, for the default business
+ *     day (D-1 relative to the night-audit cut-off). When a report marked "waitForData" in reports.json (default:
+ *     the checks) is still empty — the night audit has not finished — that system is tried again every
+ *     RETRY_MINUTES (15) until RETRY_UNTIL (09:00); the attempt at or after RETRY_UNTIL is the last one and reports
+ *     the empty report as a failure. Every attempt is logged; HotelCost gets the outcome as for any run (a waiting
+ *     attempt posts nothing and reports nothing). A day that is done is never run again by the schedule.
+ *     With CATCH_UP=false a missed RUN_AT (machine was off) is not made up later that day.
+ *   - every POLL_MINUTES: ask HotelCost for a pending "Şimdi çalıştır" request and run it at once (no waiting).
+ * The nightly progress (attempts, systems still waiting, next try) is kept in state/meta.json, so a restart in
+ * between carries on. Runs never overlap: requests that come in during a run wait for it.
  */
-import { runAtAfter, type Config } from "./config";
+import type { Config } from "./config";
 import { log } from "./logger";
 import { HotelCostClient } from "./hotelcost/client";
 import { runBot, type RunReport } from "./runner";
 import { StateStore } from "./state";
-import { localParts, parseHHMM, ymd } from "./util/time";
+import { defaultBusinessDay, localParts, parseHHMM, ymd } from "./util/time";
 import { describeError } from "./errors";
 import type { HotelSettings, RunRequest } from "./contract";
 
@@ -21,6 +25,38 @@ export interface DaemonDeps {
   run?: typeof runBot;
   now?: () => Date;
 }
+
+type NightlySource = "MICROS" | "OPERA";
+
+/** Today's nightly run in progress (state/meta.json "nightly"). */
+export interface NightlyProgress {
+  /** local date the schedule is running for */
+  date: string;
+  /** business day being read: fixed at the first attempt, so every retry reads the same day */
+  businessDay: string;
+  /** systems still waiting for the night audit (empty before the first attempt = all) */
+  pending: NightlySource[];
+  attempts: number;
+  /** ISO time of the next attempt */
+  nextAt: string;
+}
+
+export interface NightlyPlan {
+  due: boolean;
+  today: string;
+  /** the attempt now will be the last one (RETRY_UNTIL reached, or retries off) */
+  final?: boolean;
+  /** 1 = first attempt */
+  attempt?: number;
+  businessDay?: string;
+  /** systems to run; empty = all */
+  sources?: NightlySource[];
+}
+
+const minutes = (hhmm: string) => {
+  const { hour, minute } = parseHHMM(hhmm);
+  return hour * 60 + minute;
+};
 
 export class Daemon {
   private busy: Promise<unknown> = Promise.resolve();
@@ -39,7 +75,8 @@ export class Daemon {
   }
 
   start(): void {
-    log.info(`daemon started: nightly run at ${this.config.runAt} (${this.config.timezone}), night audit cut-off ${this.config.nightAuditCutoff}, polling run requests every ${this.config.pollMinutes} min`);
+    const retry = this.config.retryMinutes > 0 ? `, if the night audit is not finished retry every ${this.config.retryMinutes} min until ${this.config.retryUntil}` : ", no retries";
+    log.info(`daemon started: nightly run at ${this.config.runAt} (${this.config.timezone})${retry}; night audit cut-off ${this.config.nightAuditCutoff}; polling run requests every ${this.config.pollMinutes} min`);
     const schedule = () => void this.checkSchedule().catch((err) => log.error(`schedule check failed: ${describeError(err)}`));
     const poll = () => void this.pollOnce().catch((err) => log.error(`run-request poll failed: ${describeError(err)}`));
     schedule();
@@ -53,27 +90,75 @@ export class Daemon {
     return this.busy;
   }
 
-  /** Is the nightly run due now? Exposed for tests. */
-  isNightlyDue(now = this.now()): { due: boolean; today: string } {
-    const p = localParts(now, this.config.timezone);
-    const today = ymd(p);
-    const { hour, minute } = parseHHMM(this.config.runAt);
-    const pastRunAt = p.hour * 60 + p.minute >= hour * 60 + minute;
-    const last = this.state.meta("lastNightlyRun");
-    if (!pastRunAt || last === today) return { due: false, today };
-    if (!this.config.catchUp) {
-      // without catch-up only run within 30 minutes after RUN_AT
-      const late = p.hour * 60 + p.minute - (hour * 60 + minute);
-      if (late > 30) return { due: false, today };
+  private progress(): NightlyProgress | null {
+    try {
+      const raw = this.state.meta("nightly");
+      return raw ? (JSON.parse(raw) as NightlyProgress) : null;
+    } catch {
+      return null;
     }
-    return { due: true, today };
   }
 
-  async checkSchedule(): Promise<void> {
-    const { due, today } = this.isNightlyDue();
-    if (!due || this.running) return;
-    this.state.meta("lastNightlyRun", today);
-    await this.exclusive(() => this.run(this.config, {}), "nightly run");
+  private saveProgress(p: NightlyProgress | null): void {
+    this.state.meta("nightly", p ? JSON.stringify(p) : "");
+  }
+
+  /** What the nightly schedule wants to do at `now`. Exposed for tests. */
+  nightlyPlan(now = this.now()): NightlyPlan {
+    const p = localParts(now, this.config.timezone);
+    const today = ymd(p);
+    const nowMin = p.hour * 60 + p.minute;
+    const runAt = minutes(this.config.runAt);
+    if (nowMin < runAt || this.state.meta("lastNightlyRun") === today) return { due: false, today };
+    const until = minutes(this.config.retryUntil);
+    const retrying = this.config.retryMinutes > 0;
+    const progress = this.progress();
+    if (progress && progress.date === today) {
+      // a retry: the systems still waiting for the night audit, once their next try is due
+      if (now.getTime() < Date.parse(progress.nextAt)) return { due: false, today };
+      const final = !retrying || nowMin + this.config.retryMinutes > until;
+      return { due: true, today, final, attempt: progress.attempts + 1, businessDay: progress.businessDay, sources: progress.pending };
+    }
+    // without catch-up only within 30 minutes after RUN_AT
+    if (!this.config.catchUp && nowMin - runAt > 30) return { due: false, today };
+    const final = !retrying || nowMin + this.config.retryMinutes > until;
+    return { due: true, today, final, attempt: 1, businessDay: defaultBusinessDay(now, this.config.timezone, this.config.nightAuditCutoff), sources: [] };
+  }
+
+  /** Is the nightly run due now? (kept for callers that only need yes / no) */
+  isNightlyDue(now = this.now()): { due: boolean; today: string } {
+    const { due, today } = this.nightlyPlan(now);
+    return { due, today };
+  }
+
+  async checkSchedule(now = this.now()): Promise<void> {
+    if (this.running) return;
+    const plan = this.nightlyPlan(now);
+    if (!plan.due) return;
+    const { today, final, attempt = 1, businessDay = "", sources = [] } = plan;
+    // recorded before the run: a crash or a restart during the run does not start it again at once
+    if (final) {
+      this.state.meta("lastNightlyRun", today);
+      this.saveProgress(null);
+    } else {
+      this.saveProgress({ date: today, businessDay, pending: sources, attempts: attempt, nextAt: new Date(now.getTime() + this.config.retryMinutes * 60_000).toISOString() });
+    }
+    const label = `nightly run for ${businessDay} (attempt ${attempt}${final ? ", last" : ""}${sources.length ? `, ${sources.join(" + ")}` : ""})`;
+    log.info(`${label} starting`);
+    await this.exclusive(async () => {
+      const report = await this.run(this.config, { day: businessDay, ...(sources.length === 1 ? { source: sources[0] } : {}), waitForData: final ? "final" : "retry" });
+      const waiting = report.runs.filter((r) => r.status === "NOT_READY").map((r) => r.source);
+      if (final || waiting.length === 0) {
+        this.state.meta("lastNightlyRun", today);
+        this.saveProgress(null);
+      } else {
+        const next = new Date(now.getTime() + this.config.retryMinutes * 60_000);
+        this.saveProgress({ date: today, businessDay, pending: waiting, attempts: attempt, nextAt: next.toISOString() });
+        const at = localParts(next, this.config.timezone);
+        log.warn(`night audit not finished yet for ${businessDay} (${waiting.join(", ")}: ${report.runs.find((r) => r.status === "NOT_READY")?.message ?? "report empty"}); attempt ${attempt}, next try at ${String(at.hour).padStart(2, "0")}:${String(at.minute).padStart(2, "0")} (last try at ${this.config.retryUntil})`);
+      }
+      return report;
+    }, label);
   }
 
   /** Follow the night-audit cut-off set in HotelCost (Admin); the .env value is only the default until the first poll. */
@@ -82,15 +167,8 @@ export class Daemon {
     if (!cutoff || !/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff) || cutoff === this.config.nightAuditCutoff) return;
     log.info(`night audit cut-off from HotelCost: ${cutoff} (was ${this.config.nightAuditCutoff})`);
     this.config.nightAuditCutoff = cutoff;
-    // without an explicit RUN_AT the nightly run moves with the cut-off; a fixed one is only checked
-    if (!this.config.runAtFixed) {
-      this.config.runAt = runAtAfter(cutoff);
-      log.info(`nightly run moved to ${this.config.runAt}`);
-      return;
-    }
-    const run = parseHHMM(this.config.runAt);
-    const cut = parseHHMM(cutoff);
-    if (run.hour * 60 + run.minute <= cut.hour * 60 + cut.minute) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);
+    // the run time is the hotel's own choice (RUN_AT, default 05:00); it only has to be after the cut-off
+    if (minutes(this.config.runAt) <= minutes(cutoff)) log.warn(`RUN_AT (${this.config.runAt}) should be after the night audit cut-off (${cutoff})`);
   }
 
   /** Ask HotelCost for a "run now" request; run it if there is one. */

@@ -12,6 +12,7 @@ import type { DetailResult } from "../screens/listDetail";
 import type { ScreenContext } from "../screens/context";
 import { readInvoicesFromWeb } from "../screens/micros/invoices";
 import { FileInvoiceReader } from "./fileReader";
+import type { ReportDefinition } from "../reports";
 
 export interface InvoiceReader {
   readonly name: "web" | "file";
@@ -19,7 +20,8 @@ export interface InvoiceReader {
   readonly needsBrowser: boolean;
   /** ingest "source" field for these invoices */
   readonly ingestSource: "MICROS" | "OTHER";
-  read(day: string, micros?: ScreenContext<MicrosSelectors>): Promise<DetailResult<Invoice>>;
+  /** `def`: the invoices report definition (reports.json), used by the web reader */
+  read(day: string, micros?: ScreenContext<MicrosSelectors>, def?: ReportDefinition): Promise<DetailResult<Invoice>>;
   /** called after the invoices were posted successfully (not in dry-run), e.g. to archive imported files */
   commit?(day: string): Promise<void>;
 }
@@ -28,9 +30,9 @@ export class WebInvoiceReader implements InvoiceReader {
   readonly name = "web" as const;
   readonly needsBrowser = true;
   readonly ingestSource = "MICROS" as const;
-  async read(_day: string, micros?: ScreenContext<MicrosSelectors>): Promise<DetailResult<Invoice>> {
+  async read(_day: string, micros?: ScreenContext<MicrosSelectors>, def?: ReportDefinition): Promise<DetailResult<Invoice>> {
     if (!micros) throw new Error("web invoice reader needs the Micros browser session");
-    return readInvoicesFromWeb(micros);
+    return readInvoicesFromWeb(micros, def);
   }
 }
 

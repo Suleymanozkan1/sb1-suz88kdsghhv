@@ -8,7 +8,7 @@ export const waste: ReportDef = {
   async load({ actor, hotelId, t, q }) {
     const range = monthRange({ from: q.get("from") ?? undefined, to: q.get("to") ?? undefined });
     const departmentId = q.get("departmentId") || undefined;
-    const rows = await listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId });
+    const rows = await listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId, productId: q.get("productId") || undefined });
     const dept = departmentId ? await prisma.department.findFirst({ where: { id: departmentId, hotelId } }) : null;
     const posted = rows.filter((r) => r.status === "APPROVED");
     return {

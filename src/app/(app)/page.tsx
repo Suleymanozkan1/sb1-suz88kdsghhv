@@ -18,7 +18,7 @@ import { Title } from "@/components/title";
 
 export const metadata = { title: "Dashboard" };
 
-const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "Complimentary", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
+const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "On-house / Hospitality", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
 const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", INSUFFICIENT_DATA: "red" } as const;
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
@@ -47,7 +47,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         title={t("Cost intelligence — {hotel}", { hotel: hotel.name })}
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-2">
-            {t("What did we spend, what should we have spent, and why is it different?")}
+            {t("What did we spend, what should we have spent, and why is it different?")} {t("All figures come from the shared cost engine and reconcile with the Theoretical vs Actual report.")}
             <Badge tone={confidenceTone[d.quality.confidence]}>{t("Data confidence: {level}", { level: t(d.quality.confidence.replace("_", " ")) })} · {d.quality.accuracyScore}</Badge>
           </span>
         }
@@ -166,7 +166,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <AlertList alerts={d.alerts} timezone={hotel.timezone} />
         </Card>
       </div>
-      <p className="mt-6 text-xs text-ink-400">{t("Signed in as {name} ({role}). All figures come from the shared cost engine and reconcile with the Theoretical vs Actual report.", { name: actor.name, role: t(actor.roleName) })}</p>
     </>
   );
 }

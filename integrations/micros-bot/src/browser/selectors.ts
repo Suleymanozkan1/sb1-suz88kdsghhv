@@ -47,6 +47,27 @@ export interface MicrosSelectors {
   covers: { steps: Step[]; table: SelectorValue; row: SelectorValue; noData?: SelectorValue; columns: { outlet: SelectorValue; meal: SelectorValue; covers: SelectorValue }; defaultMeal?: string | null; skipOutletPattern?: string | null };
   /** product cards of the purchasing module ("Ürünleri çek"); null / missing = not set up */
   products?: ProductsScreen | null;
+  /** checks closed as on-house / hospitality (ödenmez / ikram); read only when reports.json defines the report */
+  comps?: CompsScreen | null;
+}
+
+/**
+ * A flat report of the items on checks closed as on-house (ödenmez) or hospitality (ikram): one row per item,
+ * rows of the same check (checkNo + outlet) form one record. kind = the column telling on-house from hospitality
+ * (its texts are mapped in reports.json "kindMap"; without the column "defaultKind" is used).
+ */
+export interface CompsScreen {
+  steps: Step[];
+  table: SelectorValue;
+  row: SelectorValue;
+  noData?: SelectorValue;
+  nextPage?: SelectorValue;
+  columns: {
+    checkNo: SelectorValue; outlet: SelectorValue; kind?: SelectorValue; reason?: SelectorValue; person?: SelectorValue; note?: SelectorValue;
+    itemCode?: SelectorValue; itemName: SelectorValue; qty: SelectorValue;
+  };
+  /** regex on the item name: rows to ignore (totals, headers) */
+  skipItemNamePattern?: string | null;
 }
 
 /** A flat table of product cards (one row = one product), filtered to those added since {since}. */
@@ -88,6 +109,8 @@ export interface OperaSelectors {
     rooms?: { steps?: Step[]; row: SelectorValue; roomNumber: SelectorValue; noData?: SelectorValue } | null;
   };
   minibar?: MinibarScreen | null;
+  /** on-house / hospitality postings, when the hotel reads them from Opera (reports.json opera.comps) */
+  comps?: CompsScreen | null;
 }
 
 export function loadSelectors<T>(file: string): T {

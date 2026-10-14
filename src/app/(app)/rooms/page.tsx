@@ -20,10 +20,11 @@ const TEMPLATES: Array<[RegExp, string, string[]]> = [
   [/^No room cost expenses entered for (.+)\.$/, "No room cost expenses entered for {months}.", ["months"]],
   [/^Payroll of (-?[\d.]+) is already posted to the Rooms division and monthly room expenses of (-?[\d.]+) are added on top: if the monthly items include HK salaries, they are counted twice\.$/, "Payroll of {ledger} is already posted to the Rooms division and monthly room expenses of {monthly} are added on top: if the monthly items include HK salaries, they are counted twice.", ["ledger", "monthly"]],
 ];
-function tServer(t: T, s: string): string {
+function tServer(t: T, s: string, currency: string): string {
   for (const [re, key, names] of TEMPLATES) {
     const m = re.exec(s);
-    if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+    // amounts are formatted the Turkish way (₺340.715,73), counts and month lists stay as they are
+    if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, ["amount", "ledger", "monthly"].includes(n) ? money(m[i + 1], currency) : m[i + 1]])));
   }
   return t(s);
 }
@@ -51,15 +52,18 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
       <PageHeader
         exportKey="rooms"
         title={t("Room cost")}
-        subtitle={t("Full room cost = rooms-division cost (direct + allocated) split by {basis}, plus monthly room expenses, room-tagged costs and channel cost. Occupancy: {note}.", { basis: t(r.basis), note: tServer(t, o.note) })}
+        subtitle={<>
+          {t("Full room cost = rooms-division cost (direct + allocated) split by {basis}, plus monthly room expenses, room-tagged costs and channel cost. Occupancy: {note}.", { basis: t(r.basis), note: tServer(t, o.note, cur) })}
+          <span className="mt-2 block">{t("Housekeeping, laundry, amenities … columns are costs in {currency}, not revenue or counts: each room's share of the period's cost (split by {basis}) plus costs booked directly to the room.", { currency: cur, basis: t(r.basis) })}</span>
+        </>}
         actions={
           <>
-            <PeriodFilter from={range.fromStr} to={range.toStr} extra={<input type="hidden" name="view" value={view} />} />
             <Link href={expensesHref} className="inline-flex items-center rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-sm font-medium text-ink-800 hover:bg-ink-50">{t("Room cost expenses")}</Link>
+            <PeriodFilter from={range.fromStr} to={range.toStr} extra={<input type="hidden" name="view" value={view} />} />
           </>
         }
       />
-      {r.warnings.length > 0 && <div className="mb-4 space-y-2">{r.warnings.map((w) => <Alert key={w} tone="amber">{tServer(t, w)}</Alert>)}</div>}
+      {r.warnings.length > 0 && <div className="mb-4 space-y-2">{r.warnings.map((w) => <Alert key={w} tone="amber">{tServer(t, w, cur)}</Alert>)}</div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label={t("Occupancy")} value={pct(f100(k.occupancy))} hint={t("{occupied} / {sellable} sellable room nights", { occupied: o.occupiedRooms, sellable: o.sellableRooms }) + (closed ? ` · ${t("{n} out of order / out of service", { n: closed })}` : "")} />
         <Stat label={t("ADR")} value={money(k.adr, cur)} hint={t("Room revenue ÷ sold room nights")} />
@@ -127,7 +131,6 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
       </Card>
 
       <Card title={t("Rooms ({n})", { n: r.lines.length })} className="mt-4" padded={false}>
-        <p className="border-b border-ink-100 px-4 py-2 text-xs text-ink-500">{t("Housekeeping, laundry, amenities … columns are costs in {currency}, not revenue or counts: each room's share of the period's cost (split by {basis}) plus costs booked directly to the room.", { currency: cur, basis: t(r.basis) })}</p>
         {r.lines.length === 0 ? <div className="p-4"><Empty title={t("No rooms defined")} /></div> : (
           <div className="max-h-[32rem] overflow-auto" tabIndex={0} role="region" aria-label={t("Rooms")}>
             <Table>

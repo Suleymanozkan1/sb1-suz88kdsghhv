@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Card, Empty, Input, Label, PageHeader, Select, Ta
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RecipePriceRefresh } from "./refresh-prices";
+import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 
 export const metadata = { title: "Recipes" };
@@ -23,17 +24,18 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   const day = (v: Date) => new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: hotel.timezone }).format(v);
   return (
     <>
-      <PageHeader exportKey="recipes" title={t("Recipes")} subtitle={t("Live cost from the shared recipe engine (sub-recipes cascade). Approved versions are frozen.")} actions={manage ? <Link href="/recipes/new"><Button><Plus className="h-4 w-4" /> {t("New Recipe")}</Button></Link> : null} />
-      {manage && <RecipePriceRefresh currency={hotel.baseCurrency} />}
-      <Card padded={false} actions={
-        <form method="get" className="flex flex-wrap items-end gap-2">
-          <Input name="q" defaultValue={sp.q} placeholder={t("Search")} aria-label={t("Search recipes")} className="w-48" />
-          <Select name="type" defaultValue={sp.type ?? ""} aria-label={t("Recipe type")} className="w-40"><option value="">{t("All types")}</option>{RECIPE_TYPES.map((x) => <option key={x} value={x}>{t(x)}</option>)}</Select>
+      <PageHeader exportKey="recipes" title={t("Recipes")} subtitle={t("Live cost from the shared recipe engine (sub-recipes cascade). Approved versions are frozen.")} actions={<>
+        {manage && <Link href="/recipes/new"><Button><Plus className="h-4 w-4" /> {t("New Recipe")}</Button></Link>}
+        {/* a master list: the "changed between" dates stay empty by default, otherwise older recipes would be hidden */}
+        <FilterBar dates={false}>
           <div><Label htmlFor="rf-from" hint={t("created or updated")}>{t("From")}</Label><Input id="rf-from" name="from" type="date" defaultValue={sp.from} className="w-40" /></div>
           <div><Label htmlFor="rf-to">{t("To")}</Label><Input id="rf-to" name="to" type="date" defaultValue={sp.to} className="w-40" /></div>
-          <Button variant="secondary" type="submit">{t("Filter")}</Button>
-        </form>
-      } title={t("{n} recipes", { n: res.data.length })}>
+          <div><Label htmlFor="rf-q">{t("Search")}</Label><Input id="rf-q" name="q" defaultValue={sp.q} className="w-48" /></div>
+          <div><Label htmlFor="rf-type">{t("Recipe type")}</Label><Select id="rf-type" name="type" defaultValue={sp.type ?? ""} className="w-40"><option value="">{t("All types")}</option>{RECIPE_TYPES.map((x) => <option key={x} value={x}>{t(x)}</option>)}</Select></div>
+        </FilterBar>
+      </>} />
+      {manage && <RecipePriceRefresh currency={hotel.baseCurrency} />}
+      <Card padded={false} title={t("{n} recipes", { n: res.data.length })}>
         {res.data.length === 0 ? <div className="p-4"><Empty title={t("No recipes")} /></div> : (
           <Table>
             <thead><tr><Th>{t("Recipe")}</Th><Th>{t("Type")}</Th><Th>{t("Department")}</Th><Th>{t("Version")}</Th><Th align="right">{t("Portion cost")}</Th><Th align="right">{t("Price")}</Th><Th align="right">{t("Food cost %")}</Th><Th align="right">{t("Margin %")}</Th><Th>{t("Status")}</Th><Th>{t("Created on")}</Th><Th>{t("Updated on")}</Th>{manage && <Th />}</tr></thead>

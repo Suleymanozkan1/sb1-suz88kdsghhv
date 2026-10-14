@@ -15,5 +15,12 @@ import { r2c } from "./r2c";
 import { r2d } from "./r2d";
 import { r2e } from "./r2e";
 import { r2f } from "./r2f";
+import { r3 } from "./r3";
+import { r3a } from "./r3a";
+import { r3b } from "./r3b";
+import { r3c } from "./r3c";
+import { r3d } from "./r3d";
+import { r3e } from "./r3e";
+import { r3f } from "./r3f";
 
-export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f };
+export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f, ...r3, ...r3a, ...r3b, ...r3c, ...r3d, ...r3e, ...r3f };

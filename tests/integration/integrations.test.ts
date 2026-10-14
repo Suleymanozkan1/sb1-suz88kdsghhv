@@ -173,9 +173,9 @@ describe("run log, run now, health", () => {
     expect(await integrationHealth(prisma, x.hotel.id, now)).toMatchObject({ status: "OK", sources: [{ source: "MICROS", status: "OK" }] });
   });
   it("health: the day just closed is not missing while the bot still has time to run after the cut-off", async () => {
-    // cut-off 03:30 Istanbul, the bot runs ~04:15: at 04:30 the 22nd is not expected yet, at 05:10 it is
-    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T01:30:00Z"))).toMatchObject({ status: "OK", expectedDay: "2026-09-21" });
-    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T02:10:00Z"))).toMatchObject({ status: "MISSING", expectedDay: "2026-09-22" });
+    // cut-off 03:30 Istanbul, the bot runs at 05:00 and retries: at 05:30 the 22nd is not expected yet, at 06:40 it is
+    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T02:30:00Z"))).toMatchObject({ status: "OK", expectedDay: "2026-09-21" });
+    expect(await integrationHealth(prisma, h.hotel.id, new Date("2026-09-23T03:40:00Z"))).toMatchObject({ status: "MISSING", expectedDay: "2026-09-22" });
   });
   it("a successful Micros run checks the automatic orders at once; Opera does not", async () => {
     const prev = process.env.MAIL_TRANSPORT;

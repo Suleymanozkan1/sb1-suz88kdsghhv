@@ -10,15 +10,16 @@ import { WasteForm } from "./waste-form";
 import { D, ZERO, sum, type Decimal } from "@/domain/money";
 import { currentBusinessDay } from "@/domain/business-day";
 import { Title } from "@/components/title";
+import { ProductChip } from "@/components/product-chip";
 
 export const metadata = { title: "Waste" };
 
-export default async function WastePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string }> }) {
+export default async function WastePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string; productId?: string }> }) {
   const sp = await searchParams;
   const range = monthRange(sp);
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
-  const res = await guarded(() => listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || undefined }));
+  const res = await guarded(() => listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || undefined, productId: sp.productId || undefined }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const rows = res.data;
   const [departments, warehouses] = await Promise.all([prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }), prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } })]);
@@ -33,7 +34,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader exportKey="waste" title={t("Waste / zayiat")} subtitle={t("Valued at cost (frozen from the ledger at posting). High-value records require approval.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} />} />
+      <PageHeader exportKey="waste" title={t("Waste / zayiat")} subtitle={t("Valued at cost (frozen from the ledger at posting). High-value records require approval.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} departments={departments} departmentId={sp.departmentId} hidden={{ productId: sp.productId }} />} />
       {can(actor, "waste:record") && <Card title={t("Record waste")} className="mb-4"><WasteForm currency={hotel.baseCurrency} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} types={[...WASTE_TYPES]} departments={departments.map((d) => ({ id: d.id, name: d.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, departmentId: w.departmentId }))} /></Card>}
       <div className="grid gap-3 md:grid-cols-4">
         <Stat label={t("Posted waste cost")} value={money(total, cur, 0)} hint={t("{n} records", { n: posted.length })} />
@@ -41,7 +42,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
         <Card title={t("By reason")} className="md:col-span-1"><ul className="space-y-1 text-sm">{[...byType].sort((a, b) => b[1].comparedTo(a[1])).slice(0, 6).map(([k, v]) => <li key={k} className="flex justify-between"><span>{t(k.replace(/_/g, " ").toLowerCase())}</span><span className="tabular-nums">{money(v, cur, 0)}</span></li>)}</ul></Card>
         <Card title={t("By department")}><ul className="space-y-1 text-sm">{[...byDept].sort((a, b) => b[1].comparedTo(a[1])).map(([k, v]) => <li key={k} className="flex justify-between"><span>{k}</span><span className="tabular-nums">{money(v, cur, 0)}</span></li>)}</ul></Card>
       </div>
-      <Card className="mt-4" padded={false} title={t("Waste records")}>
+      <Card className="mt-4" padded={false} title={t("Waste records")} actions={sp.productId && rows[0] ? <ProductChip name={rows[0].product.name} clear={`?${new URLSearchParams(Object.entries({ from: range.fromStr, to: range.toStr, departmentId: sp.departmentId }).filter((e): e is [string, string] => !!e[1]))}`} /> : undefined}>
         {rows.length === 0 ? <div className="p-4"><Empty title={t("No waste in this period")} /></div> : (
           <Table>
             <thead><tr><Th>{t("Date")}</Th><Th>{t("Department")}</Th><Th>{t("Product")}</Th><Th>{t("Reason")}</Th><Th align="right">{t("Quantity")}</Th><Th align="right">{t("Unit cost")}</Th><Th align="right">{t("Cost")}</Th><Th>{t("Entered by")}</Th><Th>{t("Status")}</Th></tr></thead>

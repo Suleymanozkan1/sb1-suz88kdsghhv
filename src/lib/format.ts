@@ -63,6 +63,8 @@ export function localDay(timeZone = "Europe/Istanbul", d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
+const TR_LOWER = new Set(["ve", "veya", "ile"]);
+
 /**
  * Display title case (feedback r2 §0): the first letter of every word upper-case with Turkish rules ("dana incik" →
  * "Dana İncik", "ılık süt" → "Ilık Süt"); the rest is left as typed so codes and acronyms (KDV, ADR, SKU) survive and a suffix after an apostrophe stays lower-case (24'lü).
@@ -70,5 +72,7 @@ export function localDay(timeZone = "Europe/Istanbul", d = new Date()): string {
  */
 export function titleTr(v: string | null | undefined, locale: string = "tr"): string {
   if (!v) return v ?? "";
-  return v.replace(/(^|[\s(/"“\-–—])(\p{Ll})/gu, (_, pre: string, ch: string) => pre + ch.toLocaleUpperCase(locale === "en" ? "en" : "tr"));
+  return v.replace(/(^|[\s(/"“\-–—])(\p{Ll})(\p{Ll}*)/gu, (m, pre: string, ch: string, rest: string, at: number) =>
+    // Turkish conjunctions stay lower-case inside a title ("Ödenmez ve İkram")
+    at > 0 && pre === " " && TR_LOWER.has(ch + rest) ? m : pre + ch.toLocaleUpperCase(locale === "en" ? "en" : "tr") + rest);
 }

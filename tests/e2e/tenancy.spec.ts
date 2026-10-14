@@ -13,6 +13,7 @@ test("platform → new tenant → invitation accepted → company admin sees onl
   const id = uniq();
   await loginAs(page, "superadmin@hotelcost.test");
   await expect(page).toHaveURL(/\/platform/);
+  await page.getByRole("button", { name: "About this page" }).click();
   await expect(page.getByText(/tenant data \(costs, stock, revenue\) is not visible here/)).toBeVisible();
   await page.getByLabel("Company name").fill(`E2E Company ${id}`);
   await page.getByLabel("First hotel code").fill(`E2E${id.slice(-4)}`);

@@ -132,15 +132,82 @@ export async function countWarehouses(db: Db, actor: Actor, hotelId: string, sel
   return { warehouses, current };
 }
 
-/** Counts of ONE warehouse (never the deleted ones), newest first — the counts page, its API and its export. */
-export async function listCounts(db: Db, actor: Actor, hotelId: string, q: { warehouseId: string; countId?: string | null; take?: number }) {
+/**
+ * Counts of ONE warehouse (never the deleted ones), newest first — the counts page, its API and its export.
+ * `open`: only sheets still being counted or waiting for approval (the counts page, r3 §10: approved results are on
+ * /inventory/counts/results).
+ */
+export async function listCounts(db: Db, actor: Actor, hotelId: string, q: { warehouseId: string; countId?: string | null; take?: number; open?: boolean }) {
   authorize(actor, "inventory:view", { hotelId });
   return db.stockCount.findMany({
-    where: { hotelId, warehouseId: q.warehouseId, deletedAt: null, warehouse: warehouseScope(actor), ...(q.countId ? { id: q.countId } : {}) },
+    where: { hotelId, warehouseId: q.warehouseId, deletedAt: null, warehouse: warehouseScope(actor), ...(q.countId ? { id: q.countId } : {}), ...(q.open ? { status: { in: ["DRAFT", "SUBMITTED"] } } : {}) },
     include: { warehouse: true, lines: { include: { product: true }, orderBy: { product: { name: "asc" } } } },
     orderBy: [{ countDate: "desc" }, { number: "desc" }],
     take: q.take ?? 20,
   });
+}
+
+/** Which lines the results list: every line, those with a difference, only shortages or only surpluses. */
+export const COUNT_LINE_FILTERS = ["any", "short", "over"] as const;
+export type CountLineFilter = (typeof COUNT_LINE_FILTERS)[number] | "";
+export const countLineFilter = (v: string | null | undefined): CountLineFilter => ((COUNT_LINE_FILTERS as readonly string[]).includes(v ?? "") ? (v as CountLineFilter) : "");
+
+/**
+ * Results of the approved (posted) counts of a store over [from, to) — feedback r3 §10, for the managers who neither
+ * count nor approve: per count who counted / approved, and per product system vs counted quantity and the difference
+ * (quantity and value). `warehouseId` "all" = every store the user may see; anything else falls back to the first one.
+ * Totals cover every line of a count; `lines` only narrows the lines listed.
+ */
+export async function countResults(db: Db, actor: Actor, hotelId: string, q: { warehouseId?: string | null; from: Date; to: Date; lines?: CountLineFilter }) {
+  authorize(actor, "inventory:view", { hotelId });
+  const warehouses = await db.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const all = q.warehouseId === "all";
+  const current = all ? null : (q.warehouseId && warehouses.find((w) => w.id === q.warehouseId)) || warehouses[0] || null;
+  const ids = all ? warehouses.map((w) => w.id) : current ? [current.id] : [];
+  const counts = await db.stockCount.findMany({
+    where: { hotelId, warehouseId: { in: ids }, deletedAt: null, status: { in: ["APPROVED", "POSTED"] }, countDate: { gte: q.from, lt: q.to } },
+    include: { warehouse: { select: { id: true, name: true } }, lines: { include: { product: { select: { id: true, name: true, sku: true, stockUnit: true } } }, orderBy: { product: { name: "asc" } } } },
+    orderBy: [{ countDate: "desc" }, { number: "desc" }],
+  });
+  const userIds = [...new Set(counts.flatMap((c) => [c.countedById, c.approvedById]).filter((x): x is string => !!x))];
+  const users = new Map((await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const keep = (v: Decimal) => (q.lines === "any" ? !v.isZero() : q.lines === "short" ? v.lt(0) : q.lines === "over" ? v.gt(0) : true);
+  const rows = counts.map((c) => {
+    const lines = c.lines.map((l) => ({
+      productId: l.productId,
+      product: l.product.name,
+      sku: l.product.sku,
+      unit: l.product.stockUnit,
+      systemQty: D(l.systemQty.toString()),
+      countedQty: D(l.countedQty.toString()),
+      diffQty: D(l.varianceQty.toString()),
+      diffValue: D(l.varianceValue.toString()),
+      reason: l.reason,
+    }));
+    const values = lines.map((l) => l.diffValue);
+    const shortage = sum(values.filter((v) => v.lt(0)));
+    const surplus = sum(values.filter((v) => v.gt(0)));
+    return {
+      id: c.id,
+      number: c.number,
+      countDate: c.countDate,
+      warehouseId: c.warehouseId,
+      warehouse: c.warehouse.name,
+      countedBy: users.get(c.countedById) ?? null,
+      approvedBy: c.approvedById ? (users.get(c.approvedById) ?? null) : null,
+      approvedAt: c.postedAt,
+      note: c.note,
+      products: lines.length,
+      withDifference: lines.filter((l) => !l.diffQty.isZero()).length,
+      shortage,
+      surplus,
+      net: shortage.plus(surplus),
+      lines: lines.filter((l) => keep(l.diffValue.isZero() ? l.diffQty : l.diffValue)),
+    };
+  });
+  const shortage = sum(rows.map((r) => r.shortage));
+  const surplus = sum(rows.map((r) => r.surplus));
+  return { warehouses, current, all, counts: rows, totals: { counts: rows.length, withDifference: rows.reduce((a, r) => a + r.withDifference, 0), shortage, surplus, net: shortage.plus(surplus) } };
 }
 
 export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: string, opts: { approved: boolean }) {
@@ -191,7 +258,7 @@ export async function countSummary(db: Db, actor: Actor, hotelId: string, range:
   const ids = warehouses.map((w) => w.id);
   const [before, during, counts] = await Promise.all([
     db.stockTransaction.groupBy({ by: ["warehouseId"], where: { hotelId, warehouseId: { in: ids }, txDate: { lt: range.from } }, _sum: { totalCost: true } }),
-    db.stockTransaction.groupBy({ by: ["warehouseId", "type"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
+    db.stockTransaction.groupBy({ by: ["warehouseId", "type", "sourceType"], where: { hotelId, warehouseId: { in: ids }, txDate: { gte: range.from, lt: range.to } }, _sum: { totalCost: true } }),
     db.stockCount.findMany({ where: { hotelId, warehouseId: { in: ids }, deletedAt: null, countDate: { gte: range.from, lt: range.to } }, include: { lines: { select: { systemQty: true, countedQty: true, varianceValue: true, unitCost: true } } } }),
   ]);
   const IN = ["PURCHASE", "TRANSFER_IN", "OPENING", "PRODUCTION_IN"];
@@ -205,8 +272,10 @@ export async function countSummary(db: Db, actor: Actor, hotelId: string, range:
     const used = sumOf(OUT).neg();
     const consumed = sumOf(["CONSUMPTION"]).neg();
     const waste = sumOf(["WASTE"]).neg();
-    const countDiff = sumOf(["COUNT_ADJUSTMENT"]);
-    const other = mine.filter((d) => !IN.includes(d.type) && !OUT.includes(d.type) && d.type !== "COUNT_ADJUSTMENT").reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    // only stock counts: the minibar check also posts COUNT_ADJUSTMENT (room losses), which is an other adjustment here
+    const fromCount = (d: (typeof mine)[number]) => d.type === "COUNT_ADJUSTMENT" && d.sourceType === "COUNT";
+    const countDiff = mine.filter(fromCount).reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
+    const other = mine.filter((d) => !IN.includes(d.type) && !OUT.includes(d.type) && !fromCount(d)).reduce((a, d) => a.plus(num(d._sum.totalCost)), ZERO);
     const closing = opening.plus(received).minus(used).plus(countDiff).plus(other);
     const wc = counts.filter((c) => c.warehouseId === w.id);
     const posted = wc.filter((c) => c.status === "POSTED");

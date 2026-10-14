@@ -124,7 +124,7 @@ export async function recordWaste(db: Db, actor: Actor, hotelId: string, raw: un
 
 export { postWasteRecord };
 
-export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from?: Date; to?: Date; departmentId?: string; status?: "PENDING" | "APPROVED" | "REJECTED" } = {}) {
+export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from?: Date; to?: Date; departmentId?: string; productId?: string; status?: "PENDING" | "APPROVED" | "REJECTED" } = {}) {
   authorize(actor, "waste:view", { hotelId });
   // an explicit department filter can only narrow the user's scope, never widen it
   if (f.departmentId) requireDepartment(actor, f.departmentId);
@@ -134,6 +134,7 @@ export async function listWaste(db: Db, actor: Actor, hotelId: string, f: { from
       ...departmentScope(actor),
       ...(f.departmentId ? { departmentId: f.departmentId } : {}),
       ...(f.status ? { status: f.status } : {}),
+      ...(f.productId ? { productId: f.productId } : {}),
       ...(f.from || f.to ? { wasteDate: { ...(f.from ? { gte: f.from } : {}), ...(f.to ? { lt: f.to } : {}) } } : {}),
     },
     include: { product: { include: { category: true } }, department: true, warehouse: true },

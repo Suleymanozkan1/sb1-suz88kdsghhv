@@ -28,7 +28,12 @@ export default async function PeriodsPage() {
   const checks = await Promise.all(periods.map((p) => (p.status === "CLOSED" ? Promise.resolve(null) : closeChecklist(prisma, hotelId, p))));
   return (
     <>
-      <PageHeader title={t("Cost periods")} subtitle={t("OPEN → SOFT CLOSED → CLOSED. Status: RED = critical gap (blocks closing unless overridden with a reason), YELLOW = non-critical gap, GREEN = complete. Closing snapshots the calculated metrics and archives a reproducible PERIOD_CLOSE report; reopening requires authorization and is audited.")} exportKey="periods" />
+      <PageHeader title={t("Cost periods")} subtitle={<>
+        {t("Each month is a cost period. While it is open, stock movements, goods receipts, waste, expenses, sales and breakfast sessions can be dated into it.")}
+        <span className="mt-2 block">{t("At month end, work through the checklist below and close the month: nothing more can be posted into it, and the month's results are saved as a fixed snapshot (Reports → archive), so the reported figures can no longer change.")}</span>
+        <span className="mt-2 block">{t("Soft close: only the administrator, cost controller and accounting manager can still post (final corrections). A closed month can be reopened only with a written reason; the reopening is logged in the audit trail.")}</span>
+        <span className="mt-2 block">{t("Colours: red = a required step is missing (closing then needs an override reason), yellow = something to check, green = complete.")}</span>
+      </>} exportKey="periods" />
       <div className="space-y-4">
         {periods.map((p, i) => {
           const c = checks[i];

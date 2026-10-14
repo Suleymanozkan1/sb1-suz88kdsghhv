@@ -3,7 +3,7 @@
  * role can open (home redirect, "back" link on /forbidden). No "use client": importable on both sides.
  */
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, FileUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, FileUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users, Gift, ClipboardPen,
 } from "lucide-react";
 
 export const NAV = [
@@ -12,12 +12,14 @@ export const NAV = [
   { href: "/inventory", label: "Inventory", icon: Boxes, perm: "inventory:view" },
   { href: "/inventory/ledger", label: "Stock Ledger", icon: ClipboardList, perm: "inventory:view" },
   { href: "/inventory/counts", label: "Stock Counts", icon: ClipboardCheck, perm: "inventory:count" },
+  // approved count results by store (feedback r3 §10): for managers who neither count nor approve
+  { href: "/inventory/counts/results", label: "Count Results", icon: ClipboardPen, perm: "inventory:view" },
   { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, perm: "purchase:view" },
   { href: "/purchasing/orders", label: "Order Suggestions", icon: Truck, perm: "purchase:view" },
   { href: "/products", label: "Products", icon: Package, perm: "product:view" },
   { href: "/recipes", label: "Recipes", icon: ChefHat, perm: "recipe:view" },
   { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view" },
-  { href: "/buffet", label: "Buffet", icon: UtensilsCrossed, perm: "buffet:view" },
+  { href: "/buffet", label: "Breakfast", icon: UtensilsCrossed, perm: "buffet:view" },
   { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view" },
   { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view" },
   { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
@@ -25,10 +27,12 @@ export const NAV = [
   { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
   { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
+  // free consumption: on-house (owners, GM …) and hospitality (feedback r3 §8)
+  { href: "/comps", label: "On-house & Hospitality", icon: Gift, perm: "comp:view" },
   // also for approval:decide and count approvers without the dashboard: the layout computes the "approvals" flag
   { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view", flag: "approvals" },
   { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
-  { href: "/review", label: "Weekly Review", icon: ListChecks, perm: "report:view" },
+  { href: "/review", label: "Cost Review", icon: ListChecks, perm: "report:view" },
   { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view" },
   { href: "/reports", label: "Reports & Pack", icon: FileText, perm: "report:view" },
   { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },

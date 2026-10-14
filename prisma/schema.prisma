@@ -257,23 +257,25 @@ enum Plan {
 }
 
 model Organization {
-  id         String       @id @default(cuid())
-  name       String
+  id             String       @id @default(cuid())
+  name           String
   /// demo/QA tenant: may be reset by the demo tooling (never in production)
-  isDemo     Boolean      @default(false)
+  isDemo         Boolean      @default(false)
   /// a deactivated tenant cannot sign in
-  active     Boolean      @default(true)
+  active         Boolean      @default(true)
   /// the platform operator's own organization (super administrators live here, it owns no hotels)
-  isPlatform Boolean      @default(false)
+  isPlatform     Boolean      @default(false)
   /// subscription package: features are switched on per plan (src/server/plans.ts)
-  plan       Plan         @default(BASIC)
-  createdAt  DateTime     @default(now())
-  invites    UserInvite[]
-  auditLogs  AuditLog[]
-  hotels     Hotel[]
-  users      User[]
-  roles      Role[]
-  currencies Currency[]
+  plan           Plan         @default(BASIC)
+  /// short training video per page: { "/inventory": "https://…" } (set in Administration; no entry = no video button)
+  trainingVideos Json         @default("{}")
+  createdAt      DateTime     @default(now())
+  invites        UserInvite[]
+  auditLogs      AuditLog[]
+  hotels         Hotel[]
+  users          User[]
+  roles          Role[]
+  currencies     Currency[]
 }
 
 model Hotel {
@@ -352,6 +354,8 @@ model Hotel {
   autoOrderRules     AutoOrderRule[]
   countApprovers     CountApprover[]
   orderEmailTemplate OrderEmailTemplate?
+  compReasons        CompReason[]
+  compRecords        CompRecord[]
 
   @@unique([organizationId, code])
 }
@@ -383,6 +387,7 @@ model Department {
   assets         Asset[]
   meters         Meter[]
   employees      Employee[]
+  compRecords    CompRecord[]
 
   @@unique([hotelId, code])
 }
@@ -531,19 +536,19 @@ model UnitConversion {
 // ───────────────────────── Product master ─────────────────────────
 
 model ProductCategory {
-  id       String            @id @default(cuid())
-  hotelId  String
-  hotel    Hotel             @relation(fields: [hotelId], references: [id])
-  code     String
-  name     String
-  parentId String?
-  parent   ProductCategory?  @relation("CatTree", fields: [parentId], references: [id])
-  children ProductCategory[] @relation("CatTree")
+  id          String            @id @default(cuid())
+  hotelId     String
+  hotel       Hotel             @relation(fields: [hotelId], references: [id])
+  code        String
+  name        String
+  parentId    String?
+  parent      ProductCategory?  @relation("CatTree", fields: [parentId], references: [id])
+  children    ProductCategory[] @relation("CatTree")
   // top-level group used by reports: FOOD, BEVERAGE, PACKAGING, HOUSEKEEPING ...
-  group    String
+  group       String
   // chart-of-accounts code the accounting tracks this stock under (e.g. 150.01); optional
   accountCode String?
-  products Product[]
+  products    Product[]
 
   @@unique([hotelId, code])
 }
@@ -600,6 +605,7 @@ model Product {
   minibarPars      MinibarPar[]
   minibarMovements MinibarMovement[]
   autoOrders       AutoOrderRule[]
+  compLines        CompLine[]
 
   @@unique([hotelId, sku])
   @@index([hotelId, name])
@@ -883,6 +889,7 @@ model Warehouse {
   wasteRecords   WasteRecord[]
   buffetSessions BuffetSession[]
   countApprovers CountApprover[]
+  compRecords    CompRecord[]
 
   @@unique([hotelId, code])
 }
@@ -1119,6 +1126,7 @@ model Recipe {
   usedAsSub       RecipeIngredient[] @relation("SubRecipe")
   sales           SaleLine[]
   buffetLines     BuffetLine[]
+  compLines       CompLine[]
 
   @@unique([hotelId, code])
   @@index([hotelId, posCode])
@@ -1422,6 +1430,9 @@ model BuffetSession {
   endTime        DateTime?
   expectedCovers Int?
   actualCovers   Int?
+  /// breakfast covers sold inside the room rate (package) and sold separately; actualCovers = their sum
+  includedCovers Int?
+  paidCovers     Int?
   occupiedRooms  Int?
   inHouseGuests  Int?
   boardBasis     String?
@@ -2080,4 +2091,78 @@ model IntegrationRequest {
   pickedAt      DateTime?
 
   @@index([hotelId, pickedAt])
+}
+
+// ───────────────────────── Ödenmez / İkram (round 3) ─────────────────────────
+// Consumption nobody pays for: ON_HOUSE (Ödenmez: owners, general manager, other authorised people) and
+// HOSPITALITY (İkram: welcome drinks, visiting company, chain-standard drinks). Lines deduct stock through the
+// ledger (COMPLIMENTARY) but never count as sales revenue; cost reports show them as their own line.
+
+enum CompKind {
+  ON_HOUSE
+  HOSPITALITY
+}
+
+model CompReason {
+  id           String       @id @default(cuid())
+  hotelId      String
+  hotel        Hotel        @relation(fields: [hotelId], references: [id])
+  kind         CompKind
+  name         String
+  /// owner / general manager need no explanation; every other reason asks for one
+  noteRequired Boolean      @default(true)
+  active       Boolean      @default(true)
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  records      CompRecord[]
+
+  @@unique([hotelId, kind, name])
+}
+
+model CompRecord {
+  id           String      @id @default(cuid())
+  hotelId      String
+  hotel        Hotel       @relation(fields: [hotelId], references: [id])
+  kind         CompKind
+  businessDate DateTime    @db.Date
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id])
+  warehouseId  String?
+  warehouse    Warehouse?  @relation(fields: [warehouseId], references: [id])
+  reasonId     String?
+  reason       CompReason? @relation(fields: [reasonId], references: [id])
+  /// authorised person, guest or company
+  person       String?
+  note         String?
+  /// MANUAL | MICROS | OPERA
+  source       String      @default("MANUAL")
+  /// POS / PMS check id: a re-delivered check is not booked twice
+  externalId   String?
+  totalCost    Decimal     @default(0) @db.Decimal(20, 6)
+  createdById  String
+  createdAt    DateTime    @default(now())
+  lines        CompLine[]
+
+  @@unique([hotelId, externalId])
+  @@index([hotelId, businessDate])
+  @@index([hotelId, departmentId, businessDate])
+}
+
+model CompLine {
+  id              String     @id @default(cuid())
+  recordId        String
+  record          CompRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  recipeId        String?
+  recipe          Recipe?    @relation(fields: [recipeId], references: [id])
+  recipeVersionId String?
+  productId       String?
+  product         Product?   @relation(fields: [productId], references: [id])
+  posCode         String?
+  itemName        String
+  quantity        Decimal    @db.Decimal(20, 6)
+  unitCost        Decimal?   @db.Decimal(20, 6)
+  totalCost       Decimal?   @db.Decimal(20, 6)
+  stockTxId       String?
+
+  @@index([recordId])
 }

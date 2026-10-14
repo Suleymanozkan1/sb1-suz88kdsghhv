@@ -30,12 +30,14 @@ export default async function ImportsPage() {
   const users = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(batches.map((b) => b.createdById))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   return (
     <>
-      <PageHeader exportKey="imports" title={t("Imports")} subtitle={t("Accounting expenses, payroll, utility bills, PMS data, product master, supplier price lists and go-live opening stock. CSV or Excel. Every file is previewed (valid / invalid / duplicate / warning), imported all-or-nothing with source row and mapping version, protected against re-import and reversible. POS sales are imported under Sales Import.")} />
+      <PageHeader exportKey="imports" title={t("Imports")} subtitle={<>
+        {t("Accounting expenses, payroll, utility bills, PMS data, product master, supplier price lists and go-live opening stock. CSV or Excel. Every file is previewed (valid / invalid / duplicate / warning), imported all-or-nothing with source row and mapping version, protected against re-import and reversible. POS sales are imported under Sales Import.")}
+        {auto && <span className="mt-2 block"><strong>{t("Automation (Micros / Opera)")}:</strong> {t("Every night after the night audit ({cutoff}) the automation reads the previous business day from Micros (checks, purchase invoices, covers sold) and Opera (occupancy, minibar) and sends it here. A day sent twice is never counted twice (check no. / invoice no.).", { cutoff: hotel.businessDayCutoff })}</span>}
+      </>} />
       {auto && (
         <>
           <IntegrationBanner health={auto.health} />
           <Card title={t("Automation (Micros / Opera)")} className="mb-4">
-            <p className="mb-3 text-sm text-ink-600">{t("Every night after the night audit ({cutoff}) the automation reads the previous business day from Micros (checks, purchase invoices, covers sold) and Opera (occupancy, minibar) and sends it here. A day sent twice is never counted twice (check no. / invoice no.).", { cutoff: hotel.businessDayCutoff })}</p>
             <RunNow waiting={auto.waiting.map((w) => w.source)} />
           </Card>
           <Card title={t("Automation log")} className="mb-4" padded={false}>

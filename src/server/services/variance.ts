@@ -255,7 +255,7 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
     { cause: "PRICE", amount: priceComponent, evidence: "Theoretical usage valued at period average cost vs cost frozen at sale" },
     { cause: "WASTE", amount: waste, evidence: "Posted waste records" },
     { cause: "STAFF_MEAL", amount: staffMeal },
-    { cause: "COMPLIMENTARY", amount: complimentary },
+    { cause: "COMPLIMENTARY", amount: complimentary, evidence: "On-house and hospitality (comp checks from Micros / Opera and manual entries): deducted from stock, never booked as sales revenue" },
     { cause: "BUFFET_CONSUMPTION", amount: buffetConsumption, evidence: "Buffet sessions: issued − returned leftovers (controlled by cost per cover, not POS)" },
     { cause: "MINIBAR_CONSUMPTION", amount: minibarConsumption, evidence: "Minibar room consumption (room sub-ledger, charged to folio)" },
     { cause: "OPERATING_SUPPLIES", amount: operatingSupplies, evidence: "Housekeeping / engineering / linen supplies issued to departments (no recipe; controlled per occupied room)" },
@@ -299,6 +299,12 @@ async function theoreticalVsActualScoped(db: Db, _actor: Actor, hotelId: string,
 }
 
 export type VarianceReport = Awaited<ReturnType<typeof theoreticalVsActual>>;
+
+/**
+ * Label (English key, lower case as the breakdown prints it) of a breakdown cause. COMPLIMENTARY is the cost of the
+ * Ödenmez ve İkram records: "on-house / hospitality" (TR "ödenmez / ikram").
+ */
+export const causeLabel = (cause: string) => (cause === "COMPLIMENTARY" ? "on-house / hospitality" : cause.replace("_", " ").toLowerCase());
 
 /** JSON-safe representation for API / snapshots. */
 export function serializeVariance(r: VarianceReport) {

@@ -4,7 +4,8 @@ import { searchProducts, countProducts, productCostTable } from "@/server/servic
 import { productPullStatus } from "@/server/integrations/ingest";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
-import { Alert, Badge, Button, Card, Input, PageHeader, Table, Td, Th } from "@/components/ui";
+import { Alert, Badge, Card, Input, Label, PageHeader, Table, Td, Th } from "@/components/ui";
+import { FilterBar } from "@/components/filter-bar";
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { ProductForm } from "./product-form";
@@ -38,9 +39,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const tree = [...nested, ...categories.filter((c) => !nested.includes(c))];
   return (
     <>
-      <PageHeader exportKey="products" title={t("Product master")} subtitle={t("Purchase → stock → recipe units with explicit conversions. Costs come from the ledger (FIFO: the oldest batch in stock).")} actions={manage ? <PullProductsButton lastPulled={pull.lastPulledAt ? when(pull.lastPulledAt) : null} waiting={!!pull.waitingSince} automation={pull.automation} /> : pull.lastPulledAt ? <span className="text-xs text-ink-500">{t("Last pulled: {when}", { when: when(pull.lastPulledAt) })}</span> : null} />
-      {manage && <Card title={t("New product (manual)")} className="mb-4"><ProductForm categories={categories.map((c) => ({ id: c.id, name: `${c.group} › ${c.name}` }))} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} /></Card>}
-      <Card padded={false} title={total > rows.length ? t("{from}–{to} of {n} products", { from: (page - 1) * PAGE + 1, to: (page - 1) * PAGE + rows.length, n: total }) : t("{n} products", { n: total })} actions={<form method="get" className="flex gap-2"><Input name="q" defaultValue={q} placeholder={t("Name, stock code, brand, category")} aria-label={t("Search products")} className="w-72" /><Button variant="secondary" type="submit">{t("Search")}</Button></form>}>
+      <PageHeader exportKey="products" title={t("Product master")} subtitle={t("Purchase → stock → recipe units with explicit conversions. Costs come from the ledger (FIFO: the oldest batch in stock).")} actions={<>
+        {manage ? <PullProductsButton lastPulled={pull.lastPulledAt ? when(pull.lastPulledAt) : null} waiting={!!pull.waitingSince} automation={pull.automation} /> : pull.lastPulledAt ? <span className="self-center text-xs text-ink-500">{t("Last pulled: {when}", { when: when(pull.lastPulledAt) })}</span> : null}
+        <FilterBar dates={false}>
+          <div className="w-72"><Label htmlFor="pf-q">{t("Search")}</Label><Input id="pf-q" name="q" defaultValue={q} placeholder={t("Name, stock code, brand, category")} /></div>
+        </FilterBar>
+      </>} />
+      {manage && <Card title={t("New product (manual)")} className="mb-4"><ProductForm categories={categories.map((c) => ({ id: c.id, name: `${t(c.group)} › ${c.name}` }))} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} /></Card>}
+      <Card padded={false} title={total > rows.length ? t("{from}–{to} of {n} products", { from: (page - 1) * PAGE + 1, to: (page - 1) * PAGE + rows.length, n: total }) : t("{n} products", { n: total })}>
         <Table>
           <thead><tr><Th>{t("Product")}</Th><Th>{t("Category")}</Th><Th>{t("Units (purchase → stock → recipe)")}</Th><Th>{t("Default supplier")}</Th><Th align="right">{t("VAT %")}</Th><Th align="right">{t("Current cost")}</Th><Th>{t("Status")}</Th></tr></thead>
           <tbody className="divide-y divide-ink-100">

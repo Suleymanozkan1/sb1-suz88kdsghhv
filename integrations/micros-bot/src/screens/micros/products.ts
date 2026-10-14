@@ -22,12 +22,13 @@ import { log } from "../../logger";
 import type { DetailResult } from "../listDetail";
 import { optNum, screenOptions, toDay, type ScreenContext } from "../context";
 import { formatDay } from "../../util/time";
+import type { ReportDefinition } from "../../reports";
 
 const MAX_PAGES = 200;
 const FIRST_PULL = "2000-01-01";
 
 /** `since`: ISO time of the last successful pull (null / undefined = everything). */
-export async function readProducts(ctx: ScreenContext<MicrosSelectors>, since?: string | null): Promise<DetailResult<ProductCard>> {
+export async function readProducts(ctx: ScreenContext<MicrosSelectors>, since?: string | null, def?: ReportDefinition): Promise<DetailResult<ProductCard>> {
   const block = ctx.selectors.products;
   if (!block) throw new BotError("products screen is not configured (\"products\" block missing in the Micros selectors file)");
   const fmt = ctx.selectors.numberFormat ?? "auto";
@@ -54,6 +55,7 @@ export async function readProducts(ctx: ScreenContext<MicrosSelectors>, since?: 
       { name: "columns.name", code: "columns.code", unit: "columns.unit", packSize: "columns.packSize", packUnit: "columns.packUnit", taxRatePct: "columns.taxRatePct", category: "columns.category", createdAt: "columns.createdAt" },
       ["name", "unit"],
       table,
+      def?.columns,
     );
     for (const r of rows) {
       const name = r.name ?? "";

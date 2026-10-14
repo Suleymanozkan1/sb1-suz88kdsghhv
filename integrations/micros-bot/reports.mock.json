@@ -1,0 +1,38 @@
+{
+  "_README": "Testlerde kullanılan sahte Micros / Opera (test/mock-micros) için rapor tanımları — sütunlar başlıklarıyla eşleştirilmiş, gerçek bir dosyanın nasıl doldurulduğuna örnek.",
+  "micros": {
+    "checks": {
+      "reportName": "Kapanmış Çekler",
+      "menuPath": "Ana Menü > Kapanmış Çekler",
+      "format": "screen",
+      "waitForData": true,
+      "columns": { "itemCode": "No", "itemName": "Ürün", "qty": "Adet", "amount": "Net" }
+    },
+    "comps": {
+      "reportName": "Ödenmez / İkram Çekleri",
+      "menuPath": "Raporlar > Ödenmez / İkram",
+      "format": "screen",
+      "waitForData": false,
+      "columns": { "checkNo": "Çek No", "outlet": "Satış Noktası", "kind": "Tür", "reason": "Neden", "person": "Onaylayan", "itemCode": "Ürün No", "itemName": "Ürün", "qty": "Adet" },
+      "kindMap": { "Ödenmez": "ON_HOUSE", "İkram": "HOSPITALITY" },
+      "defaultKind": null
+    },
+    "covers": {
+      "reportName": "Cover Raporu",
+      "menuPath": "Raporlar > Cover",
+      "format": "screen",
+      "waitForData": false,
+      "columns": { "outlet": "Satış Noktası", "meal": "Öğün", "covers": "Kişi" }
+    }
+  },
+  "opera": {
+    "minibar": {
+      "reportName": "Minibar",
+      "menuPath": null,
+      "format": "screen",
+      "waitForData": false,
+      "columns": { "room": "Oda", "itemCode": "Kod", "itemName": "Ürün", "qty": "Adet", "reference": "Folyo", "postedAt": "Zaman" }
+    },
+    "comps": null
+  }
+}

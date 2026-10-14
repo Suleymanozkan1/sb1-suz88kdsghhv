@@ -52,7 +52,6 @@ export function MovementForm({ warehouses, departments, canAdjust, today }: { wa
         <Select id="mv-type" name="type" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="CONSUMPTION">{t("Issue / consumption")}</option>
           <option value="STAFF_MEAL">{t("Staff meal")}</option>
-          <option value="COMPLIMENTARY">{t("Complimentary")}</option>
           {canAdjust && <option value="OPENING">{t("Opening balance")}</option>}
           {canAdjust && <option value="ADJUSTMENT_IN">{t("Adjustment +")}</option>}
           {canAdjust && <option value="ADJUSTMENT_OUT">{t("Adjustment −")}</option>}

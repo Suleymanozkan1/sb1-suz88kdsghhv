@@ -24,6 +24,9 @@ export const PERMISSIONS = [
   "recipe:approve",
   "waste:view",
   "waste:record",
+  // Ödenmez ve İkram: view the comps page / record, delete and manage the reason list
+  "comp:view",
+  "comp:manage",
   "sales:import",
   "buffet:view",
   "buffet:manage",
@@ -86,13 +89,13 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     key: "fb_manager",
     name: "F&B Manager",
     allDepartments: false,
-    permissions: [...OPERATIONAL, "recipe:approve", "inventory:adjust", "approval:decide", "supplier:view", "purchase:view", "sales:import", "report:export", "audit:view", "buffet:view", "buffet:manage", "minibar:view", "minibar:manage", "opex:view", "budget:view", "savings:manage"],
+    permissions: [...OPERATIONAL, "recipe:approve", "inventory:adjust", "approval:decide", "supplier:view", "purchase:view", "sales:import", "report:export", "audit:view", "buffet:view", "buffet:manage", "minibar:view", "minibar:manage", "opex:view", "budget:view", "savings:manage", "comp:view", "comp:manage"],
   },
   {
     key: "accounting_manager",
     name: "Accounting Manager",
     allDepartments: true,
-    permissions: ["dashboard:view", "product:view", "supplier:view", "purchase:view", "purchase:prices", "inventory:view", "recipe:view", "waste:view", "cost:view", "variance:view", "report:view", "report:export", "audit:view", "period:manage", "period:reopen", "period:close_override", "approval:decide", "sales:import", "buffet:view", "minibar:view", "opex:view", "opex:manage", "rooms:view", "allocation:manage", "pms:import", "budget:view", "budget:manage", "budget:approve", "savings:manage"],
+    permissions: ["dashboard:view", "product:view", "supplier:view", "purchase:view", "purchase:prices", "inventory:view", "recipe:view", "waste:view", "cost:view", "variance:view", "report:view", "report:export", "audit:view", "period:manage", "period:reopen", "period:close_override", "approval:decide", "sales:import", "buffet:view", "minibar:view", "opex:view", "opex:manage", "rooms:view", "allocation:manage", "pms:import", "budget:view", "budget:manage", "budget:approve", "savings:manage", "comp:view"],
   },
   {
     key: "purchasing_manager",

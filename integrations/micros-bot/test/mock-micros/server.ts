@@ -4,6 +4,7 @@
  *
  *   Micros  /login  /home  /checks?date=DD.MM.YYYY[&page=N]  /checks/view?id=  /purchasing/invoices?date=
  *           /purchasing/invoice?id=  /reports/covers?date=YYYY-MM-DD  /purchasing/items?since=DD.MM.YYYY
+ *           /reports/comps?date=DD.MM.YYYY  (on-house / hospitality items; check no. etc. only on a check's first row)
  *   Opera   /opera/login  /opera/home  /opera/stats?date=  /opera/rooms?date=  /opera/minibar?date=
  *
  * `state` can be changed while the server runs: wrong passwords, removed elements (to simulate a changed
@@ -12,7 +13,7 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { checksFor, coversFor, invoicesFor, minibarFor, productsAll, statsFor, trDate, trNum } from "./data";
+import { checksFor, compsFor, coversFor, invoicesFor, minibarFor, productsAll, statsFor, trDate, trNum } from "./data";
 
 export interface MockMicrosState {
   micros: { username: string; password: string };
@@ -25,6 +26,8 @@ export interface MockMicrosState {
   removed: Set<string>;
   /** paths requested (for assertions) */
   hits: string[];
+  /** header of the checks' line table (a renamed column simulates a changed report) */
+  checkLineHeaders: string[];
 }
 
 export interface MockMicros { url: string; operaUrl: string; state: MockMicrosState; close(): Promise<void> }
@@ -51,6 +54,7 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
     emptyDays: new Set(),
     removed: new Set(),
     hits: [],
+    checkLineHeaders: ["No", "Ürün", "Adet", "Net"],
     ...overrides,
   };
   const sessions = new Set<string>();
@@ -152,7 +156,7 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
       const total = check.lines.reduce((s, l) => s + l.amount, 0);
       return send(200, page(`Çek ${check.checkNo}`, `<div id="checkHeader">Çek No: <span id="checkNo">${check.checkNo}</span>
         RVC: <span id="revenueCenter">${esc(check.outlet)}</span> Kapanış: <span id="closedAt">${check.closed}</span></div>
-        <table id="checkLines"><thead><tr><th>No</th><th>Ürün</th><th>Adet</th><th>Net</th></tr></thead><tbody>${check.lines
+        <table id="checkLines"><thead><tr>${state.checkLineHeaders.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${check.lines
           .map((l) => `<tr><td class="code">${l.code}</td><td class="name">${esc(l.name)}</td><td class="qty">${l.qty}</td><td class="amount">${trNum(l.amount)}</td></tr>`)
           .join("")}<tr><td class="code"></td><td class="name">Toplam</td><td class="qty"></td><td class="amount">${trNum(total)}</td></tr></tbody></table>`));
     }
@@ -188,6 +192,14 @@ export async function startMockMicros(port = 0, overrides: Partial<MockMicrosSta
       return send(200, page("Stok Kartları", `${form}${has("itemList") ? `<table id="itemList"><thead><tr><th>Kod</th><th>Ürün</th><th>Birim</th><th>İçerik</th><th></th><th>KDV</th><th>Grup</th><th>Oluşturma</th></tr></thead><tbody>${rows
         .map((x) => `<tr><td class="code">${esc(x.code)}</td><td class="name">${esc(x.name)}</td><td class="unit">${esc(x.unit)}</td><td class="pack">${x.pack === null ? "" : trNum(x.pack, x.pack % 1 ? 2 : 0)}</td><td class="packUnit">${esc(x.packUnit)}</td><td class="vat">%${x.vat}</td><td class="group">${esc(x.group)}</td><td class="created">${trDate(x.created)}</td></tr>`)
         .join("")}</tbody></table>` : `<div>layout changed</div>`}`));
+    }
+    if (p === "/reports/comps") {
+      const day = isoDay(url.searchParams.get("date"));
+      if (!day) return send(200, page("Ödenmez / İkram", ""));
+      const comps = state.emptyDays.has(day) ? [] : compsFor(day);
+      if (!comps.length) return send(200, page("Ödenmez / İkram", `<p id="noComps">Kayıt yok</p>`));
+      const rows = comps.flatMap((c) => c.lines.map((l, i) => `<tr><td class="check">${i ? "" : c.checkNo}</td><td class="rvc">${i ? "" : esc(c.outlet)}</td><td class="type">${i ? "" : esc(c.type)}</td><td class="reason">${i ? "" : esc(c.reason)}</td><td class="person">${i ? "" : esc(c.person)}</td><td class="code">${l.code}</td><td class="item">${esc(l.item)}</td><td class="qty">${trNum(l.qty, 0)}</td></tr>`));
+      return send(200, page("Ödenmez / İkram", `<table id="compsReport"><thead><tr><th>Çek No</th><th>Satış Noktası</th><th>Tür</th><th>Neden</th><th>Onaylayan</th><th>Ürün No</th><th>Ürün</th><th>Adet</th></tr></thead><tbody>${rows.join("")}<tr><td class="check"></td><td class="rvc"></td><td class="type"></td><td class="reason"></td><td class="person"></td><td class="code"></td><td class="item">Toplam</td><td class="qty">3</td></tr></tbody></table>`));
     }
     if (p === "/reports/covers") {
       const day = isoDay(url.searchParams.get("date"));

@@ -1,0 +1,86 @@
+/** Turkish strings added in feedback round 3, area r3c. Key = English source text. */
+export const r3c: Record<string, string> = {
+  // Ödenmez ve İkram page (/comps)
+  "On-house": "Ödenmez",
+  "Hospitality": "İkram",
+  "Comp reason": "Neden",
+  "Comp type": "Tür",
+  "Reasons": "Nedenler",
+  "No reason given": "Neden belirtilmemiş",
+  "Consumption nobody pays for. On-house: free consumption of authorised people (owner / investor, general manager, directors); owner and general manager need no explanation, the others do. Hospitality: offered for a reason (tea for a sales meeting, the chain's welcome drink — billed to the chain later). Records come from Micros / Opera (checks closed as comps); manual entry is the fallback. Comps are deducted from stock through their recipes but never booked as sales revenue; their cost is a separate line of the cost reports and of the theoretical vs actual breakdown.":
+    "Ücreti alınmayan tüketimler. Ödenmez: yetkili kişilerin (yatırımcı, genel müdür, direktörler) ücretsiz tüketimleri; yatırımcı ve genel müdür için açıklama gerekmez, diğerlerinde açıklama beklenir. İkram: bir nedene bağlı ikramlar (satış görüşmesine gelen firmaya çay, zincir standardı karşılama içeceği — sonradan zincire faturalanır). Kayıtlar Micros / Opera'dan (ödenmez / ikram olarak kapatılan çekler) otomatik gelir; elle giriş yedektir. Ödenmez ve ikramlar reçetelerine göre stoktan düşer ama satış gelirine yazılmaz; maliyetleri maliyet raporlarında ve Teorik–Gerçekleşen kırılımında ayrı bir kalemdir.",
+  "{n} item(s) from Micros / Opera match no recipe or product: they were not deducted from stock and carry no cost. Add the POS code to the recipe and send the day again after deleting the record.":
+    "Micros / Opera'dan gelen {n} ürün hiçbir reçete ya da ürünle eşleşmedi: stoktan düşülmedi ve maliyeti yok. Reçeteye POS kodunu ekleyin, kaydı silip günü yeniden gönderin.",
+  "On-house cost": "Ödenmez maliyeti",
+  "Hospitality cost": "İkram maliyeti",
+  "Total on-house & hospitality": "Toplam ödenmez ve ikram",
+  "At cost; not in sales revenue": "Maliyet bedeliyle; satış gelirine yazılmaz",
+  "{kind} by reason": "{kind}: nedene göre",
+  "None in this period": "Bu dönemde kayıt yok",
+  "Manual entry": "Elle giriş",
+  "when a comp did not come through Micros / Opera": "Micros / Opera'dan gelmeyen ödenmez / ikram için",
+  "On-house & hospitality records": "Ödenmez ve ikram kayıtları",
+  "No on-house or hospitality records in this period": "Bu dönemde ödenmez ya da ikram kaydı yok",
+  "Person / department": "Kişi / departman",
+  "Reason / explanation": "Neden / açıklama",
+  "Explanation missing": "Açıklama eksik",
+  "no recipe": "reçete yok",
+  "Manual": "Elle",
+  "Opera": "Opera",
+  "Actions": "İşlemler",
+  "the list the reasons are chosen from": "nedenlerin seçildiği liste",
+  // manual entry form
+  "Choose a reason from the list": "Listeden bir neden seçin",
+  "An explanation is required for this reason": "Bu neden için açıklama gerekli",
+  "Add at least one item with a quantity": "Miktarıyla en az bir kalem ekleyin",
+  "Saved and deducted from stock: {cost} at cost.": "Kaydedildi ve stoktan düşüldü: maliyet {cost}.",
+  "Choose…": "Seçin…",
+  "Authorised person": "Yetkili kişi",
+  "Guest / company": "Misafir / firma",
+  "e.g. Ahmet Yılmaz (owner)": "örn. Ahmet Yılmaz (yatırımcı)",
+  "e.g. ABC Turizm": "örn. ABC Turizm",
+  "Deduct from store": "Düşülecek depo",
+  "Explanation": "Açıklama",
+  "Explanation (required)": "Açıklama (zorunlu)",
+  "e.g. lunch with the visiting sales team": "örn. ziyarete gelen satış ekibiyle öğle yemeği",
+  "Item {n}": "Kalem {n}",
+  "Recipe (dish / drink)": "Reçete (yemek / içecek)",
+  "portions": "porsiyon",
+  "Recipes are deducted from the store by their ingredients; no sales revenue is booked.": "Reçeteler malzemelerine göre depodan düşülür; satış geliri yazılmaz.",
+  "Delete this record and return its items to stock? Reason (audited):": "Bu kayıt silinsin ve kalemleri stoğa geri alınsın mı? Neden (denetim kaydına yazılır):",
+  // reasons list
+  "Reason name": "Neden adı",
+  "Explanation required": "Açıklama zorunlu",
+  "Move up": "Yukarı taşı",
+  "Move down": "Aşağı taşı",
+  "New reason": "Yeni neden",
+  "Add reason": "Neden ekle",
+  // export
+  "Summary": "Özet",
+  "Person": "Kişi",
+  // theoretical vs actual breakdown, dashboard and cost pack: the comps line
+  "on-house / hospitality": "ödenmez / ikram",
+  "On-house / Hospitality": "Ödenmez / İkram",
+  "On-house and hospitality (comp checks from Micros / Opera and manual entries): deducted from stock, never booked as sales revenue":
+    "Ödenmez ve ikramlar (Micros / Opera'dan gelen çekler ve elle girişler): stoktan düşülür, satış gelirine yazılmaz",
+  "Known On-house / Hospitality": "Bilinen ödenmez / ikram",
+  "  of which on-house / hospitality": "  bunun ödenmez / ikram kısmı",
+  // audit log actions
+  "COMP_CREATE": "Ödenmez / ikram kaydedildi",
+  "COMP_DELETE": "Ödenmez / ikram silindi",
+  "COMP_REASON_CREATE": "Ödenmez / ikram nedeni eklendi",
+  "COMP_REASON_UPDATE": "Ödenmez / ikram nedeni değişti",
+};
+
+/** Server messages (DomainError, validation) of area r3c. Key = the English message; {0}, {1} … = dynamic parts. */
+export const r3cMessages: Record<string, string> = {
+  "A reason with this name already exists": "Bu adla bir neden zaten var",
+  "Reason not found": "Neden bulunamadı",
+  "Record not found": "Kayıt bulunamadı",
+  "Choose a reason from the list": "Listeden bir neden seçin",
+  "The reason does not belong to this kind": "Seçilen neden bu türe ait değil",
+  "An explanation is required for the reason '{0}'": "'{0}' nedeni için açıklama gerekli",
+  "{0} has no approved recipe version on this date": "{0} için bu tarihte onaylı reçete versiyonu yok",
+  "Each line needs a recipe or a product": "Her satırda bir reçete ya da ürün olmalı",
+  "A reason is required": "Bir neden girilmeli",
+};

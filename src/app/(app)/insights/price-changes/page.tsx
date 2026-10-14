@@ -2,11 +2,11 @@ import Link from "next/link";
 import { pageContext, guarded, monthRange } from "@/server/page";
 import { supplierPriceChanges } from "@/server/services/insights";
 import { prisma } from "@/server/db";
-import { Alert, Card, Empty, Input, Label, PageHeader, Table, Td, Th, cn } from "@/components/ui";
+import { Alert, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { date, money, pct, qty } from "@/lib/format";
 import { sum } from "@/domain/money";
 import { getT } from "@/i18n/server";
-import { AutoSubmitForm } from "../../inventory/auto-submit-form";
+import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 
 export const metadata = { title: "Supplier price increases / decreases" };
@@ -36,11 +36,7 @@ export default async function PriceChangesPage({ searchParams }: { searchParams:
   return (
     <>
       <PageHeader title={t("Supplier price increases / decreases")} subtitle={t("Purchase price per stock unit on each goods receipt in the selected dates, against the product's previous receipt (our own invoices, not market prices).")} exportKey="price-changes" actions={
-        <AutoSubmitForm className="flex flex-wrap items-end gap-2">
-          <input type="hidden" name="tab" value={tab} />
-          <div><Label htmlFor="from">{t("From")}</Label><Input id="from" name="from" type="date" defaultValue={range.fromStr} className="w-40" /></div>
-          <div><Label htmlFor="to">{t("To")}</Label><Input id="to" name="to" type="date" defaultValue={range.toStr} className="w-40" /></div>
-        </AutoSubmitForm>
+        <FilterBar from={range.fromStr} to={range.toStr} hidden={{ tab }} />
       } />
       <div className="mb-2 flex gap-1 border-b border-ink-200">
         {tabLink("increases", t("Increases"))}

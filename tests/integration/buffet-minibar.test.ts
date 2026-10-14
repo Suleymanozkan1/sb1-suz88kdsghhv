@@ -104,7 +104,7 @@ describe("buffet E2E (spec 280 / 329)", () => {
   });
 
   it("closed sessions are immutable and leftovers cannot exceed production", async () => {
-    await expect(addLine(prisma, cc, h.hotel.id, sessionId, { kind: "REFILL", productId: P.cheese, quantity: 1, unit: "kg" })).rejects.toThrow(/closed/);
+    // (a breakfast day takes a forgotten issue after its count — tests/integration/breakfast-r3.test.ts)
     await expect(updateSession(prisma, cc, h.hotel.id, sessionId, { actualCovers: 5 })).rejects.toThrow(/cannot be changed/);
     const s2 = await createSession(prisma, cc, h.hotel.id, { departmentId: breakfast, warehouseId: h.wh.main.id, type: "BREAKFAST", serviceDate: day("2026-09-11"), expectedCovers: 900 });
     await addLine(prisma, cc, h.hotel.id, s2.id, { kind: "PRODUCTION", productId: P.cheese, quantity: 10, unit: "kg" });

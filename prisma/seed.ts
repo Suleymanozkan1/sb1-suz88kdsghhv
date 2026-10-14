@@ -19,7 +19,7 @@ import { recordWaste } from "../src/server/services/waste";
 import { startCount, enterCount, submitCount } from "../src/server/services/counts";
 import { decideApproval } from "../src/server/services/approvals";
 import { requestStockDelete } from "../src/server/services/approvals";
-import { createSession, addLine, closeSession } from "../src/server/services/buffet";
+import { createSession, addLine, saveBreakfastCount } from "../src/server/services/buffet";
 import { minibarSetup, setPar, recordMovement, restockToParLevels, countRoom, roomQty } from "../src/server/services/minibar";
 import { createAsset, createMeter, recordReading, recordLaundry, commitExpenseImport, createExpense } from "../src/server/services/opex";
 import { saveRoomCostItems } from "../src/server/services/room-costs";
@@ -29,6 +29,9 @@ import { periodFor } from "../src/server/services/period";
 import { createBudget, setBudgetLines, approveBudget, createTarget } from "../src/server/services/planning";
 import { createAction, updateAction } from "../src/server/services/savings";
 import { departmentRevenue } from "../src/server/services/revenue";
+import { seedDemoComps } from "../src/server/demo/comps";
+import { CATALOG } from "../src/server/demo/catalog";
+import { BREAKFAST_BUFFET, BREAKFAST_DISH, BREAKFAST_PRODUCTS, breakfastOfDay, breakfastRandom } from "../src/server/demo/breakfast";
 
 const prisma = new PrismaClient();
 const PASSWORD = "HotelCost!2026";
@@ -341,8 +344,9 @@ async function main() {
   }
   for (const d of days.filter((_, i) => i % 7 === 2)) {
     await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.MAIN!, productId: pid["DRY-RICE"]!, type: "STAFF_MEAL", quantity: -3, txDate: at(d, 13), departmentId: dept.KITCH, sourceType: "MANUAL", reason: "Staff canteen" });
-    await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.BAR!, productId: pid["BEV-COLA"]!, type: "COMPLIMENTARY", quantity: -6, txDate: at(d, 18), departmentId: dept.BAR, sourceType: "MANUAL", reason: "VIP welcome" }).catch(() => null);
   }
+  // Ödenmez / İkram: comp checks from Micros, welcome drinks from Opera, a manual entry (through the comps service)
+  console.log(`On-house & hospitality records: ${await seedDemoComps(prisma, admin, H, days)}`);
 
   // ── Month-end stock count for the restaurant store (previous month) ──
   const monthEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0, 23));
@@ -359,65 +363,93 @@ async function main() {
     if (sub.approvalId) await decideApproval(prisma, admin, H, { approvalId: sub.approvalId, decision: "APPROVE", note: "Recount confirmed" });
   }
 
-  // ── Buffet (Phase 2): daily breakfast buffet + Saturday theme night ──
-  const scrambled = await createRecipe(prisma, fb, H, {
-    code: "BF-SCRAMBLED", name: "Scrambled Eggs (buffet)", type: "BREAKFAST", departmentId: dept.BRKF,
-    version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Buffet standard", lines: [{ productId: pid["EGG-LARGE"], quantity: 14, unit: "pc" }, { productId: pid["DAIRY-BUTTER"], quantity: 40, unit: "g" }, { productId: pid["MILK-WHOLE"], quantity: 50, unit: "ml" }] },
-  });
-  await approveVersion(prisma, admin, H, scrambled.versions[0]!.id, { effectiveFrom: new Date(start.getTime() - 86400000) });
-  const breakfastItems: Array<{ key: string; recipe?: boolean; unit: string; perCover: number }> = [
-    { key: scrambled.id, recipe: true, unit: "kg", perCover: 0.06 },
-    { key: pid["CHS-CHEDDAR"]!, unit: "kg", perCover: 0.025 },
-    { key: pid["VEG-TOMATO"]!, unit: "kg", perCover: 0.04 },
-    { key: pid["VEG-CUCUMBER"]!, unit: "kg", perCover: 0.03 },
-    { key: pid["FRT-STRAWB"]!, unit: "kg", perCover: 0.03 },
-    { key: pid["DAIRY-BUTTER"]!, unit: "kg", perCover: 0.012 },
-    { key: pid["MILK-WHOLE"]!, unit: "l", perCover: 0.08 },
-  ];
-  const themeItems: Array<{ key: string; unit: string; perCover: number }> = [
-    { key: pid["FISH-SALMON"]!, unit: "kg", perCover: 0.12 },
-    { key: pid["DRY-RICE"]!, unit: "kg", perCover: 0.08 },
-    { key: pid["VEG-LETTUCE"]!, unit: "kg", perCover: 0.05 },
-  ];
-  const buffetPrice: Record<string, number> = { [pid["EGG-LARGE"]!]: 4.2 * 180, [pid["CHS-CHEDDAR"]!]: 380, [pid["VEG-TOMATO"]!]: 38, [pid["VEG-CUCUMBER"]!]: 30, [pid["FRT-STRAWB"]!]: 140, [pid["DAIRY-BUTTER"]!]: 420, [pid["MILK-WHOLE"]!]: 32, [pid["FISH-SALMON"]!]: 820, [pid["DRY-RICE"]!]: 62, [pid["VEG-LETTUCE"]!]: 45 };
-  for (let w = 0; w < days.length; w += 7) {
-    // weekly buffet purchasing into the main store (eggs in cases of 180)
-    const items = [
-      { productId: pid["EGG-LARGE"]!, quantity: "20", unit: "case", unitPrice: (buffetPrice[pid["EGG-LARGE"]!]! * between(0.98, 1.03)).toFixed(2) },
-      ...[["CHS-CHEDDAR", 60], ["VEG-TOMATO", 90], ["VEG-CUCUMBER", 70], ["FRT-STRAWB", 70], ["DAIRY-BUTTER", 40], ["MILK-WHOLE", 190], ["FISH-SALMON", 25], ["DRY-RICE", 15], ["VEG-LETTUCE", 12]].map(([sku, q]) => ({ productId: pid[sku as string]!, quantity: String(q), unit: PRODUCTS.find((x) => x.sku === sku)!.unit, unitPrice: (buffetPrice[pid[sku as string]!]! * between(0.97, 1.04)).toFixed(2) })),
-    ];
-    await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[1], warehouseId: wh.MAIN, receiptDate: at(days[w]!, 6), invoiceNo: `BUF-${days[w]!.toISOString().slice(0, 10)}`, items });
-  }
-  let sessionsCreated = 0;
-  for (const d of days) {
-    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
-    const sessions: Array<{ type: "BREAKFAST" | "THEME_NIGHT"; deptCode: string; covers: number; expected: number; items: Array<{ key: string; recipe?: boolean; unit: string; perCover: number }> }> = [
-      { type: "BREAKFAST", deptCode: "BRKF", covers: Math.round(between(weekend ? 320 : 260, weekend ? 380 : 330)), expected: weekend ? 340 : 290, items: breakfastItems },
-    ];
-    if (d.getUTCDay() === 6) sessions.push({ type: "THEME_NIGHT", deptCode: "REST", covers: Math.round(between(120, 160)), expected: 140, items: themeItems });
-    for (const ss of sessions) {
-      const session = await createSession(prisma, fb, H, { departmentId: dept[ss.deptCode], warehouseId: wh.MAIN, type: ss.type, serviceDate: d, expectedCovers: ss.expected, occupiedRooms: ss.type === "BREAKFAST" ? Math.round(ss.covers / 1.8) : null, inHouseGuests: ss.type === "BREAKFAST" ? Math.round(ss.covers * 1.05) : null, boardBasis: ss.type === "BREAKFAST" ? "BB" : "HB" });
-      const leftovers: Array<{ key: string; quantity: string; class: string }> = [];
-      for (const it of ss.items) {
-        const need = ss.expected * it.perCover;
-        const first = +(need * 0.8).toFixed(2);
-        const refill = +(need * between(0.25, 0.45)).toFixed(2);
-        await addLine(prisma, fb, H, session.id, { kind: "PRODUCTION", ...(it.recipe ? { recipeId: it.key } : { productId: it.key }), quantity: first, unit: it.unit });
-        await addLine(prisma, fb, H, session.id, { kind: "REFILL", ...(it.recipe ? { recipeId: it.key } : { productId: it.key }), quantity: refill, unit: it.unit });
-        const total = first + refill;
-        const left = total * between(0.04, ss.covers < ss.expected ? 0.2 : 0.12);
-        const waste = +(left * between(0.3, 0.6)).toFixed(3);
-        const staff = +(left * 0.15).toFixed(3);
-        const reuse = +(left - waste - staff).toFixed(3);
-        leftovers.push({ key: it.key, quantity: String(waste), class: it.recipe ? "MUST_DISCARD" : "WASTE" });
-        if (staff > 0) leftovers.push({ key: it.key, quantity: String(staff), class: "STAFF_MEAL" });
-        if (reuse > 0) leftovers.push({ key: it.key, quantity: String(reuse), class: "REFRIGERATED" });
-      }
-      // leave yesterday's breakfast open on the last day to show the open-session workflow
-      if (d.getTime() === end.getTime() && ss.type === "BREAKFAST") continue;
-      await closeSession(prisma, fb, H, session.id, { actualCovers: ss.covers, leftovers });
-      sessionsCreated++;
+  // ── Breakfast (r3 §4): the open-buffet Turkish breakfast every day, the same assortment as the demo generator ──
+  // (breakfast days only: no other buffets). Its own draws, from the main store like before.
+  const brnd = breakfastRandom(20261013);
+  const SEED_CAT: Record<string, string> = { CHEESE: "Cheese", BRKF: "Breakfast products", VEG: "Vegetables", MEAT: "Meat", CHICKEN: "Chicken", DAIRY: "Dairy", TEA: "Tea", BEV: "Juices", FRUIT: "Fruits" };
+  const SEED_SUPPLIER: Record<string, number> = { CHEESE: 1, DAIRY: 1, MEAT: 0, CHICKEN: 0, VEG: 2, FRUIT: 2, BRKF: 3, TEA: 4, BEV: 4 };
+  const SEED_SKU: Record<string, string> = { Eggs: "EGG-LARGE", Butter: "DAIRY-BUTTER", Tomato: "VEG-TOMATO", Cucumber: "VEG-CUCUMBER", "Whole Milk": "MILK-WHOLE" };
+  const BAKERY = new Set(["Simit", "Village Bread", "Poğaça", "Croissant Frozen"]);
+  const brk = new Map<string, { id: string; unit: string; purchaseUnit: string; size: number; price: number; supplier: number }>();
+  for (const b of BREAKFAST_BUFFET) {
+    if (b.cat === "DISH") continue;
+    const known = SEED_SKU[b.name] ? PRODUCTS.find((x) => x.sku === SEED_SKU[b.name]) : undefined;
+    if (known) {
+      brk.set(b.name, { id: pid[known.sku]!, unit: known.unit, purchaseUnit: known.purchaseUnit ?? known.unit, size: Number(known.caseSize ?? 1), price: known.price, supplier: known.supplier });
+      continue;
     }
+    const group = CATALOG.find((c) => c.code === b.cat);
+    const it = group?.items.find((x) => x[0] === b.name) ?? BREAKFAST_PRODUCTS[b.cat]?.find((x) => x[0] === b.name);
+    if (!group || !it) throw new Error(`Breakfast item ${b.name} is not in the demo catalogue`);
+    const [name, unit, pu, size, price] = it;
+    const sku = `BRK-${String(brk.size + 1).padStart(2, "0")}`;
+    const fresh = ["VEG", "FRUIT", "MEAT", "CHICKEN", "DAIRY", "CHEESE"].includes(b.cat) || BAKERY.has(name);
+    const created = await prisma.product.create({
+      data: {
+        hotelId: H, sku, name, categoryId: cat[BAKERY.has(name) ? "Bakery" : SEED_CAT[b.cat]!]!, defaultSupplierId: suppliers[SEED_SUPPLIER[b.cat]!], purchaseUnit: pu ?? unit, stockUnit: unit,
+        recipeUnit: unit === "kg" ? "g" : unit === "l" ? "ml" : unit, costingMethod: "FIFO", taxRatePct: group.group === "FOOD" ? "1" : "20", shelfLifeDays: BAKERY.has(name) ? 2 : fresh ? 7 : 180,
+        conversions: pu && size ? { create: [{ fromUnit: pu, toUnit: unit, factor: String(size) }] } : undefined,
+      },
+    });
+    pid[sku] = created.id;
+    brk.set(name, { id: created.id, unit, purchaseUnit: pu ?? unit, size: pu && size ? size : 1, price, supplier: SEED_SUPPLIER[b.cat]! });
+  }
+  const dishParts = BREAKFAST_DISH.lines.map(([name, q, unit]) => ({ name, perKg: unit === "g" ? q / 1000 : q }));
+  const plans = days.map((d) => {
+    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+    const expected = weekend ? 340 : 290;
+    return { d, expected, covers: Math.round(expected * (0.9 + brnd() * 0.2)), items: breakfastOfDay(brnd) };
+  });
+  for (let w = 0; w < plans.length; w += 7) {
+    // weekly breakfast purchasing into the main store: the week's issues with a margin, in purchase units
+    const need = new Map<string, number>();
+    for (const pl of plans.slice(w, w + 7)) {
+      for (const it of pl.items) for (const [name, q] of it.cat === "DISH" ? dishParts.map((x) => [x.name, it.perCover * x.perKg] as const) : [[it.name, it.perCover] as const]) need.set(name, (need.get(name) ?? 0) + pl.expected * q * 1.3);
+    }
+    const bySupplier = new Map<number, Array<{ productId: string; quantity: string; unit: string; unitPrice: string }>>();
+    for (const [name, q] of need) {
+      const b = brk.get(name)!;
+      const list = bySupplier.get(b.supplier) ?? [];
+      list.push({ productId: b.id, quantity: String(Math.ceil(q / b.size)), unit: b.purchaseUnit, unitPrice: (b.price * b.size * between(0.98, 1.03)).toFixed(2) });
+      bySupplier.set(b.supplier, list);
+    }
+    for (const [sup, items] of bySupplier) await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[sup], warehouseId: wh.MAIN, receiptDate: at(days[w]!, 5), invoiceNo: `BRK-${days[w]!.toISOString().slice(0, 10)}-${sup + 1}`, items });
+  }
+  // the hot dish, once its ingredients have a cost
+  const dish = await createRecipe(prisma, fb, H, {
+    code: BREAKFAST_DISH.code, name: BREAKFAST_DISH.name, type: "BREAKFAST", departmentId: dept.BRKF,
+    version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: "Buffet standard", lines: BREAKFAST_DISH.lines.map(([name, q, unit]) => ({ productId: brk.get(name)!.id, quantity: q, unit })) },
+  });
+  await approveVersion(prisma, admin, H, dish.versions[0]!.id, { effectiveFrom: new Date(start.getTime() - 86400000) });
+  const mainQty = async (productId: string) => Number((await prisma.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: wh.MAIN!, productId } } }))?.quantity.toString() ?? 0);
+  let sessionsCreated = 0;
+  for (const pl of plans) {
+    // breakfast covers in two numbers (r3 §4): ~8 % sold separately, the rest inside the room rate
+    const paid = Math.round(pl.covers * 0.08);
+    const session = await createSession(prisma, fb, H, { departmentId: dept.BRKF, warehouseId: wh.MAIN, type: "BREAKFAST", serviceDate: pl.d, expectedCovers: pl.expected, includedCovers: pl.covers - paid, paidCovers: paid, occupiedRooms: Math.round(pl.covers / 1.8), inHouseGuests: Math.round(pl.covers * 1.05), boardBasis: "BB" });
+    const count: Array<{ key: string; remaining: string; mode: string }> = [];
+    for (const it of pl.items) {
+      const isDish = it.cat === "DISH";
+      const unit = isDish ? "kg" : brk.get(it.name)!.unit;
+      const key = isDish ? dish.id : brk.get(it.name)!.id;
+      let have = isDish ? Infinity : await mainQty(key);
+      if (isDish) for (const x of dishParts) have = Math.min(have, (await mainQty(brk.get(x.name)!.id)) / x.perKg);
+      const round = (x: number) => (unit === "pc" ? Math.trunc(x) : +x.toFixed(3));
+      const issued = Math.min(have * 0.95, pl.expected * it.perCover * (1.06 + brnd() * 0.08));
+      const first = round(issued * 0.75);
+      const refill = round(issued - first);
+      if (first <= 0) continue;
+      const ref = isDish ? { recipeId: key } : { productId: key };
+      await addLine(prisma, fb, H, session.id, { kind: "PRODUCTION", ...ref, quantity: first, unit });
+      if (refill > 0) await addLine(prisma, fb, H, session.id, { kind: "REFILL", ...ref, quantity: refill, unit });
+      const total = first + Math.max(refill, 0);
+      const eaten = pl.covers * it.perCover * (0.92 + brnd() * 0.12);
+      count.push({ key, remaining: String(Math.max(0, round(Math.max(total - eaten, total * 0.02)))), mode: it.mode });
+    }
+    // the last breakfast day is left without its count, to show the breakfast count (r3 §4)
+    if (pl.d.getTime() === end.getTime() || !count.length) continue;
+    await saveBreakfastCount(prisma, fb, H, session.id, { lines: count });
+    sessionsCreated++;
   }
 
   // ── Minibar (Phase 2): 40 rooms, par per room type, daily consumption, weekly counts ──
@@ -467,7 +499,7 @@ async function main() {
       }
     }
   }
-  console.log(`Buffet sessions closed: ${sessionsCreated}; minibar movements: ${await prisma.minibarMovement.count({ where: { hotelId: H } })}`);
+  console.log(`Breakfast days counted: ${sessionsCreated}; minibar movements: ${await prisma.minibarMovement.count({ where: { hotelId: H } })}`);
 
   // ── Rooms & operating costs (Phase 3): 90 rooms, PMS stays, payroll, utilities, meters, laundry, linen, engineering, allocation ──
   const deptMaster: Record<string, [number, number]> = { FB: [120, 2], REST: [600, 9], CAFE: [180, 4], BAR: [150, 4], BRKF: [450, 6], BANQ: [900, 4], KITCH: [520, 14], PAST: [90, 3], ROOMS: [3400, 6], HK: [260, 22], LAUN: [380, 6], ENG: [300, 7], ADM: [420, 10] };

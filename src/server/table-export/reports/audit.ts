@@ -12,13 +12,13 @@ export const audit: ReportDef = {
     return {
       title: t("Audit trail"),
       fileName: "denetim-kaydi",
-      filters: [[t("Entity"), entity ? `${logs[0]?.entityType ?? ""} ${entity}`.trim() : t("All")]],
+      filters: [[t("Entity"), entity ? `${logs[0] ? t(logs[0].entityType) : ""} ${entity}`.trim() : t("All")]],
       tables: [{
         columns: [
           { key: "when", header: t("When"), type: "datetime" }, { key: "user", header: t("User") }, { key: "action", header: t("Action") }, { key: "entity", header: t("Entity") },
           { key: "before", header: t("Before") }, { key: "after", header: t("After") }, { key: "reason", header: t("Reason") },
         ],
-        rows: logs.map((l) => ({ when: l.createdAt, user: users.get(l.userId ?? "") ?? t("system"), action: t(l.action), entity: l.entityType, before: short(l.before), after: short(l.after), reason: l.reason })),
+        rows: logs.map((l) => ({ when: l.createdAt, user: users.get(l.userId ?? "") ?? t("system"), action: t(l.action), entity: t(l.entityType), before: short(l.before), after: short(l.after), reason: l.reason })),
       }],
     };
   },

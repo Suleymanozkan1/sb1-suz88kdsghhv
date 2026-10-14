@@ -10,12 +10,26 @@ import { r2bMessages } from "./r2b";
 import { r2eMessages } from "./r2e";
 import { r2cMessages } from "./r2c";
 import { r2fMessages } from "./r2f";
+import { r3Messages } from "./r3";
+import { r3aMessages } from "./r3a";
+import { r3bMessages } from "./r3b";
+import { r3cMessages } from "./r3c";
+import { r3dMessages } from "./r3d";
+import { r3eMessages } from "./r3e";
+import { r3fMessages } from "./r3f";
 
 export const TR_MESSAGES: Record<string, string> = {
   ...r2cMessages,
   ...r2bMessages,
   ...r2eMessages,
   ...r2fMessages,
+  ...r3Messages,
+  ...r3aMessages,
+  ...r3bMessages,
+  ...r3cMessages,
+  ...r3dMessages,
+  ...r3eMessages,
+  ...r3fMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "Approval already decided": "Bu onay talebi zaten karara bağlanmış",

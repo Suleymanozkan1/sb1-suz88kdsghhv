@@ -1,6 +1,6 @@
 import { prisma } from "../../db";
 import { monthRange } from "../../page";
-import { theoreticalVsActual } from "../../services/variance";
+import { causeLabel, theoreticalVsActual } from "../../services/variance";
 import { date, money } from "@/lib/format";
 import type { ReportDef } from "../types";
 import { metricTable } from "./metrics";
@@ -50,7 +50,7 @@ export const variance: ReportDef = {
           columns: [{ key: "cause", header: t("Cause") }, { key: "amount", header: t("Amount"), type: "money" }, { key: "pct", header: "%", type: "pct" }, { key: "evidence", header: t("Evidence") }],
           rows: [
             { cause: t("Actual − theoretical"), amount: r.breakdown.total },
-            ...r.breakdown.components.map((c) => ({ cause: c.cause === "UNEXPLAINED" ? t("= Unexplained") : `− ${t(c.cause.replace("_", " ").toLowerCase())}`, amount: c.amount, pct: c.pctOfTotal, evidence: c.evidence ? t(c.evidence) : "" })),
+            ...r.breakdown.components.map((c) => ({ cause: c.cause === "UNEXPLAINED" ? t("= Unexplained") : `− ${t(causeLabel(c.cause))}`, amount: c.amount, pct: c.pctOfTotal, evidence: c.evidence ? t(c.evidence) : "" })),
           ],
         },
         {

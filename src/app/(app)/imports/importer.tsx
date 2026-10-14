@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { money } from "@/lib/format";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
+import { translateMessage } from "@/i18n/core";
 
 const KINDS = {
   expenses: { label: "Expenses (accounting / payroll / utilities)", template: "date,department,category,subcategory,description,amount,tax,quantity,unit,supplier,invoice_no,asset,room,external_id\n2026-09-30,HK,LABOR,SALARY,Housekeeping payroll,185000,,,,,,,,PAY-HK-2026-09" },
@@ -28,6 +29,7 @@ interface Preview {
 export type ImportKindKey = Kind;
 export function Importer({ allowed, currency }: { allowed: Kind[]; currency: string }) {
   const t = useT();
+  const locale = useLocale();
   const router = useRouter();
   const [kind, setKind] = useState<Kind>(allowed[0] ?? "expenses");
   const [csv, setCsv] = useState("");
@@ -108,7 +110,7 @@ export function Importer({ allowed, currency }: { allowed: Kind[]; currency: str
       {xlsx ? <p className="text-sm text-ink-600">{t("Excel file loaded: {name}", { name: fileName })}</p> : <textarea aria-label={t("CSV content")} className="h-28 w-full rounded-lg border border-ink-200 p-2 font-mono text-xs" placeholder={t("…or paste CSV here")} value={csv} onChange={(e) => { setCsv(e.target.value); setPreview(null); }} />}
       <div className="flex gap-2">
         <Button variant="secondary" disabled={(!csv && !xlsx) || busy} onClick={() => doPreview()}>{t("Preview")}</Button>
-        <Button disabled={!preview || preview.counts.invalid > 0 || preview.counts.valid === 0 || busy} onClick={commit}>{t("Import {n} row(s)", { n: preview ? preview.counts.valid : "" })}</Button>
+        <Button disabled={!preview || preview.counts.invalid > 0 || preview.counts.valid === 0 || busy} onClick={commit}>{preview ? t("Import {n} row(s)", { n: preview.counts.valid }) : t("Import")}</Button>
       </div>
       {preview && (
         <div className="space-y-2">
@@ -120,7 +122,7 @@ export function Importer({ allowed, currency }: { allowed: Kind[]; currency: str
           {preview.rows.some((r) => r.status !== "VALID") && (
             <Table>
               <thead><tr><Th>{t("Row")}</Th><Th>{t("Status")}</Th><Th>{t("Problem")}</Th></tr></thead>
-              <tbody className="divide-y divide-ink-100">{preview.rows.filter((r) => r.status !== "VALID").slice(0, 50).map((r) => <tr key={r.row}><Td>{r.row}</Td><Td><Badge tone={r.status === "INVALID" ? "red" : r.status === "WARNING" ? "violet" : "amber"}>{t(r.status)}</Badge></Td><Td className="text-xs">{r.messages.join("; ")}</Td></tr>)}</tbody>
+              <tbody className="divide-y divide-ink-100">{preview.rows.filter((r) => r.status !== "VALID").slice(0, 50).map((r) => <tr key={r.row}><Td>{r.row}</Td><Td><Badge tone={r.status === "INVALID" ? "red" : r.status === "WARNING" ? "violet" : "amber"}>{t(r.status)}</Badge></Td><Td className="text-xs">{r.messages.map((m) => translateMessage(locale, m)).join("; ")}</Td></tr>)}</tbody>
             </Table>
           )}
         </div>

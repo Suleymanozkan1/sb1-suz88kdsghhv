@@ -8,9 +8,10 @@ import { Prisma, type CalcStatus } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize } from "../auth/actor";
+import { type Actor, authorize, can } from "../auth/actor";
+import type { Permission } from "../auth/permissions";
 import { audit } from "./audit";
-import { minibarInvariant } from "./minibar";
+import { MINIBAR_ROOMS, minibarInvariant } from "./minibar";
 import { postSalesConsumption, theoreticalFor } from "./sales";
 import { businessDay } from "@/domain/business-day";
 
@@ -24,6 +25,25 @@ export interface IntegrityCheck {
   severity: "CRITICAL" | "WARNING";
   count: number;
   examples: unknown[];
+  /** the examples as the user reads them: the record, where it is, what was expected and what was found (r3 §18) */
+  findings?: IntegrityFinding[];
+}
+
+/** One compared value. `text` values are English keys (translated on screen); the others are plain numbers. */
+export interface FindingValue {
+  label: string;
+  kind: "qty" | "money" | "int" | "text";
+  expected: string;
+  found: string;
+  unit?: string;
+}
+
+export interface IntegrityFinding {
+  /** product @ store, movement, expense, recipe … (plain text) */
+  record: string;
+  /** the page where the record is (null: nothing to open, e.g. a database-level reference) */
+  href: string | null;
+  values: FindingValue[];
 }
 
 async function startRun(db: Db, actor: Actor, hotelId: string, kind: string, periodId?: string | null) {
@@ -162,14 +182,16 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
     const mb = await minibarInvariant(db, hotelId);
     add("minibar", "Minibar room sub-ledger = in-room warehouse", mb.differences);
 
-    const unmapped = await db.saleLine.count({ where: { hotelId, recipeVersionId: null } });
-    add("unmapped_sales", "Sales without a recipe version (theoretical cost missing)", unmapped ? [{ lines: unmapped, action: "Map POS codes to recipes, then reprocess" }] : [], "WARNING");
+    // one finding per POS code, so each one leads to its recipe
+    const unmapped = await db.saleLine.groupBy({ by: ["posCode"], where: { hotelId, recipeVersionId: null }, _count: { _all: true }, _max: { itemName: true }, orderBy: { posCode: "asc" } });
+    add("unmapped_sales", "Sales without a recipe version (theoretical cost missing)", unmapped.map((u) => ({ posCode: u.posCode, itemName: u._max.itemName, lines: u._count._all, action: "Map POS codes to recipes, then reprocess" })), "WARNING");
 
     const stale = await db.calculationRun.findMany({ where: { hotelId, status: { in: ["FAILED", "PENDING_REPROCESS", "PARTIAL"] } }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, kind: true, status: true, startedAt: true, error: true } });
     add("runs", "No failed or interrupted calculations waiting", stale, "WARNING");
     // 12) tenant integrity: nothing of this hotel points into another hotel
     add("tenant", "Every reference stays inside this hotel (tenant integrity)", await tenantMismatches(db, hotelId));
 
+    for (const [c, f] of zip(checks, await describeFindings(db, actor, hotelId, checks))) c.findings = f;
     const critical = checks.filter((c) => !c.ok && c.severity === "CRITICAL").length;
     const result = { status: critical ? "ISSUES" : checks.some((c) => !c.ok) ? "WARNINGS" : "OK", checks, checkedAt: new Date().toISOString() };
     await finishRun(db, run.id, "COMPLETED", result);
@@ -179,6 +201,87 @@ export async function checkIntegrity(db: Db, actor: Actor, hotelId: string) {
     await finishRun(db, run.id, "FAILED", null, e instanceof Error ? e.message : String(e));
     throw e;
   }
+}
+
+const zip = <A, B>(a: A[], b: B[]) => a.map((x, i) => [x, b[i]!] as const);
+const day = (d: Date) => d.toISOString().slice(0, 10);
+type Ex = Record<string, unknown>;
+const num = (v: unknown) => (v === null || v === undefined ? "0" : String(v));
+
+/**
+ * The findings of every check in the user's words (feedback r3 §18): which record, the page where it is, and the
+ * expected against the found value. Names are looked up once for all checks; links only to pages the user may open.
+ */
+async function describeFindings(db: Db, actor: Actor, hotelId: string, checks: IntegrityCheck[]): Promise<IntegrityFinding[][]> {
+  const ex = (key: string) => (checks.find((c) => c.key === key)?.examples ?? []) as Ex[];
+  const stockKeys = ["balances", "fifo", "negative_stock"];
+  const txIds = [...ex("cost_ledger").map((e) => String(e.id)), ...ex("cost_amounts").map((e) => String(e.stockTxId))];
+  const txs = txIds.length ? await db.stockTransaction.findMany({ where: { hotelId, id: { in: txIds } }, select: { id: true, type: true, txDate: true, warehouseId: true, productId: true, quantity: true, totalCost: true } }) : [];
+  const minibarWh = ex("minibar").length ? await db.warehouse.findFirst({ where: { hotelId, code: MINIBAR_ROOMS }, select: { id: true } }) : null;
+  const productIds = new Set([...stockKeys.flatMap((k) => ex(k).map((e) => String(e.productId))), ...txs.map((x) => x.productId), ...ex("minibar").map((e) => String(e.productId))]);
+  const warehouseIds = new Set([...stockKeys.flatMap((k) => ex(k).map((e) => String(e.warehouseId))), ...txs.map((x) => x.warehouseId)]);
+  const [products, warehouses, firstMoves, expenses, runs, recipes] = await Promise.all([
+    db.product.findMany({ where: { hotelId, id: { in: [...productIds] } }, select: { id: true, name: true, stockUnit: true } }),
+    db.warehouse.findMany({ where: { hotelId, id: { in: [...warehouseIds] } }, select: { id: true, name: true } }),
+    // a balance difference can come from any movement: the ledger link starts at the first one
+    productIds.size ? db.stockTransaction.groupBy({ by: ["warehouseId", "productId"], where: { hotelId, productId: { in: [...productIds] }, warehouseId: { in: [...warehouseIds] } }, _min: { txDate: true } }) : Promise.resolve([]),
+    ex("expenses").length ? db.expense.findMany({ where: { hotelId, id: { in: ex("expenses").map((e) => String(e.expenseId)) } }, select: { id: true, description: true, expenseDate: true } }) : Promise.resolve([]),
+    ex("allocation").length ? db.allocationRun.findMany({ where: { hotelId, id: { in: ex("allocation").map((e) => String(e.runId)) } }, select: { id: true, fromDate: true, toDate: true } }) : Promise.resolve([]),
+    db.recipe.findMany({ where: { hotelId, id: { in: ex("recipe_snapshots").map((e) => String(e.recipeId)) } }, select: { id: true, name: true } }),
+  ]);
+  const P = new Map(products.map((p) => [p.id, p]));
+  const W = new Map(warehouses.map((w) => [w.id, w.name]));
+  const first = new Map(firstMoves.map((m) => [`${m.warehouseId}|${m.productId}`, m._min.txDate]));
+  const product = (id: unknown) => P.get(String(id))?.name ?? String(id);
+  const unit = (id: unknown) => P.get(String(id))?.stockUnit;
+  const where = (w: unknown, p: unknown) => `${product(p)} · ${W.get(String(w)) ?? String(w)}`;
+  const link = (perm: Permission, href: string) => (can(actor, perm) ? href : null);
+  const ledger = (warehouseId: string, productId: string, from?: Date | null, to?: Date | null) =>
+    link("inventory:view", `/inventory/ledger?${new URLSearchParams({ view: "detail", warehouseId, productId, ...(from ? { from: day(from) } : {}), ...(to ? { to: day(to) } : {}) })}`);
+  const stockLedger = (e: Ex) => ledger(String(e.warehouseId), String(e.productId), first.get(`${String(e.warehouseId)}|${String(e.productId)}`));
+  const tx = new Map(txs.map((x) => [x.id, x]));
+  const txRecord = (id: string) => {
+    const x = tx.get(id);
+    return x ? { record: `${x.type} · ${where(x.warehouseId, x.productId)} · ${day(x.txDate)}`, href: ledger(x.warehouseId, x.productId, x.txDate, x.txDate) } : { record: id, href: null };
+  };
+  const EXP = new Map(expenses.map((e) => [e.id, e]));
+  const RUN = new Map(runs.map((r) => [r.id, r]));
+  const REC = new Map(recipes.map((r) => [r.id, r.name]));
+  // the recipe a POS code belongs to (same matching as reprocessing: code, else the item name)
+  const posRecipes = ex("unmapped_sales").length ? await db.recipe.findMany({ where: { hotelId, active: true }, select: { id: true, name: true, posCode: true } }) : [];
+  const recipeFor = (code: string, name: unknown) => posRecipes.find((r) => r.posCode === code) ?? posRecipes.find((r) => r.name.toLocaleLowerCase("tr") === String(name ?? code).toLocaleLowerCase("tr"));
+
+  const by: Record<string, (e: Ex) => IntegrityFinding> = {
+    balances: (e) => ({ record: where(e.warehouseId, e.productId), href: stockLedger(e), values: [
+      { label: "Quantity (Σ ledger → balance)", kind: "qty", expected: num(e.ledgerQty), found: num(e.balanceQty), unit: unit(e.productId) },
+      { label: "Value (Σ ledger → balance)", kind: "money", expected: num(e.ledgerValue), found: num(e.balanceValue) },
+    ] }),
+    fifo: (e) => ({ record: where(e.warehouseId, e.productId), href: stockLedger(e), values: [
+      { label: "Quantity (balance → FIFO layers)", kind: "qty", expected: num(e.balance), found: num(e.layers), unit: unit(e.productId) },
+      { label: "Value (balance → FIFO layers)", kind: "money", expected: num(e.balanceValue), found: num(e.layersValue) },
+    ] }),
+    cost_ledger: (e) => ({ ...txRecord(String(e.id)), values: [{ label: "Cost-ledger row", kind: "text", expected: "present", found: "missing" }, { label: "Movement value", kind: "money", expected: num(e.totalCost), found: num(e.totalCost) }] }),
+    cost_amounts: (e) => ({ ...txRecord(String(e.stockTxId)), values: [{ label: "Cost-ledger amount", kind: "money", expected: D(num(e.stock)).neg().toString(), found: num(e.cost) }] }),
+    expenses: (e) => {
+      const x = EXP.get(String(e.expenseId));
+      return { record: x ? `${x.description} · ${day(x.expenseDate)}` : String(e.expenseId), href: x ? link("opex:view", `/operations?${new URLSearchParams({ tab: "expenses", from: day(x.expenseDate), to: day(x.expenseDate) })}`) : null, values: [{ label: e.status === "POSTED" ? "Cost-ledger amount (posted expense)" : "Cost-ledger amount (reversed expense)", kind: "money", expected: e.status === "POSTED" ? num(e.amount) : "0", found: num(e.ledger) }] };
+    },
+    allocation: (e) => {
+      const r = RUN.get(String(e.runId));
+      return { record: r ? `${day(r.fromDate)} – ${day(r.toDate)}` : String(e.runId), href: r ? link("opex:view", `/operations?${new URLSearchParams({ from: day(r.fromDate), to: day(r.toDate) })}`) : null, values: [{ label: "Net of the allocation run", kind: "money", expected: "0", found: num(e.net) }] };
+    },
+    recipe_snapshots: (e) => ({ record: `${REC.get(String(e.recipeId)) ?? String(e.recipeId)} · v${num(e.version)}`, href: link("recipe:view", `/recipes/${String(e.recipeId)}`), values: [{ label: "Frozen requirement snapshot", kind: "text", expected: "present", found: "missing" }] }),
+    negative_stock: (e) => ({ record: where(e.warehouseId, e.productId), href: stockLedger(e), values: [{ label: "Quantity (must not be below zero)", kind: "qty", expected: "0", found: num(e.quantity), unit: unit(e.productId) }] }),
+    minibar: (e) => ({ record: product(e.productId), href: minibarWh ? ledger(minibarWh.id, String(e.productId)) : link("minibar:view", "/minibar"), values: [{ label: "Quantity (rooms → in-room store)", kind: "qty", expected: num(e.rooms), found: num(e.warehouse), unit: unit(e.productId) }] }),
+    unmapped_sales: (e) => {
+      const code = String(e.posCode);
+      const r = recipeFor(code, e.itemName);
+      return { record: e.itemName ? `${code} · ${String(e.itemName)}` : code, href: r ? (link("recipe:manage", `/recipes/${r.id}/edit`) ?? link("recipe:view", `/recipes/${r.id}`)) : (link("recipe:manage", "/recipes/new") ?? link("recipe:view", `/recipes?${new URLSearchParams({ q: String(e.itemName ?? code) })}`)), values: [{ label: "Sale lines without a recipe version", kind: "int", expected: "0", found: num(e.lines) }] };
+    },
+    runs: (e) => ({ record: `${String(e.kind)} · ${e.startedAt instanceof Date ? e.startedAt.toISOString().slice(0, 16).replace("T", " ") : String(e.startedAt).slice(0, 16).replace("T", " ")}`, href: `/integrity?${new URLSearchParams({ run: String(e.id) })}#run`, values: [{ label: "Status", kind: "text", expected: "COMPLETED", found: String(e.status) }] }),
+    tenant: (e) => ({ record: `${String(e.table)}.${String(e.column)} → ${String(e.ref)}`, href: null, values: [{ label: "Rows pointing into another hotel", kind: "int", expected: "0", found: num(e.rows) }] }),
+  };
+  return checks.map((c) => (c.examples as Ex[]).map((e) => by[c.key]?.(e) ?? { record: JSON.stringify(e), href: null, values: [] }));
 }
 
 /**
@@ -283,4 +386,14 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
 export async function listRuns(db: Db, actor: Actor, hotelId: string) {
   authorize(actor, "audit:view", { hotelId });
   return db.calculationRun.findMany({ where: { hotelId }, orderBy: { startedAt: "desc" }, take: 50 });
+}
+
+/** An integrity check run as stored (its details hold every check with its findings; runs before r3 only the examples). */
+export async function integrityRun(db: Db, actor: Actor, hotelId: string, runId?: string | null) {
+  authorize(actor, "audit:view", { hotelId });
+  const run = await db.calculationRun.findFirst({ where: { hotelId, kind: "INTEGRITY_CHECK", ...(runId ? { id: runId } : { status: "COMPLETED" }) }, orderBy: { startedAt: "desc" } });
+  if (!run) return null;
+  const d = (run.details ?? {}) as { status?: string; checks?: IntegrityCheck[]; checkedAt?: string };
+  const checks = d.checks ?? [];
+  return { id: run.id, status: run.status, result: d.status ?? null, startedAt: run.startedAt, finishedAt: run.finishedAt, error: run.error, checks, findings: checks.reduce((a, c) => a + c.count, 0) };
 }

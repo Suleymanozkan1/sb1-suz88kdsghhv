@@ -7,7 +7,7 @@ test("calculation integrity: check runs and balances rebuild is audited (spec 30
   await page.goto("/integrity");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Calculation integrity/i);
   await page.getByRole("button", { name: "Run integrity check" }).click();
-  await expect(page.getByText(/^Result:/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^Check finished:/)).toBeVisible({ timeout: 60_000 });
   const balances = page.getByRole("row").filter({ hasText: /balance/i }).first();
   await expect(balances.getByText("PASS")).toBeVisible();
   answerDialogs(page, ["E2E rebuild check"]);

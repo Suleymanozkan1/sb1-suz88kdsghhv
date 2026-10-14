@@ -56,13 +56,14 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
   const range = { gte: period.startDate, lt: end };
   const days = Math.trunc((end.getTime() - period.startDate.getTime()) / 86400000 + 0.5);
   const [pendingApprovals, unmappedSales, openPOs, counts, pendingWaste, draftCounts, openBuffets, minibarStore, minibarMoves, noInvoice, salesDays, outletSales, rooms, pmsDays, payroll, utilities, production] = await Promise.all([
-    db.approval.count({ where: { hotelId, status: "PENDING" } }),
+    // requests raised after the month (about later activity) do not hold this month; its waste and counts are checked below by their own dates
+    db.approval.count({ where: { hotelId, status: "PENDING", requestedAt: { lt: end } } }),
     db.saleLine.count({ where: { hotelId, saleDate: range, recipeVersionId: null } }),
     db.purchaseOrder.count({ where: { hotelId, status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] }, expectedDate: { lte: period.endDate } } }),
     db.stockCount.count({ where: { hotelId, status: "POSTED", deletedAt: null, countDate: { gte: new Date(period.endDate.getTime() - 7 * 86400000), lt: range.lt } } }),
     db.wasteRecord.count({ where: { hotelId, status: "PENDING", wasteDate: range } }),
     db.stockCount.count({ where: { hotelId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, deletedAt: null, countDate: range } }),
-    db.buffetSession.count({ where: { hotelId, status: "OPEN", serviceDate: range } }),
+    db.buffetSession.count({ where: { hotelId, status: "OPEN", serviceDate: range, lines: { some: {} } } }),
     db.warehouse.count({ where: { hotelId, code: "MINIBAR_ROOMS" } }),
     db.minibarMovement.count({ where: { hotelId, movedAt: range } }),
     db.goodsReceipt.count({ where: { hotelId, receiptDate: range, OR: [{ invoiceNo: null }, { invoiceNo: "" }] } }),
@@ -79,7 +80,7 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
     { key: "approvals", label: "All adjustments / approvals decided", ok: pendingApprovals === 0, critical: true, detail: `${pendingApprovals} pending` },
     { key: "sales_mapping", label: "All recipe mappings complete (sales mapped to recipes)", ok: unmappedSales === 0, critical: true, detail: `${unmappedSales} unmapped sale lines` },
     { key: "stock_count", label: "All stock counts completed (closing count in the last 7 days)", ok: counts > 0, critical: true, detail: `${counts} posted counts` },
-    { key: "buffets", label: "All buffet sessions closed", ok: openBuffets === 0, critical: true, detail: `${openBuffets} open sessions` },
+    { key: "buffets", label: "All breakfast counts entered", ok: openBuffets === 0, critical: true, detail: `${openBuffets} breakfast days without a count` },
     { key: "counts_open", label: "No stock counts left in draft", ok: draftCounts === 0, critical: false, detail: `${draftCounts} open counts` },
     { key: "waste", label: "All waste entered and approved", ok: pendingWaste === 0, critical: false, detail: `${pendingWaste} pending waste records` },
     { key: "receipts", label: "All purchases received (due POs)", ok: openPOs === 0, critical: false, detail: `${openPOs} open POs due` },

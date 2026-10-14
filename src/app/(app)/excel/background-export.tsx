@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { dateTime } from "@/lib/format";
+import { dateTime, qty } from "@/lib/format";
 import { useLocale, useT } from "@/i18n/client";
 import { translateMessage } from "@/i18n/core";
 
@@ -35,6 +36,13 @@ export function BackgroundExport({ formId, timezone }: { formId: string; timezon
     void load().catch(() => undefined);
   }, [load]);
   const running = jobs.some((j) => ACTIVE.includes(j.status));
+  // a finished job is also stored in the report archive on this page: refresh it
+  const router = useRouter();
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) router.refresh();
+    wasRunning.current = running;
+  }, [running, router]);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => void load().catch(() => undefined), 3000);
@@ -74,7 +82,7 @@ export function BackgroundExport({ formId, timezone }: { formId: string; timezon
                 <Td>{j.params.from.slice(0, 10)} → {new Date(new Date(j.params.to).getTime() - 86400000).toISOString().slice(0, 10)}</Td>
                 <Td><Badge tone={tone(j.status)}>{t(j.status)}</Badge>{j.error && <span className="block text-xs text-red-700">{translateMessage(locale, j.error)}</span>}</Td>
                 <Td>{j.reconciliation ? t(j.reconciliation) : "—"}</Td>
-                <Td align="right">{j.size ? `${(j.size / 1e6).toFixed(1)} MB` : "—"}</Td>
+                <Td align="right">{j.size ? `${qty(j.size / 1e6, "MB", 1)}` : "—"}</Td>
                 <Td>{j.status === "COMPLETED" && j.expiresAt && new Date(j.expiresAt) > new Date() ? <a className="text-brand-700 underline" href={`/api/export/jobs/${j.id}/download`}>{t("Download")}</a> : "—"}</Td>
               </tr>
             ))}

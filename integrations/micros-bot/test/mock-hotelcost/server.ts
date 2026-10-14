@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AddressInfo } from "node:net";
-import type { ZodTypeAny } from "zod";
+import { z, type ZodTypeAny } from "zod";
 import * as local from "../../src/contract";
 
 export interface RecordedRequest { method: string; path: string; auth: string | undefined; body: unknown; status?: number }
@@ -31,28 +31,33 @@ export interface MockHotelCost {
   state: MockHotelCostState;
   /** which contract validated the bodies */
   contract: "hotelcost-repo" | "bot-copy";
+  /** kinds the repo contract does not know yet, validated with the bot's copy instead */
+  fallbackKinds: Set<string>;
   ingests(kind?: string): Array<{ kind: string; source: string; businessDay?: string; runId: string; items: any[] }>;
   runs(): Array<{ runId: string; source: string; status: string; businessDay?: string; message?: string; requestId?: string }>;
   close(): Promise<void>;
 }
 
-async function loadContract(): Promise<{ ingest: ZodTypeAny; run: ZodTypeAny; from: MockHotelCost["contract"] }> {
+async function loadContract(): Promise<{ ingest: ZodTypeAny; run: ZodTypeAny; local: ZodTypeAny; from: MockHotelCost["contract"] }> {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repoContract = path.resolve(here, "../../../../src/server/integrations/contract.ts");
   if (fs.existsSync(repoContract)) {
     try {
       const m = (await import(pathToFileURL(repoContract).href)) as { ingestSchema: ZodTypeAny; runStatusSchema: ZodTypeAny };
-      if (m.ingestSchema && m.runStatusSchema) return { ingest: m.ingestSchema, run: m.runStatusSchema, from: "hotelcost-repo" };
+      if (m.ingestSchema && m.runStatusSchema) return { ingest: m.ingestSchema, run: m.runStatusSchema, local: localIngest(), from: "hotelcost-repo" };
     } catch {
       /* fall back to the bot's copy */
     }
   }
-  const { z } = await import("zod");
+  const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+  const run = z.object({ runId: z.string().min(1).max(64), source: z.enum(["MICROS", "OPERA", "OTHER"]), status: z.enum(["STARTED", "SUCCEEDED", "FAILED"]), businessDay: day.optional(), message: z.string().max(2000).optional(), requestId: z.string().optional() });
+  return { ingest: localIngest(), run, local: localIngest(), from: "bot-copy" };
+}
+
+function localIngest(): ZodTypeAny {
   const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
   const kinds = Object.keys(local.ITEM_SCHEMAS) as Array<keyof typeof local.ITEM_SCHEMAS>;
-  const ingest = z.union(kinds.map((k) => z.object({ kind: z.literal(k), source: z.string(), businessDay: k === "products" ? day.optional() : day, runId: z.string().max(64).optional(), items: z.array(local.ITEM_SCHEMAS[k]) })) as unknown as [ZodTypeAny, ZodTypeAny]);
-  const run = z.object({ runId: z.string().min(1).max(64), source: z.enum(["MICROS", "OPERA", "OTHER"]), status: z.enum(["STARTED", "SUCCEEDED", "FAILED"]), businessDay: day.optional(), message: z.string().max(2000).optional(), requestId: z.string().optional() });
-  return { ingest, run, from: "bot-copy" };
+  return z.union(kinds.map((k) => z.object({ kind: z.literal(k), source: z.string(), businessDay: k === "products" ? day.optional() : day, runId: z.string().max(64).optional(), items: z.array(local.ITEM_SCHEMAS[k]) })) as unknown as [ZodTypeAny, ZodTypeAny]);
 }
 
 function keyOf(kind: string, day: string, item: any): string {
@@ -61,6 +66,7 @@ function keyOf(kind: string, day: string, item: any): string {
     case "invoices": return `i|${String(item.supplierName).toLowerCase()}|${item.invoiceNo}`;
     case "minibar": return `m|${item.reference}`;
     case "covers": return `v|${day}|${item.outlet}|${item.meal}`;
+    case "comps": return `k|${day}|${item.checkNo}`;
     case "products": return `p|${String(item.name).toLocaleLowerCase("tr")}`;
     default: return `o|${day}`;
   }
@@ -69,6 +75,7 @@ function keyOf(kind: string, day: string, item: any): string {
 export async function startMockHotelCost(apiKey = "hc_test_key_123456"): Promise<MockHotelCost> {
   const contract = await loadContract();
   const state: MockHotelCostState = { apiKey, requests: [], failNextIngest: 0, queue: [], seen: new Set() };
+  const fallbackKinds = new Set<string>();
 
   const server = http.createServer((req, res) => {
     let data = "";
@@ -95,14 +102,19 @@ export async function startMockHotelCost(apiKey = "hc_test_key_123456"): Promise
           state.failNextIngest--;
           return json(503, { error: "temporarily unavailable" });
         }
-        const parsed = contract.ingest.safeParse(body);
+        let parsed = contract.ingest.safeParse(body);
+        // a kind the server contract does not have yet (another change in progress): checked against the bot's copy
+        if (!parsed.success && contract.from === "hotelcost-repo" && parsed.error.issues.some((i) => i.path.join(".") === "kind")) {
+          parsed = contract.local.safeParse(body);
+          if (parsed.success) fallbackKinds.add((body as { kind: string }).kind);
+        }
         if (!parsed.success) return json(400, { error: "Invalid body", issues: parsed.error.issues.slice(0, 5) });
         const b = parsed.data as { kind: string; businessDay: string; runId?: string; items: any[] };
         let accepted = 0;
         let duplicates = 0;
         for (const item of b.items) {
           const k = keyOf(b.kind, b.businessDay, item);
-          if (state.seen.has(k) && (b.kind === "checks" || b.kind === "invoices" || b.kind === "minibar" || b.kind === "products")) duplicates++;
+          if (state.seen.has(k) && (b.kind === "checks" || b.kind === "invoices" || b.kind === "minibar" || b.kind === "products" || b.kind === "comps")) duplicates++;
           else {
             state.seen.add(k);
             accepted++;
@@ -128,6 +140,7 @@ export async function startMockHotelCost(apiKey = "hc_test_key_123456"): Promise
     url: `http://127.0.0.1:${port}`,
     state,
     contract: contract.from,
+    fallbackKinds,
     ingests: (kind) => okBodies("/api/integrations/ingest").filter((b) => !kind || b.kind === kind),
     runs: () => okBodies("/api/integrations/runs"),
     close: () => new Promise<void>((resolve) => {

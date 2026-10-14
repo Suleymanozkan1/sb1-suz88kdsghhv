@@ -11,7 +11,8 @@ export const inventory: ReportDef = {
     const level = stockLevelParam(q.get("level"));
     const range = monthRange({ from: q.get("from") || undefined, to: q.get("to") || undefined });
     const inv = await inventoryStatus(prisma, actor, hotelId, { categoryGroup: group, period: range });
-    const rows = level ? inv.rows.filter((r) => r.level === level) : inv.rows;
+    const productId = q.get("productId") || undefined;
+    const rows = inv.rows.filter((r) => (!level || r.level === level) && (!productId || r.productId === productId));
     const total = (f: (r: (typeof rows)[number]) => { toString(): string } | undefined) => rows.reduce((a, r) => a + Number(f(r)?.toString() ?? 0), 0);
     return {
       title: t("Inventory"),
