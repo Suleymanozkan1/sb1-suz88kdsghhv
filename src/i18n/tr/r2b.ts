@@ -10,7 +10,7 @@ export const r2b: Record<string, string> = {
   "Send for approval": "Onaya gönder",
   "Sent for approval. Stock changes when an authorised manager approves the count.": "Onaya gönderildi. Stok, yetkili yönetici sayımı onayladığında işlenir.",
   "AWAITING APPROVAL": "ONAY BEKLİYOR",
-  "Rejected by the approver - recount and send again: {note}": "Onaylayan reddetti, yeniden sayıp tekrar gönderin: {note}",
+  "Rejected by the approver. Recount and send again: {note}": "Onaylayan reddetti, yeniden sayıp tekrar gönderin: {note}",
   "Do you want to delete this count?": "Bu sayımı silmek istiyor musunuz?",
   "Delete count": "Sayımı sil",
   "Delete count {number}": "{number} sayımını sil",
@@ -32,6 +32,6 @@ export const r2b: Record<string, string> = {
 /** Server messages (DomainError) of round 2 (r2b), translated by the API error handler. */
 export const r2bMessages: Record<string, string> = {
   "Your role may not approve the counts of this warehouse": "Rolünüz bu deponun sayımlarını onaylayamaz",
-  "A posted count cannot be deleted - correct it with a new count": "İşlenmiş sayım silinemez; yeni bir sayımla düzeltin",
+  "A posted count cannot be deleted; correct it with a new count": "İşlenmiş sayım silinemez; yeni bir sayımla düzeltin",
   "Missing permission: count:delete": "Yetki eksik: sayım silme",
 };

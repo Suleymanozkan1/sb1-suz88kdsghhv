@@ -10,4 +10,4 @@ export const POST = api(async ({ actor, hotelId, body: read }) => {
   const b = body.parse(await read());
   const rows = b.csv ? csvToObjects(b.csv).map(mapRow) : (b.rows ?? []);
   return commitSales(prisma, actor, hotelId, { rows, source: b.csv ? "CSV" : b.source, fileName: b.fileName, rawContent: b.csv });
-});
+}, { perm: "sales:import" });

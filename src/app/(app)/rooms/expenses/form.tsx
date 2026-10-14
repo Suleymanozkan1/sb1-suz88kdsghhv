@@ -33,7 +33,7 @@ export function RoomCostItemsForm({ month, items, revision: loaded, canEdit }: {
     try {
       const res = await call<{ revision: string }>("PUT", "/api/rooms/expenses", { month, items: filled, revision });
       setRevision(res.revision);
-      setMsg({ tone: "green", text: t("Saved — room cost uses the new amounts") });
+      setMsg({ tone: "green", text: t("Saved. Room cost uses the new amounts") });
       router.refresh();
     } catch (e) {
       setMsg({ tone: "red", text: e instanceof Error ? translateMessage(locale, e.message) : t("Failed") });

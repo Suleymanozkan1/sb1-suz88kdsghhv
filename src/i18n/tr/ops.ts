@@ -167,7 +167,7 @@ export const ops: Record<string, string> = {
 
   // ── minibar ──
   "Minibar cost": "Minibar maliyeti",
-  "Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage — shown, never hidden.": "Oda içerikleri oda içi deponun alt hesabıdır: dolum, tüketim (gelirle birlikte), iade, fire ve sayım. Sayım farkları kayıp olarak gösterilir, gizlenmez.",
+  "Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage: shown, never hidden.": "Oda içerikleri oda içi deponun alt hesabıdır: dolum, tüketim (gelirle birlikte), iade, fire ve sayım. Sayım farkları kayıp olarak gösterilir, gizlenmez.",
   "Consumed cost": "Tüketim maliyeti",
   "Shrinkage": "Kayıp",
   "Missing at room counts": "Oda sayımlarında eksik çıkan",
@@ -193,7 +193,7 @@ export const ops: Record<string, string> = {
   "Physical count": "Fiziki sayım",
   "Folio": "Folyo",
   "Restocked to par": "Par seviyesine dolduruldu",
-  "Already at par — nothing to restock": "Oda zaten par seviyesinde — doldurulacak ürün yok",
+  "Already at par: nothing to restock": "Oda zaten par seviyesinde; doldurulacak ürün yok",
   "Restock to par": "Par seviyesine doldur",
   "occupied": "dolu",
   "occupied last night": "dün gece dolu",
@@ -521,7 +521,7 @@ export const ops: Record<string, string> = {
   "Allocated": "Dağıtılan",
   "Posted runs": "Kaydedilen dağıtımlar",
   "No allocation posted yet": "Henüz dağıtım kaydedilmedi",
-  "Rule created — preview the period below before posting.": "Kural oluşturuldu. Kaydetmeden önce aşağıda dönemi ön izleyin.",
+  "Rule created. Preview the period below before posting.": "Kural oluşturuldu. Kaydetmeden önce aşağıda dönemi ön izleyin.",
   "Rule name": "Kural adı",
   "Electricity by sub-meter": "Ara sayaca göre elektrik",
   "Source category": "Kaynak kategori",
@@ -584,7 +584,7 @@ export const ops: Record<string, string> = {
   "{n} invalid": "{n} geçersiz",
   "{n} duplicate": "{n} mükerrer",
   "{n} warning": "{n} uyarı",
-  "Fix invalid rows first — imports are all-or-nothing.": "Önce geçersiz satırları düzeltin. Aktarım ya tamamen yapılır ya hiç yapılmaz.",
+  "Fix invalid rows first: imports are all-or-nothing.": "Önce geçersiz satırları düzeltin. Aktarım ya tamamen yapılır ya hiç yapılmaz.",
   "Row": "Satır",
   "Problem": "Sorun",
   // import kinds and statuses

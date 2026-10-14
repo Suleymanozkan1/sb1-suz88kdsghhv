@@ -89,7 +89,7 @@ export async function renderManagementPack(source: FullCostExport, x: PackExtras
       doc.moveDown(0.2);
     }
     if (!s || s.status === "NOT_AVAILABLE") {
-      note(t("Not available — {note}", { note: s?.note ? tx(s.note) : t("module not in scope") }));
+      note(t("Not available: {note}", { note: s?.note ? tx(s.note) : t("module not in scope") }));
       return;
     }
     const rows = (opts.filter ? s.rows.filter(opts.filter) : s.rows).slice(0, opts.max ?? 25);

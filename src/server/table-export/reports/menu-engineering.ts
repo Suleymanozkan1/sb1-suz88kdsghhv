@@ -17,7 +17,7 @@ export const menuEngineering: ReportDef = {
     const dept = departmentId ? await prisma.department.findFirst({ where: { id: departmentId, hotelId }, select: { name: true } }) : null;
     const cur = hotel.baseCurrency;
     const quadrants: XTable[] = r.items.length === 0 ? [] : QUAD.map((c) => ({
-      title: `${t(c)} — ${t(MENU_ACTION[c])}`,
+      title: `${t(c)}: ${t(MENU_ACTION[c])}`,
       columns: [{ key: "name", header: t("Item") }, { key: "qty", header: t("Sold"), type: "int" }, { key: "cmUnit", header: t("CM / unit"), type: "money" }],
       rows: r.items.filter((i) => i.cls === c).map((i) => ({ name: i.name, qty: i.qty, cmUnit: i.contributionPerUnit })),
     }));

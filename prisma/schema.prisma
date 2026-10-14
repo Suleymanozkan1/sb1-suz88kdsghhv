@@ -1232,7 +1232,7 @@ model SaleLine {
   consumptionPosted   Boolean        @default(false)
   createdAt           DateTime       @default(now())
 
-  @@unique([hotelId, externalId])
+  @@unique([hotelId, departmentId, externalId]) // a POS line id is unique within its outlet (another department cannot claim it)
   @@index([hotelId, saleDate])
   @@index([hotelId, departmentId, saleDate])
 }

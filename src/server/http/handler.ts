@@ -10,7 +10,7 @@ import { Decimal } from "@/domain/money";
 import { requireHotel, type Actor } from "../auth/actor";
 import type { Permission } from "../auth/permissions";
 import { defaultLocale, LANG_COOKIE, normalizeLocale, translateMessage, type Locale } from "@/i18n/core";
-import { actorFromToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
+import { actorFromToken, isApiToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
 
 const STATUS: Record<DomainErrorCode, number> = {
   VALIDATION: 422,
@@ -43,13 +43,71 @@ export function toJson(value: unknown): unknown {
 }
 
 const MAX_BODY = 5 * 1024 * 1024;
+/** Anonymous endpoints (login, invitation, setup) take a few short fields. */
+export const SMALL_BODY = 64 * 1024;
+
+const tooLarge = (limit: number) => Object.assign(new Error("Payload too large"), { status: 413, limit });
+
+/**
+ * Reads at most `max` bytes of the body. The declared length can be absent (chunked upload) or wrong, so the bytes are
+ * counted as they arrive and the stream is cancelled at the limit instead of being buffered whole and measured afterwards.
+ */
+export async function readBodyText(req: Request, max: number): Promise<string> {
+  if (Number(req.headers.get("content-length") ?? 0) > max) throw tooLarge(max);
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > max) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge(max);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** JSON body read through readBodyText; an empty body is `{}`. */
+export async function readJson(req: Request, max = MAX_BODY): Promise<unknown> {
+  const text = await readBodyText(req, max);
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new DomainError("VALIDATION", "Request body is not valid JSON");
+  }
+}
+
+/**
+ * Client address for per-source rate limits. The left-most X-Forwarded-For entry is whatever the client sent, so it is
+ * never used. On Vercel the edge sets x-real-ip (and rewrites X-Forwarded-For). Elsewhere the right-most entry is the
+ * peer seen by the nearest reverse proxy, or by Next itself when the client sent none; TRUSTED_PROXY_HOPS skips further proxies.
+ */
+export function clientIp(req: Request): string {
+  if (process.env.VERCEL) {
+    const real = req.headers.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
+  const hops = Math.max(0, Math.trunc(Number(process.env.TRUSTED_PROXY_HOPS ?? 0)) || 0);
+  const parts = (req.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return parts[Math.max(0, parts.length - 1 - hops)] ?? "local";
+}
+
+/** The only route a personal API token (Excel refresh) may call, read-only. */
+const API_TOKEN_ROUTES = new Set(["/api/export/full-cost"]);
 
 /** Locale of an API request (language cookie, else the default). */
 export const requestLocale = (req: NextRequest): Locale => normalizeLocale(req.cookies.get(LANG_COOKIE)?.value) ?? defaultLocale();
 
 export function errorResponse(e: unknown, locale: Locale = "en") {
   const tm = (m: string) => translateMessage(locale, m);
-  if ((e as { status?: number } | null)?.status === 413) return NextResponse.json({ error: { code: "PAYLOAD_TOO_LARGE", message: tm("Request body exceeds 5 MB") } }, { status: 413 });
+  if ((e as { status?: number } | null)?.status === 413) {
+    const limit = (e as { limit?: number }).limit;
+    return NextResponse.json({ error: { code: "PAYLOAD_TOO_LARGE", message: tm(limit && limit !== MAX_BODY ? "Request body is too large" : "Request body exceeds 5 MB") } }, { status: 413 });
+  }
   if (isDomainError(e)) {
     const retry = e.code === "RATE_LIMITED" ? (e.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds : undefined;
     return NextResponse.json({ error: { code: e.code, message: tm(e.message), details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
@@ -100,8 +158,13 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permissio
         return NextResponse.json({ error: { code: "FORBIDDEN", message: translateMessage(requestLocale(req), "Cross-origin request rejected") } }, { status: 403 });
       }
       const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-      const actor = await actorFromToken(req.cookies.get(SESSION_COOKIE)?.value ?? bearer);
+      const token = req.cookies.get(SESSION_COOKIE)?.value ?? bearer;
+      const actor = await actorFromToken(token);
       if (!actor) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: translateMessage(requestLocale(req), "Sign in required") } }, { status: 401 });
+      // a personal API token only reads the Excel export: it cannot change data or mint its own successors
+      if (isApiToken(token) && (req.method !== "GET" || !API_TOKEN_ROUTES.has(req.nextUrl.pathname))) {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: translateMessage(requestLocale(req), "An API token can only be used for the Excel export") } }, { status: 403 });
+      }
       const query = req.nextUrl.searchParams;
       // Hotel comes from explicit query/header or the cookie; services re-check access (IDOR).
       // A cookie left over from another user or a hotel since lost / suspended is ignored, like currentHotelId().
@@ -118,18 +181,7 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permissio
         req,
         params,
         query,
-        body: async () => {
-          // the declared length can be absent or wrong (chunked uploads): measure what actually arrived
-          const len = Number(req.headers.get("content-length") ?? 0);
-          if (len > MAX_BODY) throw Object.assign(new Error("Payload too large"), { status: 413 });
-          const text = await req.text();
-          if (Buffer.byteLength(text) > MAX_BODY) throw Object.assign(new Error("Payload too large"), { status: 413 });
-          try {
-            return text ? JSON.parse(text) : {};
-          } catch {
-            throw new DomainError("VALIDATION", "Request body is not valid JSON");
-          }
-        },
+        body: () => readJson(req, MAX_BODY),
       });
       if (result instanceof NextResponse) return result;
       return NextResponse.json(toJson(result));

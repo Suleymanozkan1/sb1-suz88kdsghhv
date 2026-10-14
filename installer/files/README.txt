@@ -11,7 +11,9 @@ Data:      C:\ProgramData\HotelCost  (database, logs, backups, config.json - kee
 Start menu shortcuts
   HotelCost                 open the application
   HotelCost - Backup        consistent copy of the database into C:\ProgramData\HotelCost\backups
-  HotelCost - Demo data     loads 5 demo companies / 10 hotels for training (several minutes)
+  HotelCost - Demo data     loads 5 demo companies / 10 hotels for training (several minutes); the
+                            demo users' password is generated and shown once at the end (no platform
+                            administrator is created)
   HotelCost - Start / Stop  start or stop both services
 
 Upgrades: run the newer installer over the existing one. Your data is kept; new database

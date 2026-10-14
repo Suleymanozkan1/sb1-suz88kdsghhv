@@ -14,9 +14,9 @@
 import type { Config } from "./config";
 import { log } from "./logger";
 import { HotelCostClient } from "./hotelcost/client";
-import { runBot, type RunReport } from "./runner";
+import { makeRunId, runBot, type RunReport } from "./runner";
 import { StateStore } from "./state";
-import { defaultBusinessDay, localParts, parseHHMM, ymd } from "./util/time";
+import { defaultBusinessDay, isValidDay, localParts, parseHHMM, ymd } from "./util/time";
 import { describeError } from "./errors";
 import type { HotelSettings, RunRequest } from "./contract";
 
@@ -181,6 +181,13 @@ export class Daemon {
       // "Ürünleri çek": only the product cards added in Micros since the last pull
       log.info(`product pull request ${req.id} received (products added since ${req.since ?? "the start"})`);
       await this.exclusive(() => this.run(this.config, { requestId: req.id, source: "MICROS", only: ["products"], since: req.since ?? null }), `product pull ${req.id}`);
+      return req;
+    }
+    // the day becomes part of folder names: only a real YYYY-MM-DD from the server is used
+    if (req.businessDay && !isValidDay(req.businessDay)) {
+      const message = `run request ${req.id} refused: invalid business day ${JSON.stringify(req.businessDay).slice(0, 80)}`;
+      log.error(message);
+      await this.client.reportRun({ runId: makeRunId(req.source, "invalid"), source: req.source, status: "FAILED", message, requestId: req.id });
       return req;
     }
     log.info(`run request ${req.id} received (source ${req.source}, day ${req.businessDay ?? "default"})`);

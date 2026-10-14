@@ -50,9 +50,10 @@ export async function requestStockDelete(db: Db, actor: Actor, hotelId: string, 
   authorize(actor, "inventory:post", { hotelId });
   if (!input.reason || input.reason.trim().length < 5) throw new DomainError("VALIDATION", "Explain why this entry should be removed (min 5 chars)");
   return inTx(db, async (tx) => {
-    const stx = await tx.stockTransaction.findFirst({ where: { id: input.stockTxId, hotelId }, include: { reversedBy: true, product: true } });
+    const stx = await tx.stockTransaction.findFirst({ where: { id: input.stockTxId, hotelId }, include: { reversedBy: true, product: true, warehouse: { select: { departmentId: true } } } });
     if (!stx) throw new DomainError("NOT_FOUND", "Stock transaction not found");
-    if (stx.departmentId) requireDepartment(actor, stx.departmentId);
+    // an entry without a department is checked on its store (a shared store's: all-department roles only)
+    requireDepartment(actor, stx.departmentId ?? stx.warehouse.departmentId);
     if (stx.reversedBy) throw new DomainError("CONFLICT", "Already reversed");
     if (stx.type === "REVERSAL") throw new DomainError("VALIDATION", "Reversals cannot be deleted");
     // a transfer leg can never be reversed alone (reverseMovement refuses it), so the request could never be approved
@@ -109,8 +110,8 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
         if (!isCountApproval(a)) requirePermission(actor, "approval:decide");
         throw new DomainError("FORBIDDEN", "Your role may not approve the counts of this warehouse");
       }
-      const dept = (await approvalDepartments(tx, hotelId, [a])).get(a.entityId);
-      if (dept) requireDepartment(actor, dept);
+      // null = hotel-level (shared store): only all-department roles, as scopeApprovals lists it
+      requireDepartment(actor, (await approvalDepartments(tx, hotelId, [a])).get(a.entityId) ?? null);
       if (a.status !== "PENDING") throw new DomainError("CONFLICT", `Approval already ${a.status}`);
       if (a.requestedById === actor.userId) throw new DomainError("FORBIDDEN", "You cannot approve your own request");
       if (input.decision === "REJECT" && (!input.note || input.note.trim().length < 3)) throw new DomainError("VALIDATION", "A rejection note is required");

@@ -17,6 +17,10 @@ import { r3cMessages } from "./r3c";
 import { r3dMessages } from "./r3d";
 import { r3eMessages } from "./r3e";
 import { r3fMessages } from "./r3f";
+import { secaMessages } from "./seca";
+import { secbMessages } from "./secb";
+import { seccMessages } from "./secc";
+import { secdMessages } from "./secd";
 
 export const TR_MESSAGES: Record<string, string> = {
   ...r2cMessages,
@@ -30,6 +34,10 @@ export const TR_MESSAGES: Record<string, string> = {
   ...r3dMessages,
   ...r3eMessages,
   ...r3fMessages,
+  ...secaMessages,
+  ...secbMessages,
+  ...seccMessages,
+  ...secdMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "Approval already decided": "Bu onay talebi zaten karara bağlanmış",
@@ -56,7 +64,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Only the installation owner can manage demo data": "Demo veriyi yalnızca kurulumun sahibi yönetebilir",
   "Demo data can only be added to a single-company installation": "Demo veri yalnızca tek şirketli kuruluma eklenebilir",
   "Demo data is already being loaded": "Demo veri zaten yükleniyor",
-  "Demo data is already loaded - remove it first": "Demo veri zaten yüklü; önce silin",
+  "Demo data is already loaded: remove it first": "Demo veri zaten yüklü; önce silin",
   "Demo data is still being loaded": "Demo veri hâlâ yükleniyor",
   "Unexpected error": "Beklenmeyen bir hata oluştu",
   "Duplicate record": "Bu kayıt zaten var",
@@ -90,12 +98,12 @@ export const TR_MESSAGES: Record<string, string> = {
   "A reason (min 5 chars) is required": "Gerekçe zorunludur (en az 5 karakter)",
   "Tenant not found": "Kiracı bulunamadı",
   "Only demo tenants can be deleted; real tenants are suspended, never erased": "Yalnızca demo kiracılar silinebilir; gerçek kiracılar askıya alınır, hiçbir zaman silinmez",
-  "Demo tenants already exist - run the demo reset first": "Demo kiracılar zaten var - önce demo sıfırlamasını çalıştırın",
+  "Demo tenants already exist: run the demo reset first": "Demo kiracılar zaten var; önce demo sıfırlamasını çalıştırın",
   "Demo data is disabled in production (spec 124, 126). Set ALLOW_DEMO_DATA=1 only on a non-production server.": "Canlı ortamda demo verisi kapalıdır. ALLOW_DEMO_DATA=1 ayarını yalnızca canlı olmayan bir sunucuda kullanın.",
   "Unknown department for the selected hotels": "Seçilen otellerde bu departman yok",
   "You can only grant access to hotels you administer": "Yalnızca yönettiğiniz otellere erişim verebilirsiniz",
   "Unknown role": "Bilinmeyen rol",
-  "{0} works on selected departments - choose at least one": "{0} rolü seçili departmanlarda çalışır - en az bir departman seçin",
+  "{0} works on selected departments: choose at least one": "{0} rolü seçili departmanlarda çalışır; en az bir departman seçin",
   "This e-mail address cannot be used": "Bu e-posta adresi kullanılamaz",
   "User not found": "Kullanıcı bulunamadı",
   "This user also works in hotels you do not administer": "Bu kullanıcı yönetmediğiniz otellerde de çalışıyor",
@@ -110,7 +118,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Unknown department": "Bilinmeyen departman",
   "Warehouse {0} already exists": "{0} deposu zaten var",
   "Warehouse not found": "Depo bulunamadı",
-  "{0} still holds stock on {1} product(s) - transfer or count it out first": "{0} deposunda hâlâ {1} üründe stok var - önce transfer edin veya sayımla sıfırlayın",
+  "{0} still holds stock on {1} product(s): transfer or count it out first": "{0} deposunda hâlâ {1} üründe stok var; önce transfer edin veya sayımla sıfırlayın",
   "Unknown parent category": "Bilinmeyen üst kategori",
   "A sub-category must stay in its parent's group ({0})": "Alt kategori, üst kategorisinin grubunda kalmalıdır ({0})",
   "Category {0} already exists": "{0} kategorisi zaten var",
@@ -121,7 +129,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Switch to another hotel before suspending this one": "Bu oteli askıya almadan önce başka bir otele geçin",
   "You can only invite to hotels you administer": "Yalnızca yönettiğiniz otellere davet gönderebilirsiniz",
   "Invitation not found": "Davet bulunamadı",
-  "Already accepted - deactivate the user instead": "Davet zaten kabul edildi - bunun yerine kullanıcıyı pasif yapın",
+  "Already accepted: deactivate the user instead": "Davet zaten kabul edildi; bunun yerine kullanıcıyı pasif yapın",
   "This invitation is invalid or has expired": "Bu davet geçersiz veya süresi dolmuş",
   "The invited role no longer exists": "Davet edilen rol artık mevcut değil",
   "Use capitals, digits, - or _": "Büyük harf, rakam, - veya _ kullanın",
@@ -145,7 +153,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Unknown room {0}": "Bilinmeyen oda {0}",
   "Unknown minibar product '{0}'": "Bilinmeyen minibar ürünü '{0}'",
   "Unknown warehouse '{0}'": "Bilinmeyen depo '{0}'",
-  "{0}: unknown unit '{1}' — create the product card first": "{0}: bilinmeyen birim '{1}' — önce ürün kartını oluşturun",
+  "{0}: unknown unit '{1}'; create the product card first": "{0}: bilinmeyen birim '{1}'; önce ürün kartını oluşturun",
   "{0} error(s)": "{0} hata",
   "Use HH:MM": "SS:DD biçiminde girin",
   "Unknown currency code (use ISO 4217, e.g. TRY, EUR)": "Bilinmeyen para birimi kodu (ISO 4217 kullanın, ör. TRY, EUR)",
@@ -169,7 +177,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Duplicate destination": "Aynı hedef birden fazla kez seçilmiş",
   "Allocation has no destinations": "Dağıtımın hedefi yok",
   "Allocation drivers cannot be negative": "Dağıtım anahtarları negatif olamaz",
-  "Allocation driver total is zero — nothing to split by": "Dağıtım anahtarı toplamı sıfır — paylaştırılacak esas yok",
+  "Allocation driver total is zero: nothing to split by": "Dağıtım anahtarı toplamı sıfır; paylaştırılacak esas yok",
   "periodId is required": "periodId zorunludur",
 
   // ── approvals ──
@@ -223,11 +231,11 @@ export const TR_MESSAGES: Record<string, string> = {
 
   // ── exports ──
   "End date must be on or after the start date": "Bitiş tarihi başlangıç tarihiyle aynı veya sonra olmalıdır",
-  "You already have {0} exports in progress - wait for one to finish": "Devam eden {0} dışa aktarmanız var - birinin bitmesini bekleyin",
+  "You already have {0} exports in progress: wait for one to finish": "Devam eden {0} dışa aktarmanız var; birinin bitmesini bekleyin",
   "The requesting user is no longer active": "Talebi yapan kullanıcı artık aktif değil",
   "Export job not found": "Dışa aktarma işi bulunamadı",
-  "The file has expired - queue the export again": "Dosyanın süresi doldu - dışa aktarmayı yeniden sıraya alın",
-  "Interrupted (server restart or timeout) - queue the export again": "Yarıda kesildi (sunucu yeniden başladı veya zaman aşımı) - dışa aktarmayı yeniden sıraya alın",
+  "The file has expired: queue the export again": "Dosyanın süresi doldu; dışa aktarmayı yeniden sıraya alın",
+  "Interrupted (server restart or timeout): queue the export again": "Yarıda kesildi (sunucu yeniden başladı veya zaman aşımı); dışa aktarmayı yeniden sıraya alın",
   "Unknown export '{0}'. Available: {1}, full-cost, workbook": "Bilinmeyen dışa aktarma '{0}'. Kullanılabilenler: {1}, full-cost, workbook",
   "Unknown table '{0}' in '{1}'. Available: {2}": "'{1}' içinde bilinmeyen tablo '{0}'. Kullanılabilenler: {2}",
 
@@ -239,7 +247,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "{0} invalid row(s); fix the file and preview again": "{0} geçersiz satır var; dosyayı düzeltip yeniden önizleyin",
   "Unknown import {0}": "Bilinmeyen içe aktarma: {0}",
   "This file was already imported on {0} (import {1})": "Bu dosya {0} tarihinde zaten içe aktarıldı (içe aktarma {1})",
-  "This import has {0} line(s) outside your departments - ask a cost controller to roll it back": "Bu içe aktarmada departmanlarınız dışında {0} satır var - geri alınması için maliyet kontrolöründen destek isteyin",
+  "This import has {0} line(s) outside your departments: ask a cost controller to roll it back": "Bu içe aktarmada departmanlarınız dışında {0} satır var; geri alınması için maliyet kontrolöründen destek isteyin",
   // import preview row errors
   "sku is required": "sku zorunludur",
   "name is required": "name zorunludur",
@@ -254,7 +262,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "{0}: unknown unit \"{1}\"": "{0}: bilinmeyen birim \"{1}\"",
   "purchase_unit \"{0}\" needs case_size (stock units per purchase unit)": "purchase_unit \"{0}\" için case_size gerekir (bir satın alma birimindeki stok birimi sayısı)",
   "yield_pct must be in (0, 100]": "yield_pct (0, 100] aralığında olmalıdır",
-  "SKU {0} already exists — the product master is never overwritten by an import": "SKU {0} zaten var — ürün kartı içe aktarmayla hiçbir zaman üzerine yazılmaz",
+  "SKU {0} already exists; the product master is never overwritten by an import": "SKU {0} zaten var; ürün kartı içe aktarmayla hiçbir zaman üzerine yazılmaz",
   "price_date must be YYYY-MM-DD": "price_date YYYY-AA-GG biçiminde olmalıdır",
   "price must be a positive number": "price pozitif bir sayı olmalıdır",
   "source must be IMPORT, CONTRACT or QUOTE": "source IMPORT, CONTRACT veya QUOTE olmalıdır",
@@ -532,7 +540,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "{0} % of OTA revenue moves to direct": "OTA gelirinin %{0} kadarı doğrudan satışa kayar",
   // forecast / what-if (planning.ts, domain/planning.ts)
   "Input: {0}% of {1} available room nights": "Girdi: {1} satılabilir oda gecesinin %{0} kadarı",
-  "Actual to date ({0}) + on the books ({1} room nights) — no pickup assumed": "Bugüne kadar gerçekleşen ({0}) + kesin rezervasyon ({1} oda gecesi) — ek rezervasyon varsayılmadı",
+  "Actual to date ({0}) + on the books ({1} room nights); no pickup assumed": "Bugüne kadar gerçekleşen ({0}) + kesin rezervasyon ({1} oda gecesi); ek rezervasyon varsayılmadı",
   "Historical occupancy {0}% (last {1} months)": "Geçmiş doluluk %{0} (son {1} ay)",
   "Volume {0}%, prices +{1}%": "Hacim %{0}, fiyatlar +%{1}",
   "Volume {0}%, prices {1}%": "Hacim %{0}, fiyatlar %{1}",

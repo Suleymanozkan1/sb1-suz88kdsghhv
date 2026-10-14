@@ -115,7 +115,7 @@ export async function deleteCount(db: Db, actor: Actor, hotelId: string, countId
     const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { warehouse: true } });
     if (!c) throw new DomainError("NOT_FOUND", "Count not found");
     requireWarehouseScope(actor, c.warehouse);
-    if (c.status === "POSTED" || c.status === "APPROVED") throw new DomainError("IMMUTABLE", "A posted count cannot be deleted - correct it with a new count");
+    if (c.status === "POSTED" || c.status === "APPROVED") throw new DomainError("IMMUTABLE", "A posted count cannot be deleted; correct it with a new count");
     const cancelled = await tx.approval.updateMany({ where: { hotelId, entityType: "StockCount", entityId: c.id, status: "PENDING" }, data: { status: "CANCELLED", decidedById: actor.userId, decidedAt: new Date(), decisionNote: "Count deleted" } });
     const r = await tx.stockCount.update({ where: { id: c.id }, data: { deletedAt: new Date(), deletedById: actor.userId } });
     await audit(tx, actor, { hotelId, action: "COUNT_DELETE", entityType: "StockCount", entityId: c.id, before: { number: c.number, status: c.status }, after: { deletedAt: r.deletedAt, cancelledApprovals: cancelled.count } });

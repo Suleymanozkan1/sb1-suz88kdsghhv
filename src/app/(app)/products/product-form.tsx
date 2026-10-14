@@ -45,7 +45,7 @@ export function ProductForm({ categories, suppliers }: { categories: { id: strin
       <div><Label htmlFor="pf-ru">{t("Recipe unit")}</Label><Select id="pf-ru" name="recipeUnit" defaultValue="g">{UNITS.slice(0, 5).map((u) => <option key={u}>{u}</option>)}</Select></div>
       <div><Label htmlFor="pf-sup">{t("Default supplier")}</Label><Select id="pf-sup" name="defaultSupplierId"><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
       <div><Label htmlFor="pf-tax">{t("VAT %")}</Label><Input id="pf-tax" name="taxRatePct" inputMode="decimal" placeholder="0" /></div>
-      <div><Label htmlFor="pf-sku" hint={t("optional — generated when empty")}>{t("Stock code")}</Label><Input id="pf-sku" name="sku" /></div>
+      <div><Label htmlFor="pf-sku" hint={t("optional, generated when empty")}>{t("Stock code")}</Label><Input id="pf-sku" name="sku" /></div>
       <div className="flex items-end"><Button type="submit" disabled={busy}>{t("Create product")}</Button></div>
     </form>
   );

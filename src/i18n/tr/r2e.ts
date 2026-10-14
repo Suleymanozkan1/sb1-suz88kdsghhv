@@ -43,7 +43,7 @@ export const r2e: Record<string, string> = {
   "Room supplies estimate: e.g. water at least 2 bottles per guest per night = {n} bottles this month, plus paper products and detergent.": "Oda gideri tahmini: ör. su, kişi başı gecede en az 2 şişe = bu ay {n} şişe; buna kâğıt ürünleri ve deterjan eklenir.",
   "Do not enter amounts that are already posted as expenses or payroll for the rooms division: they would be counted twice.": "Oda bölümü için zaten gider veya bordro olarak işlenmiş tutarları girmeyin: iki kez sayılır.",
   "Room cost for {month}": "{month} oda maliyeti",
-  "Saved — room cost uses the new amounts": "Kaydedildi — oda maliyeti yeni tutarları kullanıyor",
+  "Saved. Room cost uses the new amounts": "Kaydedildi. Oda maliyeti yeni tutarları kullanıyor",
   "Item": "Kalem",
   "Item {n} name": "{n}. kalem adı",
   "Item {n} amount": "{n}. kalem tutarı",

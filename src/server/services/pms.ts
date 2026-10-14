@@ -10,6 +10,7 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { finishBatch, openBatch, type BatchMeta } from "./imports";
+import { assertPeriodsWritable } from "./period";
 
 export const CHANNELS = ["DIRECT", "OTA", "AGENCY", "CORPORATE", "TOUR_OPERATOR"] as const;
 export const STAY_STATUSES = ["CONFIRMED", "IN_HOUSE", "CHECKED_OUT", "CANCELLED", "NO_SHOW"] as const;
@@ -102,6 +103,11 @@ export async function commitOccupancy(db: Db, actor: Actor, hotelId: string, fil
   return inTx(db, async (tx) => {
     const batch = await openBatch(tx, actor, hotelId, "OCCUPANCY", fileName, rows, meta);
     const valid = p.rows.filter((r) => r.status === "VALID").map((r) => ({ ...r.data!, sourceRow: r.row }));
+    // statistics of a closed cost period are frozen (they feed its room, housekeeping and P&L figures)
+    if (valid.length) {
+      const days = valid.map((d) => ({ from: d.businessDate, to: new Date(d.businessDate.getTime() + 86_400_000) }));
+      await assertPeriodsWritable(tx, actor, hotelId, ...span(days), days);
+    }
     await tx.occupancyImport.createMany({ data: valid.map((d) => ({ sourceRow: d.sourceRow, hotelId, businessDate: d.businessDate, availableRooms: d.availableRooms, occupiedRooms: d.occupiedRooms, outOfOrder: d.outOfOrder, outOfService: d.outOfService, guests: d.guests, roomRevenue: toStorage(D(d.roomRevenue)).toString(), source: "PMS_IMPORT", importId: batch.id })) });
     const b = await finishBatch(tx, batch.id, valid.length, p.counts);
     await audit(tx, actor, { hotelId, action: "IMPORT_POST", entityType: "ImportBatch", entityId: b.id, after: { kind: "OCCUPANCY", fileName, posted: valid.length, skippedDuplicates: p.counts.duplicate } });
@@ -138,6 +144,11 @@ export async function commitReservations(db: Db, actor: Actor, hotelId: string, 
   return inTx(db, async (tx) => {
     const batch = await openBatch(tx, actor, hotelId, "RESERVATIONS", fileName, rows, meta);
     const valid = p.rows.filter((r) => r.status === "VALID").map((r) => ({ ...r.data!, sourceRow: r.row }));
+    if (valid.length) {
+      // a stay counts in every period its nights fall into
+      const stays = valid.map((d) => ({ from: d.arrival, to: new Date(Math.max(d.departure.getTime(), d.arrival.getTime() + 86_400_000)) }));
+      await assertPeriodsWritable(tx, actor, hotelId, ...span(stays), stays);
+    }
     await tx.reservation.createMany({
       data: valid.map((d) => ({ sourceRow: d.sourceRow,
         hotelId, externalId: d.externalId, roomId: d.roomId, roomType: d.roomType, arrival: d.arrival, departure: d.departure, nights: d.nights, guests: d.guests, channel: d.channel,
@@ -150,6 +161,8 @@ export async function commitReservations(db: Db, actor: Actor, hotelId: string, 
     return { batch: b, posted: valid.length, duplicates: p.counts.duplicate };
   }, { timeout: 120_000 });
 }
+
+const span = (rs: Array<{ from: Date; to: Date }>): [Date, Date] => [new Date(rs.reduce((m, r) => Math.min(m, r.from.getTime()), Infinity)), new Date(rs.reduce((m, r) => Math.max(m, r.to.getTime()), -Infinity))];
 
 function counts(rows: { status: string }[]) {
   return { total: rows.length, valid: rows.filter((r) => r.status === "VALID").length, invalid: rows.filter((r) => r.status === "INVALID").length, duplicate: rows.filter((r) => r.status === "DUPLICATE").length, warning: 0 };

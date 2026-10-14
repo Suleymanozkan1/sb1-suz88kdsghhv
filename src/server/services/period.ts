@@ -31,15 +31,46 @@ export async function periodFor(db: Db, hotelId: string, date: Date): Promise<Co
 
 const POSTABLE: PeriodStatus[] = ["OPEN", "REOPENED"];
 
-/** Guard used by every posting path. */
+/**
+ * Guard used by every posting path. The covering period and every later one are row-locked (FOR SHARE) for the rest
+ * of the caller's transaction: a close (FOR UPDATE in setPeriodStatus) waits for postings that already passed this
+ * check, and later postings see its new status.
+ */
 export async function assertPostable(db: Db, actor: Actor, hotelId: string, date: Date): Promise<CostPeriod> {
   if (Number.isNaN(date.getTime())) throw new DomainError("VALIDATION", "Invalid transaction date");
   const maxFuture = Date.now() + 24 * 3600 * 1000;
   if (date.getTime() > maxFuture) throw new DomainError("VALIDATION", "Transactions cannot be dated in the future");
-  const period = await periodFor(db, hotelId, date);
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const rows = await db.$queryRaw<Array<{ id: string; code: string; status: PeriodStatus; startDate: Date }>>`
+    SELECT "id", "code", "status", "startDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND "endDate" >= ${day} ORDER BY "startDate" FOR SHARE`;
+  const covering = rows.find((r) => r.startDate <= day);
+  // a later closed month starts from the ledger up to its first day: only an explicit reopen may change an earlier
+  // month, and a missing month is never created OPEN behind a closed one
+  if (covering?.status !== "REOPENED") {
+    const blocking: PeriodStatus[] = can(actor, "period:manage") ? ["CLOSED"] : ["CLOSED", "SOFT_CLOSED"];
+    const later = rows.find((r) => r !== covering && blocking.includes(r.status));
+    if (later) throw new DomainError("PERIOD_CLOSED", `Postings dated before the closed period ${later.code} are not allowed`, { periodId: later.id, status: later.status });
+  }
+  const period = covering ? await db.costPeriod.findUniqueOrThrow({ where: { id: covering.id } }) : await periodFor(db, hotelId, date);
   if (POSTABLE.includes(period.status)) return period;
   if (period.status === "SOFT_CLOSED" && can(actor, "period:manage")) return period;
   throw new DomainError("PERIOD_CLOSED", `Cost period ${period.code} is ${period.status}; posting is not allowed`, { periodId: period.id, status: period.status });
+}
+
+/**
+ * Guard for period-dated inputs outside the ledgers (PMS statistics, monthly room costs, meter readings, laundry
+ * volumes, buffet sessions): every existing period overlapping [from, to) — or, when given, one of `ranges` inside
+ * it — must accept changes from this actor. Unlike assertPostable it creates no period and has no future-date rule.
+ */
+export async function assertPeriodsWritable(db: Db, actor: Actor, hotelId: string, from: Date, to: Date, ranges?: Array<{ from: Date; to: Date }>): Promise<void> {
+  const rows = await db.$queryRaw<Array<{ id: string; code: string; status: PeriodStatus; startDate: Date; endDate: Date }>>`
+    SELECT "id", "code", "status", "startDate", "endDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND "startDate" < ${to} AND "endDate" > ${new Date(from.getTime() - 86_400_000)} ORDER BY "startDate" FOR SHARE`;
+  for (const p of rows) {
+    if (POSTABLE.includes(p.status) || (p.status === "SOFT_CLOSED" && can(actor, "period:manage"))) continue;
+    const end = p.endDate.getTime() + 86_400_000;
+    if (ranges && !ranges.some((r) => r.from.getTime() < end && r.to.getTime() > p.startDate.getTime())) continue;
+    throw new DomainError("PERIOD_CLOSED", `Cost period ${p.code} is ${p.status}; changes are not allowed`, { periodId: p.id, status: p.status });
+  }
 }
 
 export interface CloseCheck {
@@ -85,7 +116,7 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
     { key: "waste", label: "All waste entered and approved", ok: pendingWaste === 0, critical: false, detail: `${pendingWaste} pending waste records` },
     { key: "receipts", label: "All purchases received (due POs)", ok: openPOs === 0, critical: false, detail: `${openPOs} open POs due` },
     { key: "invoices", label: "All major invoices captured on receipts", ok: noInvoice === 0, critical: false, detail: `${noInvoice} receipts without invoice no.` },
-    { key: "transfers", label: "All stock transfers posted", ok: true, critical: false, detail: "Transfers post both legs atomically — nothing can be in transit" },
+    { key: "transfers", label: "All stock transfers posted", ok: true, critical: false, detail: "Transfers post both legs atomically; nothing can be in transit" },
     { key: "production", label: "All production records posted", ok: production === 0, critical: false, detail: `${production} unposted batches` },
   ];
   if (outletSales > 0) checks.push({ key: "sales", label: "All sales imported (days with POS data)", ok: sd >= days, critical: false, detail: `${sd} of ${days} days` });
@@ -112,6 +143,8 @@ export async function setPeriodStatus(
 ): Promise<CostPeriod> {
   authorize(actor, "period:manage", { hotelId: input.hotelId });
   return inTx(db, async (tx) => {
+    // waits for postings that already checked this period (assertPostable holds it FOR SHARE) and holds back new ones
+    await tx.$queryRaw`SELECT "id" FROM "CostPeriod" WHERE "id" = ${input.periodId} AND "hotelId" = ${input.hotelId} FOR UPDATE`;
     const period = await tx.costPeriod.findFirst({ where: { id: input.periodId, hotelId: input.hotelId } });
     if (!period) throw new DomainError("NOT_FOUND", "Period not found");
     if (period.status === "CLOSED" && input.status !== "CLOSED") {
@@ -152,6 +185,7 @@ export async function reopenPeriod(db: Db, actor: Actor, input: { hotelId: strin
   authorize(actor, "period:reopen", { hotelId: input.hotelId });
   if (!input.reason || input.reason.trim().length < 5) throw new DomainError("VALIDATION", "A reason (min 5 chars) is required to reopen a period");
   return inTx(db, async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "CostPeriod" WHERE "id" = ${input.periodId} AND "hotelId" = ${input.hotelId} FOR UPDATE`;
     const period = await tx.costPeriod.findFirst({ where: { id: input.periodId, hotelId: input.hotelId } });
     if (!period) throw new DomainError("NOT_FOUND", "Period not found");
     if (period.status !== "CLOSED" && period.status !== "SOFT_CLOSED") throw new DomainError("VALIDATION", `Period is ${period.status}, not closed`);

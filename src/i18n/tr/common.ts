@@ -1,7 +1,7 @@
 /** Shared words, navigation and shell. */
 export const common: Record<string, string> = {
   "Dashboard": "Gösterge paneli",
-  "Theoretical vs Actual": "Teorik - Gerçekleşen",
+  "Theoretical vs Actual": "Teorik ve Gerçekleşen",
   "Inventory": "Stok",
   "Stock Ledger": "Stok hareketleri",
   "Stock Counts": "Stok sayımları",

@@ -244,7 +244,7 @@ export async function runDemoStep(db: PrismaClient, profile: DemoProfile, step: 
   const n = demoNames(opts.locale ?? "en");
   const { start, end, days } = runWindow(profile, opts.now ?? new Date());
   if (step.kind === "orgs") {
-    if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.flatMap((o) => [o.name, demoNames("tr").org(o.name)]) } } })) throw new Error("Demo tenants already exist - run the demo reset first");
+    if (await db.organization.findFirst({ where: { isDemo: true, name: { in: profile.orgs.flatMap((o) => [o.name, demoNames("tr").org(o.name)]) } } })) throw new Error("Demo tenants already exist: run the demo reset first");
     log(`profile ${profile.name}: ${days.length} days ${ymd(start)} → ${ymd(end)}`);
     const hash = await hashOf(opts);
     // never on a public installation: its password would be the documented demo password
@@ -334,14 +334,14 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
   const dept = async (codes: string[], hotelId = first) => (await db.department.findMany({ where: { hotelId, code: { in: codes } }, select: { id: true } })).map((d) => d.id);
   const defs: Array<[string, string, string, string[], string[]]> = [
     ["controller", "Cost Controller", "cost_controller", hotelIds, []],
-    ["fbm", "F&B Manager", "fb_manager", [first], await dept(["FB", "REST", "CAFE", "BAR", "BRKF", "KITCH", "PAST", "BANQ"])],
+    ["fbm", "F&B Manager", "fb_manager", [first], await dept(["FB", "REST", "CAFE", "BAR", "BRKF", "KITCH", "PAST", "BANQ", "MINI"])],
     ["chef", "Executive Chef", "chef", [first], await dept(["KITCH", "REST", "BANQ"])],
     ["breakfast", "Breakfast Chef", "breakfast_chef", [first], await dept(["BRKF", "KITCH"])],
     ["pastry", "Pastry Chef", "pastry_chef", [first], await dept(["PAST"])],
     ["purchasing", "Purchasing Manager", "purchasing_manager", hotelIds, []],
     ["accounting", "Accounting Manager", "accounting_manager", hotelIds, []],
     ["warehouse", "Storekeeper", "warehouse", [first], []],
-    ["rooms", "Rooms Division Manager", "rooms_division", [first], await dept(["ROOMS", "HK", "LAUN", "FO"])],
+    ["rooms", "Rooms Division Manager", "rooms_division", [first], await dept(["ROOMS", "HK", "LAUN", "FO", "MINI"])],
     ["viewer", "Viewer", "viewer", [first], []],
   ];
   let n = 0;
@@ -1318,8 +1318,8 @@ async function roomCostItemsPhase(ctx: Ctx, pms: Pms) {
 
 async function operatingCosts(ctx: Ctx, pms: Pms) {
   const { db, rnd, hotelId: H, n: N } = ctx;
-  // "Payroll ROOMS 2026-10" in English; "Maaş - Odalar 2026-10" in Turkish
-  const forDept = (what: string, code: string | null, m: string) => (N.locale === "tr" ? `${N.t(what)} - ${code ? N.dept(code, code) : "Otel geneli"} ${m}` : `${what} ${code} ${m}`);
+  // "Payroll ROOMS 2026-10" in English; "Maaş (Odalar) 2026-10" in Turkish
+  const forDept = (what: string, code: string | null, m: string) => (N.locale === "tr" ? `${N.t(what)} (${code ? N.dept(code, code) : "Otel geneli"}) ${m}` : `${what} ${code} ${m}`);
   const cc = new Map((await db.costCenter.findMany({ where: { hotelId: H } })).map((c) => [c.departmentId, c.id]));
   const emps = await db.employee.groupBy({ by: ["departmentId"], where: { hotelId: H }, _sum: { monthlyCost: true }, _count: true });
   const expenses: Prisma.ExpenseCreateManyInput[] = [];

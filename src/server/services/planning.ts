@@ -17,7 +17,7 @@ import { departmentRevenue } from "./revenue";
 import { occupancyStats, OCCUPYING } from "./pms";
 import { theoreticalVsActual } from "./variance";
 import { periodReport as buffetPeriodReport } from "./buffet";
-import { minibarReport } from "./minibar";
+import { canSeeMinibar, minibarReport } from "./minibar";
 import { roomCostReport, laborReport, energyReport } from "./operations";
 import { buildResolver } from "./recipes";
 import { decimalText } from "@/lib/format";
@@ -261,7 +261,7 @@ export async function metricActuals(db: Db, actor: Actor, hotelId: string, from:
     const b = await buffetPeriodReport(db, actor, hotelId, { from, to, departmentId: null });
     set("BUFFET_COST_PER_COVER", b.totals.costPerCover);
   }
-  if (can(actor, "minibar:view")) {
+  if (can(actor, "minibar:view") && (await canSeeMinibar(db, actor, hotelId))) {
     const m = await minibarReport(db, actor, hotelId, r);
     set("MINIBAR_SHRINKAGE_PCT", m.totals.consumedCost.gt(0) ? m.totals.shrinkageCost.div(m.totals.consumedCost) : null);
   }
@@ -338,7 +338,7 @@ export async function forecastReport(db: Db, actor: Actor, hotelId: string, q: F
     occupancyBasis = `Input: ${(q.occupancyPct * 100).toFixed(1)}% of ${available} available room nights`;
   } else if (volToDate.occupied + otbNights > 0) {
     expectedOccupied = volToDate.occupied + otbNights;
-    occupancyBasis = `Actual to date (${volToDate.occupied}) + on the books (${otbNights} room nights) — no pickup assumed`;
+    occupancyBasis = `Actual to date (${volToDate.occupied}) + on the books (${otbNights} room nights); no pickup assumed`;
   } else if (histOccRate !== null) {
     expectedOccupied = Math.trunc(available * histOccRate + 0.5);
     occupancyBasis = `Historical occupancy ${(histOccRate * 100).toFixed(1)}% (last ${history.length} months)`;

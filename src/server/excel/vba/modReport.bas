@@ -87,7 +87,7 @@ Public Function WriteSection(ByVal key As String, ByVal sec As Object) As Long
 
     Set statusCell = lo.HeaderRowRange.Cells(1, 1).Offset(-2, 0)
     note = CStr(sec("note"))
-    statusCell.Value = L("Data status") & ": " & sec("status") & IIf(Len(note) > 0, " - " & note, "") & "  |  " & L("rows") & ": " & nRows
+    statusCell.Value = L("Data status") & ": " & sec("status") & IIf(Len(note) > 0, "; " & note, "") & "  |  " & L("rows") & ": " & nRows
     If sec("status") = L("NOT_AVAILABLE") Then statusCell.Font.Color = RGB(180, 83, 9) Else statusCell.Font.Color = RGB(80, 92, 120)
     WriteSection = nRows
 End Function

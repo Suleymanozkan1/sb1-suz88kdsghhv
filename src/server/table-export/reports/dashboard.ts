@@ -36,11 +36,11 @@ export const dashboard: ReportDef = {
         ...(d.stock ? [{ label: t("Stock value"), money: d.stock.value }, { label: t("Critical stock"), int: d.stock.counts.CRITICAL + d.stock.counts.OUT_OF_STOCK }] : []),
         ...(d.purchases ? [{ label: t("Purchases"), money: d.purchases.spend }, { label: t("Goods receipts"), int: d.purchases.receipts }] : []),
       ];
-      if (kpis.length) tables.push(metricTable(t, kpis, { title: t("Overview - {hotel}", { hotel: hotel.name }) }));
+      if (kpis.length) tables.push(metricTable(t, kpis, { title: t("Overview: {hotel}", { hotel: hotel.name }) }));
       if (d.stock) tables.push({ title: t("Critical stock"), columns: criticalCols, rows: d.stock.critical.map((c) => ({ name: c.name, quantity: c.quantity, unit: c.unit, level: levelLabel(c.level) })) });
       if (d.prices) tables.push(priceTable(d.prices));
       if (d.alerts.length) tables.push({ title: t("Open alerts"), columns: alertCols, rows: d.alerts.map(alertRow) });
-      return { title: t("Overview - {hotel}", { hotel: hotel.name }), subtitle: t("Your role's view: stock, purchasing and alerts you are allowed to see."), fileName: "genel-bakis", filters, tables };
+      return { title: t("Overview: {hotel}", { hotel: hotel.name }), subtitle: t("Your role's view: stock, purchasing and alerts you are allowed to see."), fileName: "genel-bakis", filters, tables };
     }
 
     const d = res.data;
@@ -50,7 +50,7 @@ export const dashboard: ReportDef = {
       ...(d.quality.confidence !== "ACTUAL" ? [t("{unmapped} unmapped sale lines, {pending} pending waste records.", { unmapped: d.dataQuality.unmappedSaleLines, pending: d.dataQuality.pendingWasteRecords })] : []),
     ].join(" · ");
     return {
-      title: t("Cost intelligence — {hotel}", { hotel: hotel.name }),
+      title: t("Cost intelligence: {hotel}", { hotel: hotel.name }),
       subtitle,
       fileName: "maliyet-panosu",
       filters,

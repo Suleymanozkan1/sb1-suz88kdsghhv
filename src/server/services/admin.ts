@@ -87,7 +87,7 @@ export async function createUser(db: Db, actor: Actor, hotelId: string, input: u
   if (hotels.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only grant access to hotels you administer");
   const role = await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: p.roleKey } } });
   if (!role) throw new DomainError("VALIDATION", "Unknown role");
-  if (!role.allDepartments && p.departmentIds.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
+  if (!role.allDepartments && p.departmentIds.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments: choose at least one`);
   // generic message: does not reveal whether the address is used by another organization
   if (await db.user.findUnique({ where: { email: p.email } })) throw new DomainError("DUPLICATE", "This e-mail address cannot be used");
   const hash = await bcrypt.hash(p.password, 10);
@@ -145,7 +145,7 @@ export async function updateUser(db: Db, actor: Actor, hotelId: string, input: u
   const depts = p.departmentIds
     ? [...new Set([...u.deptAccess.filter((d) => d.department.hotelId !== hotelId && hotelsAfter.includes(d.department.hotelId)).map((d) => d.departmentId), ...p.departmentIds])]
     : u.deptAccess.filter((d) => hotelsAfter.includes(d.department.hotelId)).map((d) => d.departmentId);
-  if (!role.allDepartments && depts.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
+  if (!role.allDepartments && depts.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments: choose at least one`);
   const hash = p.password ? await bcrypt.hash(p.password, 10) : undefined;
   return inTx(db, async (tx) => {
     if (newHotels) {
@@ -261,7 +261,7 @@ export async function setWarehouseActive(db: Db, actor: Actor, hotelId: string, 
   if (!w) throw new DomainError("NOT_FOUND", "Warehouse not found");
   if (!active) {
     const stock = await db.stockBalance.count({ where: { warehouseId: id, NOT: { quantity: 0 } } });
-    if (stock) throw new DomainError("CONFLICT", `${w.name} still holds stock on ${stock} product(s) - transfer or count it out first`);
+    if (stock) throw new DomainError("CONFLICT", `${w.name} still holds stock on ${stock} product(s): transfer or count it out first`);
   }
   return inTx(db, async (tx) => {
     const r = await tx.warehouse.update({ where: { id }, data: { active } });

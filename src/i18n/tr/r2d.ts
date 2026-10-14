@@ -11,10 +11,10 @@ export const r2d: Record<string, string> = {
   // §6 plans / trial
   "Full package (trial)": "Tam paket (deneme)",
   "Premium · open (trial)": "Premium · açık (deneme)",
-  "Trial — every feature is open: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.":
-    "Deneme süreci — tüm özellikler açık: e-posta ile sipariş açık, ancak e-posta sunucusu ayarlanmamış (SMTP_URL). Siparişler henüz gönderilemez.",
-  "Trial — every feature is open: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).":
-    "Deneme süreci — tüm özellikler açık: aktif bir kuralın stoğu yeniden sipariş noktasına düştüğünde sipariş, aşağıdaki şablonla tedarikçiye e-postayla gönderilir (her gece ve “Şimdi kontrol et” ile kontrol edilir).",
+  "Trial: every feature is open. E-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.":
+    "Deneme süreci: tüm özellikler açık. E-posta ile sipariş açık, ancak e-posta sunucusu ayarlanmamış (SMTP_URL). Siparişler henüz gönderilemez.",
+  "Trial: every feature is open. When the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).":
+    "Deneme süreci: tüm özellikler açık. Aktif bir kuralın stoğu yeniden sipariş noktasına düştüğünde sipariş, aşağıdaki şablonla tedarikçiye e-postayla gönderilir (her gece ve “Şimdi kontrol et” ile kontrol edilir).",
   // §6 suppliers
   "Company name, address, e-mail and phone: automatic orders are e-mailed to this address.": "Firma adı, adres, e-posta ve telefon: otomatik siparişler bu adrese e-postayla gönderilir.",
   // §6 order e-mail template

@@ -19,7 +19,16 @@ const DEMO_FAILED = "DEMO_LOAD_FAILED";
 
 export function setupSecretKind(): "token" | "db-password" | "none" {
   if (process.env.SETUP_TOKEN) return "token";
-  return dbPassword() ? "db-password" : "none";
+  return setupDbPassword() ? "db-password" : "none";
+}
+
+/** Passwords committed in docker-compose.yml / .env.example or common defaults: anyone knows them, so they prove nothing. */
+const KNOWN_DB_PASSWORDS = new Set(["hotelcost", "postgres", "password", "admin", "root", "secret", "changeme"]);
+
+/** The database password as a setup code: only when it is not a known default and long enough to be generated. */
+function setupDbPassword(): string {
+  const p = dbPassword();
+  return p.length >= 12 && !KNOWN_DB_PASSWORDS.has(p.toLowerCase()) ? p : "";
 }
 
 function dbPassword(): string {
@@ -34,7 +43,7 @@ function dbPassword(): string {
 }
 
 export function checkSetupSecret(given: string): boolean {
-  const expected = process.env.SETUP_TOKEN || dbPassword();
+  const expected = process.env.SETUP_TOKEN || setupDbPassword();
   if (!expected || !given) return false;
   const a = Buffer.from(given.trim());
   const b = Buffer.from(expected);
@@ -123,7 +132,7 @@ export async function demoStatus(db: PrismaClient): Promise<DemoState> {
 export async function startDemoLoad(db: PrismaClient, actor: Actor, locale: "tr" | "en") {
   const s = await demoStatus(db);
   if (s.state === "running") throw new DomainError("CONFLICT", "Demo data is already being loaded");
-  if (s.companies) throw new DomainError("CONFLICT", "Demo data is already loaded - remove it first");
+  if (s.companies) throw new DomainError("CONFLICT", "Demo data is already loaded: remove it first");
   const meta: RunMeta = { now: new Date().toISOString(), locale };
   await db.auditLog.create({ data: { userId: actor.userId, organizationId: actor.organizationId, action: DEMO_STARTED, entityType: "Organization", entityId: actor.organizationId, source: "SETUP", after: meta } });
 }

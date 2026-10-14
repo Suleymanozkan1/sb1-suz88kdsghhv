@@ -31,10 +31,24 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
   }
 
   async function toggle(x: Tenant) {
-    const reason = window.prompt(t(x.active ? "Suspend {name} - reason (audited in the tenant's trail):" : "Reactivate {name} - reason (audited in the tenant's trail):", { name: x.name }));
+    const reason = window.prompt(t(x.active ? "Suspend {name}. Reason (audited in the tenant's trail):" : "Reactivate {name}. Reason (audited in the tenant's trail):", { name: x.name }));
     if (!reason) return;
     try { await call("PATCH", `/api/platform/tenants/${x.id}`, { active: !x.active, reason }); router.refresh(); }
     catch (err) { setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") }); }
+  }
+
+  async function release(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setMsg(null); setLink(null);
+    try {
+      await call("POST", "/api/platform/email-release", { email: String(f.get("email") ?? ""), reason: String(f.get("reason") ?? "") });
+      setMsg({ tone: "green", text: t("The e-mail address is free: its user was deactivated and renamed.") });
+      (e.target as HTMLFormElement).reset();
+      router.refresh();
+    } catch (err) {
+      setMsg({ tone: "red", text: err instanceof Error ? err.message : t("Failed") });
+    }
   }
 
   async function setPlan(x: Tenant, plan: string) {
@@ -79,6 +93,14 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
             ))}
           </tbody>
         </Table>
+      </Card>
+      <Card title={t("Release a login e-mail")}>
+        <p className="mb-3 text-sm text-ink-600">{t("A login e-mail belongs to one user across all companies. If a company took an address that another company needs, release it here: that user is deactivated and renamed (audited in the company's trail).")}</p>
+        <form onSubmit={release} className="grid gap-3 md:grid-cols-4">
+          <div><Label htmlFor="r-mail">{t("E-mail")}</Label><Input id="r-mail" name="email" type="email" required /></div>
+          <div className="md:col-span-2"><Label htmlFor="r-reason">{t("Reason")}</Label><Input id="r-reason" name="reason" required minLength={5} /></div>
+          <div className="flex items-end"><Button type="submit" variant="danger">{t("Release")}</Button></div>
+        </form>
       </Card>
     </div>
   );

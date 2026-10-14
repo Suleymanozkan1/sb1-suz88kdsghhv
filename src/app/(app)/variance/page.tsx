@@ -93,7 +93,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
             ))}
           </ul>
           {r.dataQuality.unmappedSaleLines > 0 && (
-            <div className="mt-3"><Alert tone="amber">{tr("{n} sale lines ({revenue} revenue) have no recipe mapping — theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, cur, 0) })}</Alert></div>
+            <div className="mt-3"><Alert tone="amber">{tr("{n} sale lines ({revenue} revenue) have no recipe mapping, so theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, cur, 0) })}</Alert></div>
           )}
         </Card>
       </div>

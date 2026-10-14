@@ -194,7 +194,7 @@ function title(ws: ExcelJS.Worksheet, text: string, sub: string, lg: Lang) {
 function writeTable(ws: ExcelJS.Worksheet, sec: Section, startCol: number, headerRow: number, currency: string, locations: BuiltWorkbook["tableLocations"], bulk?: BulkTable[], lg: Lang = xlLang("en")) {
   const status = ws.getCell(headerRow - 2, startCol);
   // sections arrive localized (title, note, headers, values); the status is a code until here
-  status.value = lg.t("Data status: {status}{note}  |  rows: {rows}", { status: lg.val(sec.status), note: sec.note ? ` - ${sec.note}` : "", rows: sec.rows.length });
+  status.value = lg.t("Data status: {status}{note}  |  rows: {rows}", { status: lg.val(sec.status), note: sec.note ? `; ${sec.note}` : "", rows: sec.rows.length });
   status.font = { size: 9, italic: true, color: { argb: sec.status === "NOT_AVAILABLE" ? "FFB45309" : MUTED } };
   const sub = ws.getCell(headerRow - 1, startCol);
   sub.value = sec.title;
@@ -433,7 +433,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
   const sectionSheet: Record<string, string> = {};
   for (const spec of SHEETS) {
     const ws = wb.addWorksheet(lg.sheet(spec.name), { state: spec.hidden ? "hidden" : "visible", views: [{ state: "frozen", ySplit: spec.headerRow ?? HEADER_ROW, showGridLines: false }] });
-    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? t("HOTELCOST — FULL COST REPORT") : spec.hidden && spec.title === spec.name ? lg.sheet(spec.title) : t(spec.title), t("{hotel} · {period} · {currency} · Generated {at} by {user} · Export {version}", { hotel: e.meta.hotel.name, period: e.meta.period.label, currency: cur, at: e.meta.generatedAt.slice(0, 16).replace("T", " "), user: e.meta.generatedBy, version: e.exportVersion }), lg);
+    title(ws, spec.name === "02_EXECUTIVE_SUMMARY" ? t("HOTELCOST FULL COST REPORT") : spec.hidden && spec.title === spec.name ? lg.sheet(spec.title) : t(spec.title), t("{hotel} · {period} · {currency} · Generated {at} by {user} · Export {version}", { hotel: e.meta.hotel.name, period: e.meta.period.label, currency: cur, at: e.meta.generatedAt.slice(0, 16).replace("T", " "), user: e.meta.generatedBy, version: e.exportVersion }), lg);
     let col = 1;
     for (const key of spec.sections) {
       const sec = e.sections[key];
@@ -530,7 +530,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     rec.getCell(`${E}${row}`).value = { formula: guardExpr ? `IF(${guardExpr},"${WARNING}",${base})` : base, result: guardActive ? WARNING : ok ? PASS : FAIL };
   });
   const vbaSec: Section = {
-    key: "vbaChecks", title: t("Macro checks (row counts, duplicates) — filled on refresh"), status: "OK", source: "modReconciliation",
+    key: "vbaChecks", title: t("Macro checks (row counts, duplicates), filled on refresh"), status: "OK", source: "modReconciliation",
     columns: chkCols(false, "int"),
     rows: Object.values(e.sections).map((s) => ({ check: `${val("Row count")} ${s.key}`, expected: String(s.rows.length), actual: String(s.rows.length), status: PASS })),
   };
@@ -570,7 +570,7 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     "Source code of every module is visible in the VBA editor (Alt+F11) and in the HotelCost repository (src/server/excel/vba).",
     "",
     "SHEETS",
-    ...SHEETS.filter((s) => !s.hidden).map((s) => `${lg.sheet(s.name)} — ${t(s.description)}`),
+    ...SHEETS.filter((s) => !s.hidden).map((s) => `${lg.sheet(s.name)}: ${t(s.description)}`),
     "RAW_* sheets (hidden, protected) contain the raw datasets used by pivots. RUN_LOG and _LISTS are hidden helper sheets.",
     "",
     "COLOURS",
@@ -590,12 +590,12 @@ export async function buildWorkbook(source: FullCostExport, opts: { apiBaseUrl: 
     "",
     `Workbook ${WORKBOOK_VERSION} · Export schema ${EXPORT_VERSION} · Application ${APP_VERSION}`,
   ];
-  const sheetLine = /^\d\d_[\p{Lu}_]+ — /u;
+  const sheetLine = /^\d\d_[\p{Lu}_]+: /u;
   lines.forEach((line, i) => {
     const c = readme.getCell(`A${5 + i}`);
     // headings are detected on the English source; sheet lines and the version line are already composed
     c.value = !line || sheetLine.test(line) || line.startsWith("Workbook ") ? (line.startsWith("Workbook ") ? t("Workbook {wb} · Export schema {schema} · Application {app}", { wb: WORKBOOK_VERSION, schema: EXPORT_VERSION, app: APP_VERSION }) : line) : t(line);
-    if (line === line.toUpperCase() && line.length > 3 && !line.includes(" — ")) c.font = { bold: true, color: { argb: BRAND } };
+    if (line === line.toUpperCase() && line.length > 3 && !sheetLine.test(line)) c.font = { bold: true, color: { argb: BRAND } };
   });
   readme.getColumn(1).width = 160;
   sheet("50_DASHBOARD_CHARTS").getCell("A5").value = t("Charts are (re)built by the macro from the report tables: cost trend, food cost %, waste %, stock value, department cost, top cost drivers, top waste, price trend, buffet cost per cover.");

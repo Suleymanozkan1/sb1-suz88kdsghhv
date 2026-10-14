@@ -52,7 +52,7 @@ export const ledger: ReportDef = {
       unitCost: d.row.unitCost.toString(), total: d.total.toString(), source: sourceText(d, t),
     }));
     return {
-      title: f.view === "detail" ? t("Stock movements – detailed") : t("Stock movements"),
+      title: f.view === "detail" ? t("Stock movements (detailed)") : t("Stock movements"),
       fileName: f.view === "detail" ? "stok-hareketleri-detayli" : "stok-hareketleri",
       filters: [
         [t("Warehouse"), wh?.name ?? t("All")], [t("Type"), f.type ? t(f.type) : t("All")], [t("Product"), product?.name ?? t("All")],

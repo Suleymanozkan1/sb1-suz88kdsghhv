@@ -10,6 +10,7 @@ import { wasteRequiresApproval } from "@/domain/waste";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
+import { requireWarehouseScope } from "../auth/scope";
 import { postMovement, previewIssueCost } from "./ledger";
 import { toConversions } from "./products";
 import { decimalText } from "@/lib/format";
@@ -76,6 +77,8 @@ export async function recordWaste(db: Db, actor: Actor, hotelId: string, raw: un
     if (!product) throw new DomainError("NOT_FOUND", "Product not found");
     if (!dept) throw new DomainError("NOT_FOUND", "Department not found");
     if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
+    // like every stock issue: only from a store of the user's departments (or a shared one), before its balance is read
+    requireWarehouseScope(actor, wh);
     const stockQty = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions)).quantity;
     const bal = await tx.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: wh.id, productId: product.id } } });
     if (!bal || D(bal.quantity.toString()).lt(stockQty)) {

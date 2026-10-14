@@ -16,7 +16,7 @@ import { D, Decimal, ZERO, sum, toStorage } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { minibarStatement, restockToPar } from "@/domain/minibar";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize } from "../auth/actor";
+import { type Actor, authorize, canDepartment, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { postMovement, transferStock } from "./ledger";
 import { decimalText } from "@/lib/format";
@@ -48,6 +48,22 @@ export async function minibarSetup(tx: Tx, actor: Actor, hotelId: string) {
   return { dept, store: await ensure(MINIBAR_STORE, "Minibar Store"), rooms: await ensure(MINIBAR_ROOMS, "Minibar In-Room") };
 }
 
+const minibarDept = (db: Db, hotelId: string) => db.department.findFirst({ where: { hotelId, code: MINIBAR_DEPT }, select: { id: true } });
+
+/**
+ * Department isolation (spec §242): minibar stock, waste and revenue belong to the Minibar department. Posting needs it
+ * in the user's scope (before the first setup, which creates it: all-department roles only); reading too, once it exists
+ * (as the full-cost export checks it).
+ */
+async function requireMinibarScope(db: Db, actor: Actor, hotelId: string) {
+  requireDepartment(actor, (await minibarDept(db, hotelId))?.id ?? null);
+}
+
+export async function canSeeMinibar(db: Db, actor: Actor, hotelId: string): Promise<boolean> {
+  const dept = await minibarDept(db, hotelId);
+  return !dept || canDepartment(actor, dept.id);
+}
+
 async function room(tx: Db, hotelId: string, roomId: string) {
   const r = await tx.room.findFirst({ where: { id: roomId, hotelId } });
   if (!r) throw new DomainError("NOT_FOUND", "Room not found");
@@ -68,6 +84,7 @@ export const parInput = z.object({ roomType: z.string().max(40).optional().nulla
 
 export async function setPar(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "minibar:manage", { hotelId });
+  await requireMinibarScope(db, actor, hotelId);
   const p = parInput.parse(raw);
   return inTx(db, async (tx) => {
     if (!(await tx.product.findFirst({ where: { id: p.productId, hotelId } }))) throw new DomainError("NOT_FOUND", "Product not found");
@@ -94,6 +111,7 @@ export const movementInput = z.object({
 /** Restock / consumption / return / waste for one room. */
 export async function recordMovement(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "minibar:manage", { hotelId });
+  await requireMinibarScope(db, actor, hotelId);
   const input = movementInput.parse(raw);
   return inTx(
     db,
@@ -155,6 +173,7 @@ export async function recordMovement(db: Db, actor: Actor, hotelId: string, raw:
 /** Restock a room to its par levels (room-specific par wins over room-type par). */
 export async function restockToParLevels(db: Db, actor: Actor, hotelId: string, roomId: string, movedAt: Date) {
   authorize(actor, "minibar:manage", { hotelId });
+  await requireMinibarScope(db, actor, hotelId);
   const r = await room(db, hotelId, roomId);
   const pars = await db.minibarPar.findMany({ where: { hotelId, active: true, OR: [{ roomId: r.id }, { roomType: r.roomType, roomId: null }] } });
   const byProduct = new Map<string, Decimal>();
@@ -177,6 +196,7 @@ export const countInput = z.object({ roomId: z.string(), countedAt: z.coerce.dat
  */
 export async function countRoom(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "minibar:manage", { hotelId });
+  await requireMinibarScope(db, actor, hotelId);
   const input = countInput.parse(raw);
   return inTx(db, async (tx) => {
     if (input.idempotencyKey) {
@@ -206,6 +226,8 @@ export async function countRoom(db: Db, actor: Actor, hotelId: string, raw: unkn
 /** Room × product statement and per-room totals for a period (spec 94-98). */
 export async function minibarReport(db: Db, actor: Actor, hotelId: string, f: { from: Date; to: Date; roomId?: string }) {
   authorize(actor, "minibar:view", { hotelId });
+  const dept = await minibarDept(db, hotelId);
+  if (dept) requireDepartment(actor, dept.id);
   const [moves, rooms, products, occupancy] = await Promise.all([
     db.minibarMovement.findMany({ where: { hotelId, movedAt: { lt: f.to }, ...(f.roomId ? { roomId: f.roomId } : {}) }, orderBy: { movedAt: "asc" } }),
     db.room.findMany({ where: { hotelId }, orderBy: { number: "asc" } }),
@@ -274,6 +296,8 @@ export async function minibarInvariant(db: Db, hotelId: string) {
  */
 export async function roomGrid(db: Db, actor: Actor, hotelId: string, now = new Date()) {
   authorize(actor, "minibar:view", { hotelId });
+  const dept = await minibarDept(db, hotelId);
+  if (dept) requireDepartment(actor, dept.id);
   const hotel = await db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { timezone: true, businessDayCutoff: true } });
   const lastNight = new Date(`${lastClosedBusinessDay(now, hotel.timezone, hotel.businessDayCutoff)}T00:00:00Z`);
   const [rooms, pars, subs, products, occ] = await Promise.all([

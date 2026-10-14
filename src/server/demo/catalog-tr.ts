@@ -226,9 +226,9 @@ export const TEXT_TR: Record<string, string> = {
   "Central chiller 1": "Merkezi soğutma grubu 1", "Combi oven": "Kombi fırın", "Flight dishwasher": "Konveyörlü bulaşık makinesi", "Cold room": "Soğuk oda",
   "Washer extractor": "Çamaşır makinesi", "Guest elevator": "Misafir asansörü", "Pool filtration": "Havuz filtrasyonu",
   // meters
-  "Electricity rooms": "Elektrik - odalar", "Electricity kitchen": "Elektrik - mutfak", "Electricity laundry": "Elektrik - çamaşırhane",
-  "Electricity restaurant": "Elektrik - restoran", "Water rooms": "Su - odalar", "Water laundry": "Su - çamaşırhane", "Water kitchen": "Su - mutfak",
-  "Gas kitchen": "Doğalgaz - mutfak", "Gas laundry": "Doğalgaz - çamaşırhane",
+  "Electricity rooms": "Oda elektriği", "Electricity kitchen": "Mutfak elektriği", "Electricity laundry": "Çamaşırhane elektriği",
+  "Electricity restaurant": "Restoran elektriği", "Water rooms": "Oda suyu", "Water laundry": "Çamaşırhane suyu", "Water kitchen": "Mutfak suyu",
+  "Gas kitchen": "Mutfak doğalgazı", "Gas laundry": "Çamaşırhane doğalgazı",
   // allocation rules
   "Electricity by sub-meter": "Elektrik (alt sayaç)", "Water by sub-meter": "Su (alt sayaç)", "Natural gas by sub-meter": "Doğalgaz (alt sayaç)",
   "Engineering department by m²": "Teknik servis giderleri (m² bazında)",

@@ -41,7 +41,7 @@ export function allocate<K extends string>(amount: Numeric, shares: Share<K>[], 
   const drivers = shares.map((s) => D(s.driver));
   if (drivers.some((d) => d.isNeg())) throw new DomainError("VALIDATION", "Allocation drivers cannot be negative");
   const base = sum(drivers);
-  if (base.isZero()) throw new DomainError("VALIDATION", "Allocation driver total is zero — nothing to split by");
+  if (base.isZero()) throw new DomainError("VALIDATION", "Allocation driver total is zero: nothing to split by");
   const unit = new Decimal(10).pow(-scale);
   const raw = drivers.map((d) => total.times(d).div(base));
   const floored = raw.map((r) => r.toDecimalPlaces(scale, Decimal.ROUND_DOWN));

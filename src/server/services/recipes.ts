@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Prisma, Recipe, RecipeIngredient, RecipeVersion } from "@prisma/client";
 import { D, Decimal, str, pct } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
-import { COST_MODEL, costRecipe, serializeCost, validateRecipeDef, type CostResolver, type ProductCostInfo, type RecipeCostResult, type RecipeDef } from "@/domain/recipe-cost";
+import { COST_MODEL, assertTreesWithinLimits, costRecipe, serializeCost, validateRecipeDef, type CostResolver, type ProductCostInfo, type RecipeCostResult, type RecipeDef } from "@/domain/recipe-cost";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
@@ -47,6 +47,7 @@ export const versionInput = z.object({
         note: z.string().max(200).optional().nullable(),
       }),
     )
+    .max(200, "A recipe can have at most 200 lines")
     .default([]),
 });
 
@@ -94,6 +95,8 @@ export interface LoadedResolver extends CostResolver {
   products: Map<string, ProductCostInfo>;
   costSources: Map<string, string>;
   versionFor(recipeId: string): VersionWithLines | undefined;
+  /** recipes with an effective version (the draft override included) */
+  recipeIds(): string[];
 }
 
 /**
@@ -140,6 +143,7 @@ export async function buildResolver(db: Db, hotelId: string, opts: { asOf?: Date
     product: (id) => pmap.get(id),
     recipe: (id) => defs.get(id),
     versionFor: (id) => versionByRecipe.get(id),
+    recipeIds: () => [...defs.keys()],
   };
 }
 
@@ -265,6 +269,10 @@ async function freezeAndApprove(tx: Db, actor: Actor, hotelId: string, versionId
   if (!["DRAFT", "PENDING_APPROVAL"].includes(v.status)) throw new DomainError("VALIDATION", `Version is ${v.status}`);
   const def = versionToDef(v.recipe, v);
   const resolver = await buildResolver(tx, hotelId, { draftOverride: def });
+  // every recipe using this one grows with it: refuse a change that makes any of them too deep or too large to cost
+  const current = resolver.versionFor(def.recipeId);
+  const before: CostResolver = { product: resolver.product, recipe: (id) => (id !== def.recipeId ? resolver.recipe(id) : current ? versionToDef(v.recipe, current) : undefined) };
+  assertTreesWithinLimits(resolver.recipeIds(), resolver, before);
   const issues = validateRecipeDef(def, resolver);
   if (issues.length) throw new DomainError("VALIDATION", `Recipe is incomplete: ${issues.map((i) => i.message).join("; ")}`, { issues });
   const cost = costRecipe(def, resolver);

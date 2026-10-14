@@ -13,7 +13,7 @@ import { roomCostItems, saveRoomCostItems } from "@/server/services/room-costs";
 import { roomCostReport, laundryReport, energyReport, engineeringReport, laborReport, housekeepingReport } from "@/server/services/operations";
 import { rollbackBatch } from "@/server/services/imports";
 import { reverseExpenseTx } from "@/server/services/opex";
-import { periodFor, setPeriodStatus } from "@/server/services/period";
+import { periodFor, reopenPeriod, setPeriodStatus } from "@/server/services/period";
 import { buildFullCostExport } from "@/server/services/export";
 import { D, sum } from "@/domain/money";
 import type { Actor } from "@/server/auth/actor";
@@ -203,7 +203,7 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     expect(failed).toEqual([]);
     for (const name of ["Allocation: allocated postings net to zero for the hotel", "Expenses: Σ posted expenses = EXPENSE ledger", "Room cost: Σ rooms + unassigned = rooms-division cost + monthly room expenses + distribution", "Department totals = hotel cost total"]) expect(e.checks.find((c) => c.check === name)?.status).toBe("PASS");
     const pnl = Object.fromEntries(e.sections.pnl!.rows.map((r) => [r.line, r.value]));
-    expect(D(pnl["Revenue — Rooms"]!).toString()).toBe("140000"); // PMS: 10 × 9000 + 20 × 2500
+    expect(D(pnl["Rooms Revenue"]!).toString()).toBe("140000"); // PMS: 10 × 9000 + 20 × 2500
     expect(e.summary.costPerOccupiedRoom!.status).toBe("ACTUAL");
     expect(e.summary.gop!.status).toBe("ACTUAL");
   });
@@ -217,6 +217,9 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
   });
 
   it("monthly room cost expenses: entered per month, prorated into room cost, items added / removed", async () => {
+    // September was closed above: a closed month's room cost items change only after a reopen
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", items: [] })).rejects.toThrow(/CLOSED/);
+    await reopenPeriod(prisma, cc, { hotelId: h.hotel.id, periodId: (await periodFor(prisma, h.hotel.id, day("2026-09-15"))).id, reason: "room cost items" });
     const chef = await h.actor("chef", [dept.REST!]);
     await expect(saveRoomCostItems(prisma, chef, h.hotel.id, { month: "2026-09", items: [] })).rejects.toThrow(/opex:manage/);
     const empty = await roomCostItems(prisma, cc, h.hotel.id, "2026-09");
@@ -242,7 +245,7 @@ describe("room cost E2E (spec 281 / scenario 330)", () => {
     const saved = await saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedA.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: "3000" }] });
     expect(saved.revision).not.toBe(loadedA.revision);
     expect(saved.revision).toBe((await roomCostItems(prisma, cc, h.hotel.id, "2026-09")).revision);
-    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedB.revision, items: [{ name: "HK salaries", amount: "1" }] })).rejects.toMatchObject({ code: "CONFLICT", message: "This month was changed by someone else — reload and try again" });
+    await expect(saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: loadedB.revision, items: [{ name: "HK salaries", amount: "1" }] })).rejects.toMatchObject({ code: "CONFLICT", message: "This month was changed by someone else: reload and try again" });
     // two saves from the same loaded state at once: exactly one wins
     const race = await Promise.allSettled([1, 2].map((n) => saveRoomCostItems(prisma, cc, h.hotel.id, { month: "2026-09", revision: saved.revision, items: [{ name: "HK salaries", amount: "30000" }, { name: "HK meals", amount: n === 1 ? "3000" : "3000,00" }] })));
     expect(race.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);

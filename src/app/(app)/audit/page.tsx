@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { pageContext, requirePageAccess } from "@/server/page";
+import { auditTrail } from "@/server/services/audit-trail";
 import { prisma } from "@/server/db";
 import { Badge, Card, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
@@ -14,12 +15,12 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "audit:view", hotelId);
-  const logs = await prisma.auditLog.findMany({ where: { hotelId, ...(entity ? { entityId: entity } : {}) }, orderBy: { createdAt: "desc" }, take: 200 });
+  const logs = await auditTrail(prisma, actor, hotelId, { entityId: entity });
   const users = new Map((await prisma.user.findMany({ where: { id: { in: logs.map((l) => l.userId ?? "") } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const short = (v: unknown) => (v ? JSON.stringify(v).slice(0, 160) : "");
   return (
     <>
-      <PageHeader title={t("Audit trail")} subtitle={t("Who · what · when · before · after · reason. Append-only — the database rejects edits and deletes.")} exportKey="audit" />
+      <PageHeader title={t("Audit trail")} subtitle={t("Who · what · when · before · after · reason. Append-only: the database rejects edits and deletes.")} exportKey="audit" />
       {entity && (
         <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-ink-700">
           {t("Showing the history of one record")} <code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{entity}</code>
@@ -34,8 +35,14 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
               <tr key={l.id} className="align-top">
                 <Td>{dateTime(l.createdAt, hotel.timezone)}</Td><Td>{users.get(l.userId ?? "") ?? t("system")}</Td><Td><Badge>{t(l.action)}</Badge></Td>
                 <Td>{l.entityId ? <Link className="text-xs hover:underline" href={`/audit?entity=${encodeURIComponent(l.entityId)}`}>{t(l.entityType)}</Link> : <span className="text-xs">{t(l.entityType)}</span>}</Td>
-                <Td className="max-w-xs whitespace-normal break-all font-mono text-[11px] text-ink-500">{short(l.before)}</Td>
-                <Td className="max-w-xs whitespace-normal break-all font-mono text-[11px] text-ink-500">{short(l.after)}</Td>
+                {l.hidden ? (
+                  <Td colSpan={2} className="whitespace-normal text-xs italic text-ink-400">{t("Details are not visible with your permissions")}</Td>
+                ) : (
+                  <>
+                    <Td className="max-w-xs whitespace-normal break-all font-mono text-[11px] text-ink-500">{short(l.before)}</Td>
+                    <Td className="max-w-xs whitespace-normal break-all font-mono text-[11px] text-ink-500">{short(l.after)}</Td>
+                  </>
+                )}
                 <Td className="whitespace-normal text-xs">{l.reason}</Td>
               </tr>
             ))}

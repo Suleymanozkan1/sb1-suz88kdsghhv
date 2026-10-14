@@ -29,5 +29,9 @@ export const r3: Record<string, string> = {
 
 /** Server messages of the shared round-3 changes. */
 export const r3Messages: Record<string, string> = {
+  "Product \"{0}\" is ambiguous ({1} products have this name); use its stock code": "\"{0}\" adı birden fazla ürüne ait ({1} ürün); stok kodunu kullanın",
+  "Product \"{0}\" already exists; the product master is never overwritten by an import": "\"{0}\" ürünü zaten var; ürün kartı içe aktarmayla hiçbir zaman üzerine yazılmaz",
+  "Unknown product \"{0}\"": "Bilinmeyen ürün \"{0}\"",
+  "sku or product is required": "SKU veya ürün adı zorunlu",
   "Video address must start with https://": "Video adresi https:// ile başlamalı",
 };

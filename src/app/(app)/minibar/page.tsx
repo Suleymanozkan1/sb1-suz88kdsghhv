@@ -27,7 +27,7 @@ export default async function MinibarPage({ searchParams }: { searchParams: Prom
   const cur = hotel.baseCurrency;
   return (
     <>
-      <PageHeader exportKey="minibar" title={t("Minibar cost")} subtitle={t("Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage — shown, never hidden.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={known && <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" name="occupied" value="1" defaultChecked={onlyOccupied} /> {t("Show occupied rooms only")}</label>} />} />
+      <PageHeader exportKey="minibar" title={t("Minibar cost")} subtitle={t("Room contents are a sub-ledger of the in-room warehouse: restock, consumption (with revenue), returns, waste and counts. Count differences are shrinkage: shown, never hidden.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={known && <label className="mb-2 flex items-center gap-1.5 text-sm text-ink-700"><input type="checkbox" name="occupied" value="1" defaultChecked={onlyOccupied} /> {t("Show occupied rooms only")}</label>} />} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="minibar-occupancy">
         <Stat label={t("Occupied room nights")} value={tot.occupancyDays ? qty(tot.occupiedRoomNights) : "—"} hint={tot.occupancyDays ? t("from {source} · {n} days", { source: t(tot.occupancySource ?? "Opera"), n: tot.occupancyDays }) : t("no Opera occupancy yet for this period")} />
         <Stat label={t("Revenue / occupied room")} value={money(tot.revenuePerOccupiedRoom, cur)} />

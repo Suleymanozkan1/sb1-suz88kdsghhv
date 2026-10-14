@@ -62,7 +62,8 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
     departmentId: input.departmentId ?? undefined,
     sourceType: "MANUAL",
     reason: input.reason ?? null,
-    idempotencyKey: input.idempotencyKey ?? null,
+    // the client's key lives in its own per-user namespace: it can never equal a workflow key (count:, waste:, sale: …)
+    idempotencyKey: input.idempotencyKey ? `user:${actor.userId}:${input.idempotencyKey}` : null,
   });
   await audit(db, actor, { hotelId, action: `STOCK_${input.type}`, entityType: "StockTransaction", entityId: tx.id, after: { quantity: tx.quantity.toString(), totalCost: tx.totalCost.toString(), conversion: conv.path }, reason: input.reason });
   return tx;

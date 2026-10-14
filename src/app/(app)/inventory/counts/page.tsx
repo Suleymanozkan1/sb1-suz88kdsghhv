@@ -44,7 +44,7 @@ export default async function CountsPage({ searchParams }: { searchParams: Promi
             title={<span className="flex flex-wrap items-center gap-2">{c.number} · {c.warehouse.name} · {date(c.countDate)} <Badge tone={c.status === "POSTED" ? "green" : c.status === "SUBMITTED" ? "amber" : c.rejectionNote ? "red" : "gray"}>{t(STATUS_LABEL[c.status] ?? c.status)}</Badge></span>}
             actions={<span className="flex items-center gap-2"><ExportButtons report="counts" params={{ countId: c.id, warehouseId: c.warehouseId }} />{canDelete && c.status !== "POSTED" && c.status !== "APPROVED" && <DeleteCount countId={c.id} number={c.number} />}</span>}
           >
-            {c.status === "DRAFT" && c.rejectionNote && <div className="mb-3"><Alert tone="red">{t("Rejected by the approver - recount and send again: {note}", { note: c.rejectionNote })}</Alert></div>}
+            {c.status === "DRAFT" && c.rejectionNote && <div className="mb-3"><Alert tone="red">{t("Rejected by the approver. Recount and send again: {note}", { note: c.rejectionNote })}</Alert></div>}
             <CountEditor
               countId={c.id}
               editable={c.status === "DRAFT"}

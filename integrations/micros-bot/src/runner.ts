@@ -38,7 +38,7 @@ import { createInvoiceReader, type InvoiceReader } from "./invoices/source";
 import { readComps } from "./screens/comps";
 import { compsDefined, describeReport, loadDefinitions, type ReportDefinitions, type ReportSystem } from "./reports";
 import { StateStore } from "./state";
-import { defaultBusinessDay } from "./util/time";
+import { defaultBusinessDay, isValidDay } from "./util/time";
 
 export const KINDS_BY_SOURCE: Record<"MICROS" | "OPERA", Kind[]> = {
   MICROS: ["checks", "comps", "invoices", "covers", "products"],
@@ -141,6 +141,8 @@ interface Deps {
 export async function runBot(config: Config, opts: RunOptions = {}, deps: Deps = {}): Promise<RunReport> {
   configureLogger({ secrets: secretsOf(config), level: config.logLevel });
   const day = opts.day ?? defaultBusinessDay(opts.now ?? new Date(), config.timezone, config.nightAuditCutoff);
+  // the day names the run folder and the invoice archive folder
+  if (!isValidDay(day)) throw new Error(`invalid business day ${JSON.stringify(day)} (expected YYYY-MM-DD)`);
   const client = deps.client ?? new HotelCostClient({ baseUrl: config.hotelcost.url, apiKey: config.hotelcost.apiKey, retries: config.hotelcost.retries, retryBaseMs: config.hotelcost.retryBaseMs });
   const state = new StateStore(config.stateDir);
   const print = opts.print ?? ((t: string) => process.stdout.write(t + "\n"));
@@ -207,6 +209,7 @@ async function runSource(
   const dayless = kinds.every((k) => ON_REQUEST_KINDS.includes(k));
   const runId = makeRunId(source, dayless ? "products" : day);
   const runDir = path.join(config.runsDir, runId);
+  if (path.dirname(path.resolve(runDir)) !== path.resolve(config.runsDir)) throw new Error(`run folder ${runDir} is outside ${config.runsDir}`);
   fs.mkdirSync(runDir, { recursive: true });
   const removeLog = addLogFile(path.join(runDir, "run.log"));
   const results: KindResult[] = [];

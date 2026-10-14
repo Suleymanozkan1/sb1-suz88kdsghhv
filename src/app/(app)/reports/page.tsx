@@ -24,7 +24,7 @@ export default async function ReportsPage() {
     <>
       <PageHeader title={t("Reports")} subtitle={<>
         {t("Every generated report is archived with period, parameters, author, data version and hashes. Closed months can be re-verified: the period hash must reproduce exactly unless the month was reopened.")}
-        <span className="mt-2 block"><strong>{t("Monthly management cost pack")}:</strong> {t("Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, P&L cost view, recommended actions and the month-end checklist — from the same engine as the screens and Excel.")}</span>
+        <span className="mt-2 block"><strong>{t("Monthly management cost pack")}:</strong> {t("Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, P&L cost view, recommended actions and the month-end checklist, from the same engine as the screens and Excel.")}</span>
       </>} exportKey="reports" />
       {canExport && <Card title={t("Monthly management cost pack")} className="mb-4"><PackForm defaultMonth={lastMonth} /></Card>}
       <Card title={t("Archive ({n})", { n: res.data.length })} padded={false}>

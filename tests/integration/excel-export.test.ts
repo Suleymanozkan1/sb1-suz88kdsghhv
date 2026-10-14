@@ -249,7 +249,7 @@ describe(".xlsm workbook (spec 1-7, 86-90, 105-120, 129)", () => {
     expect(statuses.filter((s) => s === "PASS").length).toBeGreaterThan(10);
 
     const ex = wb.getWorksheet("02_EXECUTIVE_SUMMARY")!;
-    expect(String(ex.getCell("A1").value)).toBe("HOTELCOST — FULL COST REPORT");
+    expect(String(ex.getCell("A1").value)).toBe("HOTELCOST FULL COST REPORT");
     const tile = ex.getCell("D6").value as { formula: string; result: number };
     expect(tile.formula).toContain('MATCH("actualCost"');
     expect(tile.result).toBe(20000);

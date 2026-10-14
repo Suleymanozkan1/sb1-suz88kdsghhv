@@ -74,7 +74,7 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     expect(mail[0]!.to).toBe("orders@anadolu.test");
     expect(mail[0]!.text).toContain("Olive Oil: 20 l");
     // the built-in Turkish template, addressed to the supplier, with an HTML product table
-    expect(mail[0]!.subject).toBe(`Sipariş — ${h.hotel.name} — 03.09.2026`);
+    expect(mail[0]!.subject).toBe(`Sipariş: ${h.hotel.name}, 03.09.2026`);
     expect(mail[0]!.text).toContain(`Sayın ${h.supplier.name},`);
     expect(mail[0]!.text).toContain(`${h.hotel.name} için aşağıdaki ürünlere ihtiyacımız var:`);
     expect(mail[0]!.html).toContain("<table");

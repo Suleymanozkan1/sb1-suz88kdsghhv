@@ -40,7 +40,7 @@ async function housekeeping(db: Db, hotelId: string) {
   const now = new Date();
   await db.exportJob.updateMany({
     where: { hotelId, status: { in: ["PENDING", "RUNNING"] }, createdAt: { lt: new Date(now.getTime() - STALE_MINUTES * 60_000) } },
-    data: { status: "FAILED", error: "Interrupted (server restart or timeout) - queue the export again", finishedAt: now },
+    data: { status: "FAILED", error: "Interrupted (server restart or timeout): queue the export again", finishedAt: now },
   });
   await db.exportJob.updateMany({ where: { hotelId, expiresAt: { lt: now }, NOT: { file: null } }, data: { file: null } });
 }
@@ -51,7 +51,7 @@ export async function queueExportJob(db: Db, actor: Actor, hotelId: string, p: E
   if (p.departmentId && actor.departmentIds !== "ALL" && !actor.departmentIds.includes(p.departmentId)) throw new DomainError("FORBIDDEN", "No access to this department");
   await housekeeping(db, hotelId);
   const active = await db.exportJob.count({ where: { hotelId, userId: actor.userId, status: { in: ["PENDING", "RUNNING"] } } });
-  if (active >= MAX_ACTIVE_PER_USER) throw new DomainError("CONFLICT", `You already have ${active} exports in progress - wait for one to finish`);
+  if (active >= MAX_ACTIVE_PER_USER) throw new DomainError("CONFLICT", `You already have ${active} exports in progress: wait for one to finish`);
   const params: StoredParams = { from: p.from.toISOString(), to: p.to.toISOString(), departmentId: p.departmentId ?? null, warehouseId: p.warehouseId ?? null, categoryGroup: p.categoryGroup ?? null, apiBaseUrl, locale };
   const job = await db.exportJob.create({ data: { hotelId, userId: actor.userId, kind: "XLSM", params: params as never } });
   await db.auditLog.create({ data: { userId: actor.userId, hotelId, action: "EXPORT_QUEUED", entityType: "ExportJob", entityId: job.id, source: "WEB", after: params as never } });
@@ -110,7 +110,7 @@ export async function downloadExportJob(db: Db, actor: Actor, hotelId: string, i
   const job = await db.exportJob.findFirst({ where: { id, hotelId, userId: actor.userId } });
   if (!job) throw new DomainError("NOT_FOUND", "Export job not found");
   if (job.status !== "COMPLETED") throw new DomainError("CONFLICT", `Export is ${job.status.toLowerCase()}`);
-  if (!job.file || (job.expiresAt && job.expiresAt < new Date())) throw new DomainError("NOT_FOUND", "The file has expired - queue the export again");
+  if (!job.file || (job.expiresAt && job.expiresAt < new Date())) throw new DomainError("NOT_FOUND", "The file has expired: queue the export again");
   await db.auditLog.create({ data: { userId: actor.userId, hotelId, action: "EXPORT_DOWNLOAD", entityType: "ExportJob", entityId: job.id, source: "WEB" } });
   return { fileName: job.fileName ?? "HotelCost_Cost_Report.xlsm", file: Buffer.from(job.file), exportId: job.exportId, reconciliation: job.reconciliation };
 }

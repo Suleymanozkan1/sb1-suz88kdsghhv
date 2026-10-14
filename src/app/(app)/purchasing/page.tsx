@@ -54,7 +54,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
   return (
     <>
       <PageHeader exportKey="purchasing" title={t("Purchasing & receiving")} subtitle={t("Supplier invoices come from Micros automatically (see Imports); goods receipts post landed cost to the stock ledger and record supplier price history.")} actions={<PeriodFilter from={range.fromStr} to={range.toStr} extra={filters} />} />
-      <Card title={t("Goods receipts")} padded={false} actions={receipts.length > SHOWN ? <span className="text-xs text-ink-500">{t("Latest {n} shown — the export lists the whole period", { n: SHOWN })}</span> : undefined}>
+      <Card title={t("Goods receipts")} padded={false} actions={receipts.length > SHOWN ? <span className="text-xs text-ink-500">{t("Latest {n} shown; the export lists the whole period", { n: SHOWN })}</span> : undefined}>
         {receipts.length === 0 ? <div className="p-4"><Empty title={t("No receipts")} /></div> : (
           <Table>
             <thead>
@@ -94,7 +94,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
       </Card>
       {can(actor, "inventory:receive") && (
         <details className="mt-4 rounded-xl border border-ink-200 bg-white" data-testid="manual-receipt">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800"><Title>{t("Receive goods by hand (backup — when an invoice did not come from Micros)")}</Title></summary>
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink-800"><Title>{t("Receive goods by hand (backup, when an invoice did not come from Micros)")}</Title></summary>
           <div className="border-t border-ink-100 p-4">
             <ReceiptForm suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
           </div>

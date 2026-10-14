@@ -44,7 +44,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader
-        title={t("Cost intelligence — {hotel}", { hotel: hotel.name })}
+        title={t("Cost intelligence: {hotel}", { hotel: hotel.name })}
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-2">
             {t("What did we spend, what should we have spent, and why is it different?")} {t("All figures come from the shared cost engine and reconcile with the Theoretical vs Actual report.")}

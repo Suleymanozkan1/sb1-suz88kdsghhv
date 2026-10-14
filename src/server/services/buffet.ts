@@ -19,7 +19,8 @@ import { defaultConverter } from "@/domain/uom";
 import { costRecipe } from "@/domain/recipe-cost";
 import { buffetMetrics, forecastBuffet, REUSABLE, WASTED, type BuffetInputLine, type BuffetMetrics } from "@/domain/buffet";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
+import { type Actor, authorize, canDepartment, departmentScope, requireDepartment } from "../auth/actor";
+import { requireWarehouseScope } from "../auth/scope";
 import { audit } from "./audit";
 import { postMovement } from "./ledger";
 import { assertPostable } from "./period";
@@ -118,6 +119,12 @@ export async function createSession(db: Db, actor: Actor, hotelId: string, raw: 
     const [dept, wh] = await Promise.all([tx.department.findFirst({ where: { id: input.departmentId, hotelId } }), tx.warehouse.findFirst({ where: { id: input.warehouseId, hotelId } })]);
     if (!dept) throw new DomainError("NOT_FOUND", "Department not found");
     if (!wh) throw new DomainError("NOT_FOUND", "Warehouse not found");
+    // issues come out of this store: only one of the user's departments (or a shared store), except the hotel's breakfast
+    // store for the breakfast outlet (breakfast has no store of its own and issues from the kitchen's)
+    if (wh.departmentId && !canDepartment(actor, wh.departmentId)) {
+      const place = input.type === "BREAKFAST" ? await breakfastPlace(tx, hotelId) : null;
+      if (place?.departmentId !== dept.id || place.warehouseId !== wh.id) requireWarehouseScope(actor, wh);
+    }
     await assertPostable(tx, actor, hotelId, serviceMoment(input));
     const dup = await tx.buffetSession.findFirst({ where: { hotelId, departmentId: dept.id, type: input.type, serviceDate: input.serviceDate } });
     if (dup) throw new DomainError("DUPLICATE", `A ${input.type} buffet for ${dept.name} on ${ymd(input.serviceDate)} already exists`);
@@ -133,6 +140,8 @@ export async function updateSession(db: Db, actor: Actor, hotelId: string, id: s
   return inTx(db, async (tx) => {
     const s = await loadSession(tx, actor, hotelId, id, "buffet:manage");
     if (s.status !== "OPEN") throw new DomainError("IMMUTABLE", "Closed buffet sessions cannot be changed");
+    // a closed cost period keeps its covers (cost per cover)
+    await assertPostable(tx, actor, hotelId, serviceMoment(s));
     const u = await tx.buffetSession.update({ where: { id }, data: input });
     await audit(tx, actor, { hotelId, action: "BUFFET_SESSION_UPDATE", entityType: "BuffetSession", entityId: id, before: { expectedCovers: s.expectedCovers, actualCovers: s.actualCovers }, after: input });
     return u;
@@ -371,6 +380,8 @@ export async function closeSession(db: Db, actor: Actor, hotelId: string, sessio
     async (tx) => {
       const s = await loadSession(tx, actor, hotelId, sessionId, "buffet:manage");
       if (s.status !== "OPEN") throw new DomainError("CONFLICT", "Buffet session is already closed");
+      // closing sets the covers even without leftovers to post: a closed cost period stays as it was closed
+      await assertPostable(tx, actor, hotelId, serviceMoment(s));
       const inputLines = s.lines.filter(isInput);
       if (!inputLines.length) throw new DomainError("VALIDATION", "Nothing was produced in this session");
       const names = await nameMap(tx, s.lines);

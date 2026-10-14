@@ -65,7 +65,7 @@ export default async function IntegrityPage({ searchParams }: { searchParams: Pr
             <tbody className="divide-y divide-ink-100">
               {runs.data.map((r) => {
                 const d = (r.details ?? {}) as Record<string, unknown>;
-                const detail = r.error ? t(r.error) : d.status ? t("result {status}", { status: t(String(d.status)) }) : d.corrected !== undefined ? t("{n} corrected — {reason}", { n: String(d.corrected), reason: String(d.reason ?? "") }) : d.mapped !== undefined ? t("{mapped} mapped, {unmapped} unmapped, {closed} closed-period lines kept", { mapped: String(d.mapped), unmapped: String(d.stillUnmapped), closed: String(d.skippedClosed) }) : "";
+                const detail = r.error ? t(r.error) : d.status ? t("result {status}", { status: t(String(d.status)) }) : d.corrected !== undefined ? t("{n} corrected: {reason}", { n: String(d.corrected), reason: String(d.reason ?? "") }) : d.mapped !== undefined ? t("{mapped} mapped, {unmapped} unmapped, {closed} closed-period lines kept", { mapped: String(d.mapped), unmapped: String(d.stillUnmapped), closed: String(d.skippedClosed) }) : "";
                 const check = r.kind === "INTEGRITY_CHECK";
                 return (
                   <tr key={r.id} className={cn(shown?.id === r.id && "bg-brand-50")}>

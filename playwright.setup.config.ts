@@ -7,6 +7,8 @@ import { defineConfig, devices } from "@playwright/test";
 const ADMIN = process.env.SETUP_E2E_ADMIN_URL ?? "postgresql://hotelcost:hotelcost@localhost:5432/postgres";
 const DB = process.env.SETUP_E2E_DATABASE_URL ?? "postgresql://hotelcost:hotelcost@localhost:5432/hotelcost_setup_e2e";
 const PORT = Number(process.env.SETUP_E2E_PORT ?? 3302);
+// the local database password is the committed default, which is not accepted as a setup code
+const SETUP_E2E_TOKEN = process.env.SETUP_E2E_TOKEN ?? "setup-e2e-code-2026";
 const name = new URL(DB).pathname.slice(1);
 
 export default defineConfig({
@@ -21,6 +23,6 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { DATABASE_URL: DB, NODE_ENV: "production", DEFAULT_LOCALE: "tr" },
+    env: { DATABASE_URL: DB, NODE_ENV: "production", DEFAULT_LOCALE: "tr", SETUP_TOKEN: SETUP_E2E_TOKEN },
   },
 });

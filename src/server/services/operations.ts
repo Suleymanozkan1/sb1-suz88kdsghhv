@@ -6,7 +6,8 @@
 import { D, Decimal, ZERO, sum, safeDiv } from "@/domain/money";
 import { ROOM_COMPONENTS, componentOfCategory, emptyComponents, roomCosts, rollup, roomKpis, roomRevenueKpis, meterConsumption, laundryUnitCosts, stayInPeriod, type ComponentCosts, type RoomComponent } from "@/domain/rooms";
 import type { Db } from "../db";
-import { type Actor, authorize, can } from "../auth/actor";
+import { type Actor, authorize, can, departmentScope, requireDepartment } from "../auth/actor";
+import { DomainError } from "@/domain/errors";
 import { occupancyStats, OCCUPYING, type OccupancyStats } from "./pms";
 import { BELOW_GOP, OPEX_CATEGORIES, UTILITIES } from "./opex";
 import { departmentRevenue, divisionIds, ROOMS_DIVISION } from "./revenue";
@@ -161,10 +162,21 @@ async function deptLedger(db: Db, hotelId: string, r: Range, departmentIds: stri
 
 const isInventory = (kind: string) => kind !== "EXPENSE" && kind !== "ALLOCATION";
 
+/**
+ * A department module (housekeeping, laundry) shows that department's costs, payroll included: a department-scoped
+ * user sees it only for a department of theirs (payroll is confidential per department, like the labor report).
+ */
+function requireModuleDepartment(actor: Actor, dept: { id: string } | null) {
+  if (actor.departmentIds === "ALL") return;
+  if (!dept) throw new DomainError("FORBIDDEN", "No access to this department");
+  requireDepartment(actor, dept.id);
+}
+
 /** Housekeeping (spec 99–100): amenities, chemicals, guest supplies, consumables, labor, outsourced. */
 export async function housekeepingReport(db: Db, actor: Actor, hotelId: string, r: Range) {
   authorize(actor, "opex:view", { hotelId });
   const hk = await db.department.findFirst({ where: { hotelId, code: "HK" } });
+  requireModuleDepartment(actor, hk);
   const occ = await occupancyStats(db, hotelId, r.from, r.to);
   const catName = await categoryNames(db, hotelId);
   const lines: OpexLine[] = [];
@@ -184,7 +196,7 @@ export async function housekeepingReport(db: Db, actor: Actor, hotelId: string, 
     push("TOTAL HOUSEKEEPING COST", "TOTAL", total, occ.source === "NONE" ? "Per occupied room needs occupancy data" : `Occupied rooms: ${occ.occupiedRooms} (${occ.source})`);
     lines.push({ line: "Cost per guest night", category: "KPI", quantity: null, unit: null, value: occ.guests ? total.div(occ.guests) : null, perOccupiedRoom: null, note: `${occ.guests} guest nights` });
   }
-  const sub = await expenseRows(db, hotelId, r, { categoryGroup: { in: ["HOUSEKEEPING", "AMENITIES"] } });
+  const sub = await expenseRows(db, hotelId, r, { categoryGroup: { in: ["HOUSEKEEPING", "AMENITIES"] }, ...departmentScope(actor) });
   const detail = sub.map((s) => ({ category: s.categoryGroup, subCategory: s.subCategory ?? "—", value: D(s._sum.amount?.toString() ?? 0) }));
   return { occupancy: occ, lines, detail, available: !!hk };
 }
@@ -193,6 +205,7 @@ export async function housekeepingReport(db: Db, actor: Actor, hotelId: string, 
 export async function laundryReport(db: Db, actor: Actor, hotelId: string, r: Range) {
   authorize(actor, "opex:view", { hotelId });
   const laun = await db.department.findFirst({ where: { hotelId, code: "LAUN" } });
+  requireModuleDepartment(actor, laun);
   const [occ, logs, linenProducts] = await Promise.all([
     occupancyStats(db, hotelId, r.from, r.to),
     db.laundryLog.findMany({ where: { hotelId, logDate: { gte: r.from, lt: r.to } } }),
@@ -216,7 +229,7 @@ export async function laundryReport(db: Db, actor: Actor, hotelId: string, r: Ra
     push("TOTAL LAUNDRY COST", "TOTAL", total);
   }
   // laundry expenses booked to other departments (e.g. outsourced guest laundry under Rooms)
-  const elsewhere = await expenseRows(db, hotelId, r, { categoryGroup: "LAUNDRY", ...(laun ? { NOT: { departmentId: laun.id } } : {}) });
+  const elsewhere = await expenseRows(db, hotelId, r, { categoryGroup: "LAUNDRY", ...(laun ? { NOT: { departmentId: laun.id } } : {}), ...departmentScope(actor) });
   const outside = sum(elsewhere.map((e) => e._sum.amount?.toString() ?? 0));
   if (!outside.isZero()) push("Laundry expenses booked to other departments", "LAUNDRY", outside, "Not in the laundry department total");
   const kg = sum(logs.map((l) => l.kg.toString()));
@@ -290,14 +303,17 @@ export async function laborReport(db: Db, actor: Actor, hotelId: string, r: Rang
   return { lines: out, total, totalRevenue, laborCostPct: totalRevenue.gt(0) ? total.div(totalRevenue) : null, perOccupiedRoom: per(total, occ), occupancy: occ };
 }
 
-/** Energy (spec 110–111): cost and metered consumption per utility; unit cost; per room / m². */
+/**
+ * Energy (spec 110–111): cost and metered consumption per utility; unit cost; per room / m². Hotel-wide for
+ * all-department users; a department-scoped user sees the bills and meters of their departments only.
+ */
 export async function energyReport(db: Db, actor: Actor, hotelId: string, r: Range) {
   authorize(actor, "opex:view", { hotelId });
   const [rows, meters, occ, depts] = await Promise.all([
-    expenseRows(db, hotelId, r, { categoryGroup: "ENERGY" }),
-    db.meter.findMany({ where: { hotelId, active: true }, include: { department: true, readings: { where: { readingDate: { lt: r.to } }, orderBy: { readingDate: "asc" } } } }),
+    expenseRows(db, hotelId, r, { categoryGroup: "ENERGY", ...departmentScope(actor) }),
+    db.meter.findMany({ where: { hotelId, active: true, ...departmentScope(actor) }, include: { department: true, readings: { where: { readingDate: { lt: r.to } }, orderBy: { readingDate: "asc" } } } }),
     occupancyStats(db, hotelId, r.from, r.to),
-    db.department.findMany({ where: { hotelId } }),
+    db.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") } }),
   ]);
   const sqm = sum(depts.map((d) => d.sqm?.toString() ?? 0));
   const meterRows = meters.map((m) => {
@@ -316,16 +332,17 @@ export async function energyReport(db: Db, actor: Actor, hotelId: string, r: Ran
   return { utilities, meters: meterRows, total, perOccupiedRoom: per(total, occ), perSqm: sqm.gt(0) ? total.div(sqm) : null, occupancy: occ };
 }
 
-/** Engineering (spec 112–113): by cost type and cost per asset (period and cumulative). */
+/** Engineering (spec 112–113): by cost type and cost per asset (period and cumulative); a department-scoped user sees their departments' only. */
 export async function engineeringReport(db: Db, actor: Actor, hotelId: string, r: Range) {
   authorize(actor, "opex:view", { hotelId });
+  const scope = departmentScope(actor);
   const [rows, assets, cum, occ] = await Promise.all([
-    expenseRows(db, hotelId, r, { categoryGroup: "ENGINEERING" }),
-    db.asset.findMany({ where: { hotelId }, include: { department: true } }),
-    db.expense.groupBy({ by: ["assetId"], where: { hotelId, status: "POSTED", assetId: { not: null }, expenseDate: { lt: r.to } }, _sum: { amount: true }, _count: true }),
+    expenseRows(db, hotelId, r, { categoryGroup: "ENGINEERING", ...scope }),
+    db.asset.findMany({ where: { hotelId, ...scope }, include: { department: true } }),
+    db.expense.groupBy({ by: ["assetId"], where: { hotelId, status: "POSTED", assetId: { not: null }, expenseDate: { lt: r.to }, ...scope }, _sum: { amount: true }, _count: true }),
     occupancyStats(db, hotelId, r.from, r.to),
   ]);
-  const periodByAsset = await db.expense.groupBy({ by: ["assetId"], where: { hotelId, status: "POSTED", assetId: { not: null }, expenseDate: { gte: r.from, lt: r.to } }, _sum: { amount: true }, _count: true });
+  const periodByAsset = await db.expense.groupBy({ by: ["assetId"], where: { hotelId, status: "POSTED", assetId: { not: null }, expenseDate: { gte: r.from, lt: r.to }, ...scope }, _sum: { amount: true }, _count: true });
   const byType = (OPEX_CATEGORIES.ENGINEERING as readonly string[]).map((t) => ({ type: t, cost: sum(rows.filter((x) => (x.subCategory ?? "") === t).map((x) => x._sum.amount?.toString() ?? 0)) }));
   const untyped = sum(rows.filter((x) => !x.subCategory || !(OPEX_CATEGORIES.ENGINEERING as readonly string[]).includes(x.subCategory)).map((x) => x._sum.amount?.toString() ?? 0));
   if (!untyped.isZero()) byType.push({ type: "UNSPECIFIED", cost: untyped });

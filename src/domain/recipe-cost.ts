@@ -121,16 +121,91 @@ export interface RecipeCostResult {
   issues: Array<{ path: string; issue: LineIssue }>;
 }
 
-const MAX_DEPTH = 12;
+export const MAX_DEPTH = 12;
+/**
+ * Line references a full expansion may visit (a sub-recipe used twice counts twice). The cost tree, its snapshot,
+ * the recipe page and the exports all expand that many lines, so it is bounded on save and again on every costing.
+ */
+export const MAX_EXPANDED_LINES = 5000;
 /** Version of the costing rules frozen into snapshots (see Conventions). */
 export const COST_MODEL = 2;
 
-export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: UnitConverter = defaultConverter, stack: string[] = []): RecipeCostResult {
+export interface TreeSize {
+  /** line references a full expansion visits */
+  lines: number;
+  /** recipes on the longest sub-recipe chain, this one included */
+  depth: number;
+}
+
+const treeKey = (def: RecipeDef) => `${def.recipeId}@${def.versionId ?? ""}`;
+
+/**
+ * Size of the sub-recipe tree of `def`, memoised per recipe version so it is linear in the distinct recipes even when
+ * the expansion itself is exponential. Throws RECIPE_CYCLE on a circular reference.
+ */
+export function recipeTreeSize(def: RecipeDef, resolver: CostResolver, memo: Map<string, TreeSize> = new Map(), stack: string[] = []): TreeSize {
+  const hit = memo.get(treeKey(def));
+  if (hit) return hit;
+  if (stack.includes(def.recipeId)) throw new DomainError("RECIPE_CYCLE", `Circular sub-recipe reference: ${[...stack, def.recipeId].join(" → ")}`);
+  // a chain this long is refused long before; stops the recursion on corrupt data
+  if (stack.length > 4 * MAX_DEPTH) throw new DomainError("RECIPE_CYCLE", `Sub-recipe nesting deeper than ${MAX_DEPTH} levels`);
+  let lines = 0;
+  let below = 0;
+  for (const l of def.lines) {
+    lines += 1;
+    const sub = l.subRecipeId ? resolver.recipe(l.subRecipeId) : undefined;
+    if (!sub) continue;
+    const s = recipeTreeSize(sub, resolver, memo, [...stack, def.recipeId]);
+    lines += s.lines;
+    below = Math.max(below, s.depth);
+  }
+  const size = { lines, depth: below + 1 };
+  memo.set(treeKey(def), size);
+  return size;
+}
+
+/** Refuses a tree too deep or too large to expand (checked before any costing). */
+export function assertTreeBounds(def: RecipeDef, resolver: CostResolver, memo?: Map<string, TreeSize>): TreeSize {
+  const s = recipeTreeSize(def, resolver, memo);
+  if (s.depth > MAX_DEPTH) throw new DomainError("RECIPE_CYCLE", `Sub-recipe nesting deeper than ${MAX_DEPTH} levels`);
+  if (s.lines > MAX_EXPANDED_LINES) throw new DomainError("VALIDATION", `${def.name}: the recipe expands to more than ${MAX_EXPANDED_LINES} lines through its sub-recipes`);
+  return s;
+}
+
+/**
+ * Save-time check: after replacing one recipe's definition (`after` vs `before`), no recipe in `recipeIds` may end
+ * up nested deeper than MAX_DEPTH or expanding beyond MAX_EXPANDED_LINES — the edited one or any recipe using it.
+ * A recipe already beyond a limit before the change only blocks it when the change makes it worse.
+ */
+export function assertTreesWithinLimits(recipeIds: Iterable<string>, after: CostResolver, before: CostResolver): void {
+  const memoAfter = new Map<string, TreeSize>();
+  const memoBefore = new Map<string, TreeSize>();
+  for (const id of recipeIds) {
+    const def = after.recipe(id);
+    if (!def) continue;
+    const a = recipeTreeSize(def, after, memoAfter);
+    if (a.depth <= MAX_DEPTH && a.lines <= MAX_EXPANDED_LINES) continue;
+    let b: TreeSize | undefined;
+    try {
+      const old = before.recipe(id);
+      b = old ? recipeTreeSize(old, before, memoBefore) : undefined;
+    } catch {
+      b = undefined;
+    }
+    if (a.depth > MAX_DEPTH && a.depth > (b?.depth ?? 0)) throw new DomainError("RECIPE_CYCLE", `This change would nest the sub-recipes of ${def.name} deeper than ${MAX_DEPTH} levels`);
+    if (a.lines > MAX_EXPANDED_LINES && a.lines > (b?.lines ?? 0)) throw new DomainError("VALIDATION", `This change would make recipe ${def.name} expand to more than ${MAX_EXPANDED_LINES} lines through its sub-recipes`);
+  }
+}
+
+export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: UnitConverter = defaultConverter, stack: string[] = [], cache?: Map<string, RecipeCostResult>): RecipeCostResult {
+  // top level: bound the tree first; below, every sub-recipe version is costed once (the result shares the sub-trees)
+  if (!cache) assertTreeBounds(def, resolver);
   if (stack.includes(def.recipeId)) {
     throw new DomainError("RECIPE_CYCLE", `Circular sub-recipe reference: ${[...stack, def.recipeId].join(" → ")}`);
   }
   if (stack.length >= MAX_DEPTH) throw new DomainError("RECIPE_CYCLE", `Sub-recipe nesting deeper than ${MAX_DEPTH} levels`);
   const path = [...stack, def.recipeId];
+  const memo = cache ?? new Map<string, RecipeCostResult>();
 
   const batchYield = D(def.batchYieldQty);
   const portions = D(def.portions);
@@ -200,7 +275,11 @@ export function costRecipe(def: RecipeDef, resolver: CostResolver, converter: Un
         lines.push(emptyLine(line, "SUB_RECIPE", line.subRecipeId, "Unknown sub-recipe", qty, lineIssues));
         return;
       }
-      const child = costRecipe(sub, resolver, converter, path);
+      let child = memo.get(treeKey(sub));
+      if (!child) {
+        child = costRecipe(sub, resolver, converter, path, memo);
+        memo.set(treeKey(sub), child);
+      }
       const epOut = converter.convert(qty, line.unit, child.outputUnit, sub.outputConversions ?? []).quantity;
       const y = HUNDRED;
       const apOut = epOut.div(y.div(HUNDRED));
