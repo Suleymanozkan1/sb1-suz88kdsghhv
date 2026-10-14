@@ -306,7 +306,7 @@ export const XL_VALUES: Record<string, string> = {
   pc: "adet",
   portion: "porsiyon",
   "see WASTE": "bkz. FİRE",
-  "n/a — actual cost is measured per ingredient, not per dish": "yok — gerçek maliyet yemek başına değil malzeme başına ölçülür",
+  "n/a (actual cost is measured per ingredient, not per dish)": "yok (gerçek maliyet yemek başına değil malzeme başına ölçülür)",
   "n/a": "yok",
   // notes that name a sheet or a code (the UI dictionary keeps the English names)
   "Estimated consumption is a control estimate (input − reusable − waste − staff meal). Quantities mix units across items; see BUFFET_PRODUCT for per-item units.": "Tahmini tüketim bir kontrol tahminidir (giriş − tekrar kullanılabilir − fire − personel yemeği). Miktarlar farklı birimleri karıştırır; ürün bazında birimler için 16_BÜFE_ÜRÜN_MALİYETİ sayfasına bakın.",
@@ -459,7 +459,7 @@ export const XL_TEXT: Record<string, string> = {
   "(no data)": "(veri yok)",
   "Ingredient Price Trend": "Malzeme fiyat trendi",
   "Ingredient Price Trend (top spend)": "Malzeme fiyat trendi (en çok harcanan)",
-  "Module not yet available in HotelCost - no data is shown rather than estimated values.": "Bu modül HotelCost'ta henüz yok - tahmini değer göstermek yerine veri gösterilmiyor.",
+  "Module not yet available in HotelCost: no data is shown rather than estimated values.": "Bu modül HotelCost'ta henüz yok; tahmini değer göstermek yerine veri gösterilmiyor.",
   "Category Cost": "Kategori maliyeti",
   "Supplier Cost": "Tedarikçi maliyeti",
   "Product Cost": "Ürün maliyeti",
@@ -486,7 +486,7 @@ export const XL_TEXT: Record<string, string> = {
   "EXPORT COMPLETED SUCCESSFULLY": "AKTARIM BAŞARIYLA TAMAMLANDI",
   HotelCost_Management_Report_: "HotelCost_Yonetim_Raporu_",
   "PDF export failed": "PDF oluşturulamadı",
-  "reconciliation check(s) failed - see": "mutabakat kontrolü başarısız - bkz.",
+  "reconciliation check(s) failed, see": "mutabakat kontrolü başarısız, bkz.",
   "Workbook has no table": "Çalışma kitabında tablo yok:",
   "(export is newer than workbook?)": "(dışa aktarım çalışma kitabından yeni olabilir)",
   "Column count differs": "Sütun sayısı farklı",
@@ -544,7 +544,7 @@ export const XL_TEXT: Record<string, string> = {
   "Not a HotelCost export (missing ##EXPORT header)": "HotelCost dışa aktarımı değil (##EXPORT başlığı yok)",
   "Truncated section": "Eksik bölüm",
   "Column count mismatch": "Sütun sayısı uyuşmuyor",
-  "Export truncated (no ##END marker) - incomplete data is never written.": "Dışa aktarım yarım kaldı (##END işareti yok) - eksik veri asla yazılmaz.",
+  "Export truncated (no ##END marker): incomplete data is never written.": "Dışa aktarım yarım kaldı (##END işareti yok); eksik veri asla yazılmaz.",
 };
 
 /**
@@ -564,10 +564,10 @@ export const XL_TEMPLATES: Array<[string, string]> = [
   ["Emergency share {0}; preventive share {1}.", "Acil iş payı {0}; önleyici bakım payı {1}."],
   ["Direct and allocated cost are shown separately (spec 146). Revenue: POS + minibar + rooms (PMS). Budget: {0}; blank = no budget line.", "Direkt ve dağıtılan maliyet ayrı gösterilir. Gelir: POS + minibar + odalar (PMS). Bütçe: {0}; boş = bütçe satırı yok."],
   ["{0}. Variance = actual − budget (positive = over budget; for REVENUE positive = above budget).", "{0}. Sapma = gerçekleşen − bütçe (pozitif = bütçe aşıldı; GELİR için pozitif = bütçenin üstünde)."],
-  ["{0} ({1}) — not yet approved", "{0} ({1}) — henüz onaylanmadı"],
+  ["{0} ({1}), not yet approved", "{0} ({1}), henüz onaylanmadı"],
   ["No budget for {0}", "{0} için bütçe yok"],
   ["{0} ({1}). Volume: {2}. {3}. {4}.", "{0} ({1}). Hacim: {2}. {3}. {4}."],
-  ["Actual to date ({0}) + on the books ({1} room nights) — no pickup assumed", "Bugüne kadar gerçekleşen ({0}) + kesin rezervasyon ({1} oda gecesi) — ek rezervasyon varsayılmadı"],
+  ["Actual to date ({0}) + on the books ({1} room nights); no pickup assumed", "Bugüne kadar gerçekleşen ({0}) + kesin rezervasyon ({1} oda gecesi); ek rezervasyon varsayılmadı"],
   ["Scenario cost: best {0} / base {1} / worst {2}; result (revenue − cost): best {3} / base {4} / worst {5}", "Senaryo maliyeti: iyi {0} / baz {1} / kötü {2}; sonuç (gelir − maliyet): iyi {3} / baz {4} / kötü {5}"],
   ["Scenario cost: best {0} / base {1} / worst {2}", "Senaryo maliyeti: iyi {0} / baz {1} / kötü {2}"],
   ["Actions: expected {0}, realized {1}, overdue {2}. Opportunities are sized on this period with stated assumptions.", "Aksiyonlar: beklenen {0}, gerçekleşen {1}, geciken {2}. Fırsatlar bu dönem için belirtilen varsayımlarla hesaplandı."],

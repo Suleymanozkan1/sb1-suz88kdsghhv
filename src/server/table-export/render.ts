@@ -110,11 +110,11 @@ const SHORT_SHEET: Record<string, string> = {
 /**
  * A complete, readable sheet name within 31 characters: characters Excel forbids become spaces, then a long
  * title loses its parenthesis ("Top 10 variance items (unexplained usage)" → "Top 10 variance items"), then its
- * trailing " — / · / - " parts ("Cost intelligence — Grand Hotel" → "Cost intelligence"), and only as a last
- * resort whole trailing words. Duplicates get " (2)", " (3)" ….
+ * trailing ": / — / · / - " parts ("Cost intelligence: Grand Hotel" → "Cost intelligence"; a colon reads as " · "), and
+ * only as a last resort whole trailing words. Duplicates get " (2)", " (3)" ….
  */
 export function sheetName(title: string, used: Set<string>): string {
-  const clean = title.replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim().replace(/^'+|'+$/g, "").trim();
+  const clean = title.replace(/:\s+/g, " · ").replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim().replace(/^'+|'+$/g, "").trim();
   const fit = (s: string, max: number): string => {
     s = SHORT_SHEET[s] ?? s;
     if (s.length <= max) return s;

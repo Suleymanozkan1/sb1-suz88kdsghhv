@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <LanguageSwitch />
         </div>
         <h1 className="text-2xl font-semibold text-ink-950">{t("Sign in")}</h1>
-        {joined === "1" && <div className="mt-4"><Alert tone="green">{t("Account created - sign in with your e-mail and new password.")}</Alert></div>}
+        {joined === "1" && <div className="mt-4"><Alert tone="green">{t("Account created. Sign in with your e-mail and new password.")}</Alert></div>}
         <LoginForm />
       </div>
     </main>

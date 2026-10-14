@@ -9,6 +9,13 @@ import type { Actor } from "./actor";
 
 const hash = (t: string) => createHash("sha256").update(t).digest("hex");
 
+/** Personal API tokens (Excel refresh) start with this; browser session tokens are plain hex. */
+export const API_TOKEN_PREFIX = "hc_";
+export const isApiToken = (token: string | undefined): boolean => !!token?.startsWith(API_TOKEN_PREFIX);
+/** Session row id: the token's SHA-256, kept apart for API tokens so their owner can list and revoke them. */
+export const API_SESSION_PREFIX = "api:";
+export const sessionId = (token: string) => (isApiToken(token) ? `${API_SESSION_PREFIX}${hash(token)}` : hash(token));
+
 const ACCESS_INCLUDE = { role: true, organization: { select: { active: true } }, hotelAccess: { include: { hotel: { select: { active: true } } } }, deptAccess: true } as const;
 type UserWithAccess = Prisma.UserGetPayload<{ include: typeof ACCESS_INCLUDE }>;
 function toActor(u: UserWithAccess): Actor {
@@ -29,7 +36,7 @@ function toActor(u: UserWithAccess): Actor {
 export async function actorFromToken(token: string | undefined): Promise<Actor | null> {
   if (!token) return null;
   const s = await prisma.session.findUnique({
-    where: { id: hash(token) },
+    where: { id: sessionId(token) },
     include: { user: { include: ACCESS_INCLUDE } },
   });
   if (!s || s.expiresAt < new Date() || !s.user.active || !s.user.organization.active) return null;

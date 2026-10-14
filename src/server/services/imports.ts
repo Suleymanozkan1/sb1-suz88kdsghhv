@@ -6,10 +6,11 @@
 import { createHash } from "node:crypto";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
-import { type Actor, authorize, requireHotel, requirePermission } from "../auth/actor";
+import { type Actor, authorize, can, requireDepartment, requireHotel, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
 import type { Permission } from "../auth/permissions";
 import { reverseMovement } from "./ledger";
+import { requireWarehouseScope } from "../auth/scope";
 
 export const IMPORT_KINDS = ["EXPENSES", "OCCUPANCY", "RESERVATIONS", "METER_READINGS", "PRODUCTS", "SUPPLIER_PRICES", "OPENING_STOCK"] as const;
 export type ImportKind = (typeof IMPORT_KINDS)[number];
@@ -50,7 +51,9 @@ export async function finishBatch(tx: Tx, batchId: string, postedCount: number, 
 export async function listBatches(db: Db, actor: Actor, hotelId: string, kind?: ImportKind) {
   if (kind) authorize(actor, IMPORT_PERMISSION[kind], { hotelId });
   else authorize(actor, "report:view", { hotelId });
-  return db.importBatch.findMany({ where: { hotelId, ...(kind ? { kind } : {}) }, orderBy: { createdAt: "desc" }, take: 100 });
+  // all kinds = only the kinds the user may import, as the /imports page and its export list them
+  const kinds = kind ? [kind] : IMPORT_KINDS.filter((k) => can(actor, IMPORT_PERMISSION[k]));
+  return db.importBatch.findMany({ where: { hotelId, kind: { in: kinds } }, orderBy: { createdAt: "desc" }, take: 100 });
 }
 
 /**
@@ -94,7 +97,12 @@ export async function rollbackBatch(db: Db, actor: Actor, hotelId: string, batch
         affected++;
       }
     } else if (kind === "OPENING_STOCK") {
-      const txs = await tx.stockTransaction.findMany({ where: { hotelId, sourceType: "IMPORT", sourceId: b.id, type: "OPENING" } });
+      const txs = await tx.stockTransaction.findMany({ where: { hotelId, sourceType: "IMPORT", sourceId: b.id, type: "OPENING" }, include: { warehouse: { select: { departmentId: true } } } });
+      // the same department scope as a manual opening movement, for every store of the batch before anything is reversed
+      for (const t of txs) {
+        requireWarehouseScope(actor, t.warehouse);
+        requireDepartment(actor, t.departmentId ?? t.warehouse.departmentId);
+      }
       for (const t of txs) {
         await reverseMovement(tx, actor, { hotelId, stockTxId: t.id, reason: `Import rollback: ${reason}` });
         affected++;

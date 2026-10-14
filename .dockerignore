@@ -3,4 +3,18 @@ node_modules
 coverage
 playwright-report
 test-results
-.env
+*.tsbuildinfo
+# secrets and local data must never reach an image layer (COPY . . takes the whole build context)
+.git
+**/.env
+**/.env.*
+!.env.example
+backups
+**/backups
+dist
+.video-work
+integrations/micros-bot/runs
+integrations/micros-bot/state
+integrations/micros-bot/logs
+integrations/micros-bot/invoice-import
+integrations/micros-bot/**/*.log

@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: hotelcost
       POSTGRES_DB: hotelcost
     volumes: ["pgdata:/var/lib/postgresql/data"]
-    ports: ["5432:5432"]
+    # the app reaches the database as db:5432 on the compose network; the host port is for local tools only
+    ports: ["127.0.0.1:5432:5432"]
   app:
     build: .
     depends_on: [db]

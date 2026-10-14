@@ -7,7 +7,7 @@ const vars = { supplier: "Akdeniz Sebze", hotel: "Grand Otel", date: "09.10.2026
 describe("order e-mail template", () => {
   it("the default is Turkish, addressed to the supplier, with the product / quantity / unit lines", () => {
     const m = renderOrderEmail(DEFAULT_ORDER_EMAIL, vars);
-    expect(m.subject).toBe("Sipariş — Grand Otel — 09.10.2026");
+    expect(m.subject).toBe("Sipariş: Grand Otel, 09.10.2026");
     expect(m.text.startsWith("Sayın Akdeniz Sebze,\n\nGrand Otel için aşağıdaki ürünlere ihtiyacımız var:\n\n- Domates: 20 kg\n- Zeytinyağı: 2,5 l\n")).toBe(true);
     expect(m.html).toContain("<th");
     expect(m.html).toMatch(/<td[^>]*>Zeytinyağı<\/td><td[^>]*>2,5<\/td><td[^>]*>l<\/td>/);

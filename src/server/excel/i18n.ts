@@ -29,11 +29,11 @@ const RAW_KEYS = /^(id|sku|code|traceId|documentNo|externalId|posCode|barcode|me
 const escRe = (s: string) => s.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&");
 const TEMPLATES = XL_TEMPLATES.map(([en, tr]) => ({ re: new RegExp(`^${en.split(/\{\d+\}/).map(escRe).join("(.+?)")}$`, "s"), tr }));
 
-/** Composite phrases: "Label: value | Label: value" (reorder explanations), "formula — assumption: text" (savings). */
+/** Composite phrases: "Label: value | Label: value" (reorder explanations), "formula; assumption: text" (savings). */
 function composite(v: string, val: (s: string) => string): string | null {
   if (v.includes(" | ")) return v.split(" | ").map(val).join(" | ");
-  const a = v.indexOf(" — assumption: ");
-  if (a > 0) return `${val(v.slice(0, a))} — varsayım: ${val(v.slice(a + 15))}`;
+  const a = v.indexOf("; assumption: ");
+  if (a > 0) return `${val(v.slice(0, a))}; varsayım: ${val(v.slice(a + 14))}`;
   for (const t of TEMPLATES) {
     const m = t.re.exec(v);
     if (m) return t.tr.replace(/\{(\d+)\}/g, (_, i: string) => val(m[Number(i) + 1] ?? ""));

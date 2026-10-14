@@ -101,7 +101,13 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
   return inTx(db, async (tx) => {
     if (input.idempotencyKey) {
       const existing = await tx.stockTransaction.findUnique({ where: { hotelId_idempotencyKey: { hotelId: input.hotelId, idempotencyKey: input.idempotencyKey } } });
-      if (existing) return existing;
+      if (existing) {
+        // a replay returns the original row only for the same movement: a key claimed by another movement must not
+        // stand in for this one (a count / waste posting would otherwise be skipped silently)
+        const same = existing.type === input.type && existing.productId === input.productId && existing.warehouseId === input.warehouseId && existing.sourceType === input.sourceType && existing.sourceId === (input.sourceId ?? null);
+        if (!same) throw new DomainError("CONFLICT", "This idempotency key was already used for a different stock movement", { stockTxId: existing.id });
+        return existing;
+      }
     }
     const qty = D(input.quantity);
     if (qty.isZero()) throw new DomainError("VALIDATION", "Quantity cannot be zero");

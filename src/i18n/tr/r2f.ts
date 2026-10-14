@@ -2,8 +2,8 @@
 export const r2f: Record<string, string> = {
   // management pack / reports page: no budget section, the P&L keeps its own heading
   "9. P&L cost view": "9. Kâr-zarar maliyet görünümü",
-  "Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, P&L cost view, recommended actions and the month-end checklist — from the same engine as the screens and Excel.":
-    "Yönetici özeti, F&B, odalar, personel, enerji, çamaşırhane, kat hizmetleri, teknik, satın alma ve tedarikçi değişiklikleri, fire, stok, sapma, başlıca etkenler, kâr-zarar maliyet görünümü, önerilen aksiyonlar ve ay sonu kontrol listesi — ekranlar ve Excel ile aynı hesaplama motorundan.",
+  "Executive summary, F&B, rooms, labor, energy, laundry, housekeeping, engineering, purchasing & supplier changes, waste, stock, variance, top drivers, P&L cost view, recommended actions and the month-end checklist, from the same engine as the screens and Excel.":
+    "Yönetici özeti, F&B, odalar, personel, enerji, çamaşırhane, kat hizmetleri, teknik, satın alma ve tedarikçi değişiklikleri, fire, stok, sapma, başlıca etkenler, kâr-zarar maliyet görünümü, önerilen aksiyonlar ve ay sonu kontrol listesi. Hepsi ekranlar ve Excel ile aynı hesaplama motorundan gelir.",
   // F&B cost statements and monthly stock: transfers shown net, as on the variance page
   "Opening + purchases − transfers out (net) − closing = actual food cost vs theoretical": "Açılış + alımlar − giden transferler (net) − kapanış = gerçekleşen yiyecek maliyeti ve teorik karşılaştırması",
   "Transfers Out (net)": "Giden transferler (net)",
@@ -19,5 +19,5 @@ export const r2f: Record<string, string> = {
 
 /** Server messages added in the review pass (r2f). */
 export const r2fMessages: Record<string, string> = {
-  "This month was changed by someone else — reload and try again": "Bu ay başka biri tarafından değiştirildi — sayfayı yenileyip tekrar deneyin",
+  "This month was changed by someone else: reload and try again": "Bu ay başka biri tarafından değiştirildi; sayfayı yenileyip tekrar deneyin",
 };

@@ -64,7 +64,7 @@ export function NewTask({ roles }: { roles: { key: string; name: string }[] }) {
       <div><Label htmlFor="ct-title">{t("Control task")}</Label><Input id="ct-title" name="title" required minLength={3} placeholder={t("Bar spirits spot check")} /></div>
       <div><Label htmlFor="ct-rec">{t("Recurrence")}</Label><Select id="ct-rec" value={rec} onChange={(e) => setRec(e.target.value)}><option value="WEEKLY">{t("WEEKLY")}</option><option value="MONTHLY">{t("MONTHLY")}</option></Select></div>
       {rec === "WEEKLY" ? <div><Label htmlFor="ct-wd">{t("Weekday")}</Label><Select id="ct-wd" name="weekday">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => <option key={d} value={i + 1}>{t(d)}</option>)}</Select></div> : <div><Label htmlFor="ct-md" hint={t("0 = last day")}>{t("Day of month")}</Label><Input id="ct-md" name="monthDay" inputMode="numeric" defaultValue="0" className="w-20" /></div>}
-      <div><Label htmlFor="ct-owner">{t("Owner role")}</Label><Select id="ct-owner" name="ownerRole" defaultValue="" className="w-48"><option value="">{t("— (period managers only)")}</option>{roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
+      <div><Label htmlFor="ct-owner">{t("Owner role")}</Label><Select id="ct-owner" name="ownerRole" defaultValue="" className="w-48"><option value="">{t("(period managers only)")}</option>{roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
       <Button type="submit" disabled={busy}>{t("Add task")}</Button>
     </form>
   );

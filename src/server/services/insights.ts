@@ -2,11 +2,12 @@
  * Dashboard, inventory status and data-quality center (spec §167–§178, §216–§222).
  * Re-uses VarianceService so dashboard numbers equal report numbers.
  */
-import { type AlertSeverity, Prisma } from "@prisma/client";
+import { type AlertSeverity, type AlertType, Prisma } from "@prisma/client";
 import { warehouseScope } from "../auth/scope";
 import { D, Decimal, ZERO, pct, str, sum } from "@/domain/money";
 import { stockLevel, daysOfStock } from "@/domain/costing";
 import type { Db } from "../db";
+import type { Permission } from "../auth/permissions";
 import { type Actor, authorize, can, departmentScope, requirePermission } from "../auth/actor";
 import { theoreticalVsActual } from "./variance";
 import { dataQuality } from "./data-quality";
@@ -212,16 +213,48 @@ export function alertDisplayVars(vars: Record<string, string> | undefined, local
 }
 const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, WARNING: 2, INFO: 3 };
 
+/** The permission behind each stored alert type: its text quotes data of that module (a margin alert: recipe margins). */
+const ALERT_PERMISSION: Partial<Record<AlertType, Permission>> = {
+  LOW_MARGIN: "recipe:view",
+  HIGH_RECIPE_COST: "recipe:view",
+  OVER_PORTIONING: "recipe:view",
+  MISSING_RECIPE: "recipe:view",
+  HIGH_WASTE: "waste:view",
+  UNEXPLAINED_VARIANCE: "variance:view",
+  YIELD_DETERIORATION: "variance:view",
+  EXPIRED_STOCK: "inventory:view",
+  OVERSTOCK: "inventory:view",
+  DEAD_STOCK: "inventory:view",
+  MISSING_STOCK_COUNT: "inventory:view",
+  MISSING_COST: "product:view",
+  BUDGET_OVERRUN: "budget:view",
+  SUPPLIER_PRICE_ANOMALY: "purchase:prices",
+};
+
+/**
+ * The 10 newest stored alerts the user may read: the type's permission, and the department of the recipe it is about
+ * (as listRecipes scopes it). Any other alert is hotel-level: all-department roles only.
+ */
+async function visibleAlerts<A extends { type: AlertType; entityType: string | null; entityId: string | null }>(db: Db, actor: Actor, hotelId: string, rows: A[]): Promise<A[]> {
+  const allowed = rows.filter((a) => {
+    const perm = ALERT_PERMISSION[a.type];
+    return !!perm && can(actor, perm);
+  });
+  const recipeIds = allowed.filter((a) => a.entityType === "Recipe" && a.entityId).map((a) => a.entityId!);
+  const recipes = recipeIds.length ? new Set((await db.recipe.findMany({ where: { hotelId, id: { in: recipeIds }, ...departmentScope(actor) }, select: { id: true } })).map((r) => r.id)) : new Set<string>();
+  return allowed.filter((a) => (a.entityType === "Recipe" && a.entityId ? recipes.has(a.entityId) : actor.departmentIds === "ALL")).slice(0, 10);
+}
+
 /**
  * The alert list (feedback r2 §2). Supplier price increases at or above the hotel's threshold (Administration → price
  * alert %, default 10) and critical / out-of-stock products are derived live from receipts and stock, so every one of
  * them shows - before, only the 10 newest stored alerts were listed, older increases dropped out of that window and
- * imported price lists never raised one. Other stored alerts (margin, ...) are listed as before.
+ * imported price lists never raised one. Other stored alerts (margin, ...) are listed to the users who may read their source (visibleAlerts).
  */
-async function alertList(db: Db, hotelId: string, src: { prices: PriceChange[] | null; stock: Awaited<ReturnType<typeof inventoryStatus>> | null; from: Date; to: Date }): Promise<DashboardAlert[]> {
+async function alertList(db: Db, actor: Actor, hotelId: string, src: { prices: PriceChange[] | null; stock: Awaited<ReturnType<typeof inventoryStatus>> | null; from: Date; to: Date }): Promise<DashboardAlert[]> {
   const [hotel, stored] = await Promise.all([
     db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { priceAlertPct: true, baseCurrency: true } }),
-    db.alert.findMany({ where: { hotelId, acknowledged: false, type: { notIn: ["PRICE_INCREASE", "CRITICAL_STOCK"] } }, orderBy: { createdAt: "desc" }, take: 10 }),
+    db.alert.findMany({ where: { hotelId, acknowledged: false, type: { notIn: ["PRICE_INCREASE", "CRITICAL_STOCK"] } }, orderBy: { createdAt: "desc" }, take: 100 }).then((rows) => visibleAlerts(db, actor, hotelId, rows)),
   ]);
   const threshold = D(hotel.priceAlertPct.toString());
   const now = new Date();
@@ -252,7 +285,7 @@ export async function dashboard(db: Db, actor: Actor, hotelId: string, q: { from
     priceChangeEvents(db, actor, hotelId, q),
     dataQuality(db, actor, hotelId),
   ]);
-  const alerts = await alertList(db, hotelId, { prices, stock: inv, ...q });
+  const alerts = await alertList(db, actor, hotelId, { prices, stock: inv, ...q });
   const t = variance.totals;
   return {
     period: { from: q.from.toISOString(), to: q.to.toISOString() },
@@ -297,7 +330,7 @@ export async function basicDashboard(db: Db, actor: Actor, hotelId: string, q: {
     can(actor, "purchase:view") ? db.goodsReceipt.aggregate({ where: { hotelId, receiptDate: { gte: q.from, lt: q.to }, warehouse: warehouseScope(actor) }, _sum: { landedTotal: true }, _count: true }) : Promise.resolve(null),
     can(actor, "purchase:view") ? priceChangeEvents(db, actor, hotelId, q) : Promise.resolve(null),
   ]);
-  const alerts = inv || prices ? await alertList(db, hotelId, { prices, stock: inv, ...q }) : [];
+  const alerts = inv || prices ? await alertList(db, actor, hotelId, { prices, stock: inv, ...q }) : [];
   return {
     period: { from: q.from.toISOString(), to: q.to.toISOString() },
     stock: inv ? { value: inv.totalValue, counts: inv.counts, critical: inv.rows.filter((r) => r.level === "CRITICAL" || r.level === "OUT_OF_STOCK" || r.level === "LOW").slice(0, 10) } : null,

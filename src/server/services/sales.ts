@@ -63,6 +63,19 @@ export function snapshotOf(json: unknown): Snapshot | null {
   return { portions: s.portions, requirements: s.requirements };
 }
 
+/**
+ * The recipe a sale line maps to: POS code first, else the item name (hotels often have no codes). A recipe of the
+ * line's own department (or a hotel-level one) wins over another department's recipe with the same code or name, so
+ * another department cannot take over an outlet's sales by reusing its POS codes; outlets selling a dish another
+ * department owns (desserts from the pastry) still map to it.
+ */
+export function matchRecipe<R extends { posCode: string | null; name: string; departmentId: string | null }>(recipes: R[], departmentId: string, posCode: string, name: string | null | undefined): R | undefined {
+  const own = (r: R) => !r.departmentId || r.departmentId === departmentId;
+  const n = (name || posCode).toLocaleLowerCase("tr");
+  const byName = (r: R) => r.name.toLocaleLowerCase("tr") === n;
+  return recipes.find((r) => own(r) && r.posCode === posCode) ?? recipes.find((r) => r.posCode === posCode) ?? recipes.find((r) => own(r) && byName(r)) ?? recipes.find(byName);
+}
+
 export interface ImportPreviewRow {
   row: number;
   status: "VALID" | "INVALID" | "DUPLICATE" | "WARNING";
@@ -75,7 +88,7 @@ export async function previewSales(db: Db, actor: Actor, hotelId: string, rows: 
   const [departments, recipes] = await Promise.all([db.department.findMany({ where: { hotelId } }), db.recipe.findMany({ where: { hotelId, active: true } })]);
   const seen = new Set<string>();
   const parsed: ImportPreviewRow[] = [];
-  const candidates: Array<{ idx: number; externalId: string }> = [];
+  const candidates: Array<{ idx: number; externalId: string; departmentId: string }> = [];
   rows.forEach((raw, i) => {
     const r = saleRow.safeParse(raw);
     if (!r.success) {
@@ -96,23 +109,24 @@ export async function previewSales(db: Db, actor: Actor, hotelId: string, rows: 
       parsed.push({ row: i + 1, status: "INVALID", messages: ["Sale date is in the future"] });
       return;
     }
-    if (seen.has(d.externalId)) {
+    // a line id is unique within its department (the outlet's POS numbering)
+    const lineKey = `${dept.id}|${d.externalId}`;
+    if (seen.has(lineKey)) {
       parsed.push({ row: i + 1, status: "DUPLICATE", messages: [`Duplicate externalId ${d.externalId} within file`] });
       return;
     }
-    seen.add(d.externalId);
-    // POS code first; hotels often have no codes, so the item name matches the recipe name too
-    const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
-    const recipe = recipes.find((x) => x.posCode === d.posCode) ?? byName(d.name ?? d.posCode);
+    seen.add(lineKey);
+    const recipe = matchRecipe(recipes, dept.id, d.posCode, d.name);
     const messages = recipe ? [] : [`No recipe mapped to POS code '${d.posCode}' (will be imported as unmapped)`];
     parsed.push({ row: i + 1, status: recipe ? "VALID" : "WARNING", messages, data: { ...d, departmentId: dept.id, recipeId: recipe?.id ?? null } });
-    candidates.push({ idx: parsed.length - 1, externalId: d.externalId });
+    candidates.push({ idx: parsed.length - 1, externalId: d.externalId, departmentId: dept.id });
   });
   if (candidates.length) {
-    const existing = await db.saleLine.findMany({ where: { hotelId, externalId: { in: candidates.map((c) => c.externalId) } }, select: { externalId: true } });
-    const ex = new Set(existing.map((e) => e.externalId));
+    // only the row's own department counts (and is looked at): lines of other departments are neither duplicates nor shown
+    const existing = await db.saleLine.findMany({ where: { hotelId, departmentId: { in: [...new Set(candidates.map((c) => c.departmentId))] }, externalId: { in: candidates.map((c) => c.externalId) } }, select: { departmentId: true, externalId: true } });
+    const ex = new Set(existing.map((e) => `${e.departmentId}|${e.externalId}`));
     for (const c of candidates) {
-      if (ex.has(c.externalId)) {
+      if (ex.has(`${c.departmentId}|${c.externalId}`)) {
         const p = parsed[c.idx]!;
         p.status = "DUPLICATE";
         p.messages = [`Already imported (${c.externalId})`];
@@ -219,7 +233,7 @@ export async function rollbackSalesImport(db: Db, actor: Actor, hotelId: string,
     if (imp.status !== "POSTED") throw new DomainError("VALIDATION", `Import is ${imp.status}`);
     if (actor.departmentIds !== "ALL") {
       const foreign = await tx.saleLine.count({ where: { importId, departmentId: { notIn: [...actor.departmentIds] } } });
-      if (foreign) throw new DomainError("FORBIDDEN", `This import has ${foreign} line(s) outside your departments - ask a cost controller to roll it back`);
+      if (foreign) throw new DomainError("FORBIDDEN", `This import has ${foreign} line(s) outside your departments: ask a cost controller to roll it back`);
     }
     const dates = await tx.saleLine.findMany({ where: { importId }, select: { saleDate: true }, distinct: ["saleDate"] });
     for (const d of dates) await assertPostable(tx, actor, hotelId, d.saleDate);

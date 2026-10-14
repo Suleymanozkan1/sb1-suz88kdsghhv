@@ -142,6 +142,6 @@ Private Sub NotAvailable(ByVal ws As Worksheet, ByVal title As String, ByVal x A
     Dim shp As Shape
     Set shp = ws.Shapes.AddTextbox(1, x, y, W, H)
     shp.Name = "txt_" & ws.Shapes.Count
-    shp.TextFrame.Characters.Text = title & vbLf & vbLf & L("Module not yet available in HotelCost - no data is shown rather than estimated values.")
+    shp.TextFrame.Characters.Text = title & vbLf & vbLf & L("Module not yet available in HotelCost: no data is shown rather than estimated values.")
     shp.Line.ForeColor.RGB = RGB(213, 217, 226)
 End Sub

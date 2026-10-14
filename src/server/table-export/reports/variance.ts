@@ -19,7 +19,7 @@ export const variance: ReportDef = {
     const groupLabel: Record<string, string> = { FOOD: "Food", BEVERAGE: "Beverage" };
     return {
       title: t("Theoretical vs actual"),
-      subtitle: r.dataQuality.unmappedSaleLines > 0 ? t("{n} sale lines ({revenue} revenue) have no recipe mapping — theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, hotel.baseCurrency, 0) }) : undefined,
+      subtitle: r.dataQuality.unmappedSaleLines > 0 ? t("{n} sale lines ({revenue} revenue) have no recipe mapping, so theoretical cost is understated.", { n: r.dataQuality.unmappedSaleLines, revenue: money(r.dataQuality.unmappedRevenue, hotel.baseCurrency, 0) }) : undefined,
       fileName: "teorik-gerceklesen",
       filters: [
         [t("From"), date(range.fromStr)],

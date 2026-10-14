@@ -66,14 +66,14 @@ const dashboard: Scene = {
     await s.go("/");
     await s.show(card(s, /En Çok Fire Veren/i), "Altta en çok fire veren ürünler, fiyat değişimleri ve uyarılar; başlıklar ayrıntıya götürür.");
     await exports(s, "Rakamlar aynı dönemle PDF, Excel veya CSV olarak indirilebilir.");
-    await s.say("Tüm rakamlar ortak maliyet motorundan gelir ve Teorik - Gerçekleşen raporuyla tutar.");
+    await s.say("Tüm rakamlar ortak maliyet motorundan gelir ve Teorik ve Gerçekleşen raporuyla tutar.");
   },
 };
 
 const variance: Scene = {
   slug: "variance",
   path: "/variance",
-  title: "Teorik - Gerçekleşen",
+  title: "Teorik ve Gerçekleşen",
   async run(studio) {
     const s = steady(studio);
     const p = s.page;
@@ -261,7 +261,7 @@ const waste: Scene = {
     await s.type(p.locator("#wr-w-0"), "Ezilmiş, kullanılamaz");
     await s.click(p.getByRole("button", { name: "Fire kaydet" }), "“Fire kaydet”: kayıt maliyetiyle stoktan düşülür; yüksek tutarlılar önce yönetici onayına gider.");
     await exports(s, "Liste aynı filtrelerle PDF, Excel veya CSV olarak indirilebilir.");
-    await s.say("Fire tutarı, Teorik - Gerçekleşen raporunda farkın bilinen nedenlerinden biri olarak ayrıca gösterilir.");
+    await s.say("Fire tutarı, Teorik ve Gerçekleşen raporunda farkın bilinen nedenlerinden biri olarak ayrıca gösterilir.");
   },
 };
 
@@ -286,7 +286,7 @@ const comps: Scene = {
     await s.click(save, "“Kaydet”: reçetedeki malzemeler stoktan düşülür, ancak satış geliri yazılmaz.");
     await s.show(card(s, /Kayıtları/), "Kartlar ve liste maliyet bedeliyle gösterir; kaynak sütunu Micros, Opera ya da elle girişi belirtir.");
     await exports(s, "Liste aynı filtrelerle PDF, Excel veya CSV olarak indirilebilir.");
-    await s.say("Bu maliyet, Teorik - Gerçekleşen sapma dağılımında ayrı bir satırdır.");
+    await s.say("Bu maliyet, Teorik ve Gerçekleşen sapma dağılımında ayrı bir satırdır.");
   },
 };
 

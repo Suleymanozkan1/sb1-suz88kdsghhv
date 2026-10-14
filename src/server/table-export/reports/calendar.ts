@@ -46,7 +46,7 @@ export const calendar: ReportDef = {
             owner: i.ownerRole ? t(i.ownerRole) : "—",
             status: t(i.status.replace("_", " ")),
             evidence: i.evidence ? evidenceText(t, i.evidence) : i.status === "UPCOMING" ? "" : t("no evidence found"),
-            completed: i.completedAt ? `${at.format(i.completedAt)}${i.completedBy ? ` · ${i.completedBy}` : ""}${i.note ? ` — ${i.note}` : ""}` : "",
+            completed: i.completedAt ? `${at.format(i.completedAt)}${i.completedBy ? ` · ${i.completedBy}` : ""}${i.note ? ` · ${i.note}` : ""}` : "",
           })),
         })),
       ],

@@ -12,6 +12,7 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { occupancyStats } from "./pms";
+import { assertPeriodsWritable } from "./period";
 
 /** Items offered for a month nothing has been entered for yet (English source; the screen translates them). */
 export const DEFAULT_ROOM_COST_ITEMS = [
@@ -64,8 +65,11 @@ export async function saveRoomCostItems(db: Db, actor: Actor, hotelId: string, r
   return inTx(db, async (tx) => {
     // saves of one month run one after the other, so the revision check below cannot be passed by two at once
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${hotelId}|room-cost-items|${v.month}`}, 0))`;
+    // a closed month keeps its room cost: changing it needs the reopen workflow
+    const range = monthBounds(v.month);
+    await assertPeriodsWritable(tx, actor, hotelId, range.from, range.to);
     const before = await tx.roomCostItem.findMany({ where: { hotelId, month: v.month }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, amount: true } });
-    if (v.revision && v.revision !== roomCostRevision(before)) throw new DomainError("CONFLICT", "This month was changed by someone else — reload and try again");
+    if (v.revision && v.revision !== roomCostRevision(before)) throw new DomainError("CONFLICT", "This month was changed by someone else: reload and try again");
     await tx.roomCostItem.deleteMany({ where: { hotelId, month: v.month } });
     if (v.items.length) await tx.roomCostItem.createMany({ data: v.items.map((i, n) => ({ hotelId, month: v.month, name: i.name, amount: toStorage(D(i.amount)).toString(), sortOrder: n })) });
     const total = sum(v.items.map((i) => D(i.amount)));

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
 import { login, rateLimit, SESSION_COOKIE, actorForUser } from "@/server/auth/session";
-import { errorResponse, requestLocale } from "@/server/http/handler";
+import { clientIp, errorResponse, readJson, requestLocale, SMALL_BODY } from "@/server/http/handler";
 import { DomainError } from "@/domain/errors";
 import { checkSetupSecret, needsSetup, runSetup, startDemoLoad } from "@/server/setup";
 
@@ -16,10 +16,10 @@ export async function POST(req: NextRequest) {
   try {
     const origin = req.headers.get("origin");
     if (origin && new URL(origin).host !== (req.headers.get("x-forwarded-host") ?? req.headers.get("host"))) throw new DomainError("FORBIDDEN", "Cross-origin request rejected");
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    const ip = clientIp(req);
     await rateLimit(`setup:${ip}`, 10);
     if (!(await needsSetup(prisma))) throw new DomainError("CONFLICT", "This installation is already set up");
-    const { secret, loadDemo, ...input } = body.parse(await req.json());
+    const { secret, loadDemo, ...input } = body.parse(await readJson(req, SMALL_BODY));
     if (!checkSetupSecret(secret)) throw new DomainError("FORBIDDEN", "The setup code is not correct");
     const r = await runSetup(prisma, input, locale);
     const password = String(input.adminPassword);

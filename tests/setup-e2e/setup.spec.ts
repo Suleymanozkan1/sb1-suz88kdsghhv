@@ -1,11 +1,12 @@
 /**
  * Empty installation → /setup (Turkish) → company + admin + demo data in the background → demo account works,
- * setup is closed afterwards, language switch works. The setup code is the database password.
+ * setup is closed afterwards, language switch works. The setup code is SETUP_TOKEN (the local database password is the
+ * committed default, which is refused).
  */
 import { expect, test } from "@playwright/test";
 
 const PASSWORD = "Guclu-Sifre-2026";
-const dbPassword = () => decodeURIComponent(new URL(process.env.SETUP_E2E_DATABASE_URL ?? "postgresql://hotelcost:hotelcost@localhost:5432/hotelcost_setup_e2e").password);
+const setupCode = () => process.env.SETUP_E2E_TOKEN ?? "setup-e2e-code-2026"; // = SETUP_TOKEN in playwright.setup.config.ts
 
 test("first-run setup in Turkish with demo data", async ({ page, browser }) => {
   await page.goto("/");
@@ -24,7 +25,7 @@ test("first-run setup in Turkish with demo data", async ({ page, browser }) => {
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
   await expect(page.getByText("Kurulum kodu doğru değil")).toBeVisible();
 
-  await page.locator("#secret").fill(dbPassword());
+  await page.locator("#secret").fill(setupCode());
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
   await expect(page).toHaveURL(/\/setup\/demo$/, { timeout: 60_000 });
   await expect(page.getByText(/Adım \d+\/11/)).toBeVisible({ timeout: 60_000 });
@@ -42,7 +43,7 @@ test("first-run setup in Turkish with demo data", async ({ page, browser }) => {
   await demo.getByRole("button", { name: "Giriş yap" }).click();
   await expect(demo.getByRole("navigation").first()).toBeVisible();
   await expect(demo.locator("select#hotel option")).toHaveCount(2);
-  const again = await demo.request.post("/api/setup", { data: { secret: dbPassword() }, headers: { origin: new URL(demo.url()).origin } });
+  const again = await demo.request.post("/api/setup", { data: { secret: setupCode() }, headers: { origin: new URL(demo.url()).origin } });
   expect(again.status()).toBe(409);
   await ctx.close();
 

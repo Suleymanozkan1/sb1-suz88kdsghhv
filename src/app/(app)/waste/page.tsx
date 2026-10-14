@@ -2,6 +2,7 @@ import { pageContext, guarded, monthRange } from "@/server/page";
 import { listWaste, WASTE_TYPES } from "@/server/services/waste";
 import { can, departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
+import { warehouseScope } from "@/server/auth/scope";
 import { Alert, Badge, Card, Empty, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { PeriodFilter } from "@/components/period-filter";
 import { money, qty, date } from "@/lib/format";
@@ -22,7 +23,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
   const res = await guarded(() => listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || undefined, productId: sp.productId || undefined }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const rows = res.data;
-  const [departments, warehouses] = await Promise.all([prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }), prisma.warehouse.findMany({ where: { hotelId, active: true }, orderBy: { name: "asc" } })]);
+  const [departments, warehouses] = await Promise.all([prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }), prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } })]);
   const posted = rows.filter((r) => r.status === "APPROVED");
   const total = sum(posted.map((r) => r.costValue?.toString() ?? 0));
   const byType = new Map<string, Decimal>();

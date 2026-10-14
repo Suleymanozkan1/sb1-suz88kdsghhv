@@ -28,10 +28,10 @@ export const GET = api(async ({ actor, hotelId, query, req }) => {
     title: titleTr(t(i.title), locale),
     owner: i.ownerRole ? t(i.ownerRole) : "—",
     done: i.status === "DONE",
-    status: i.status === "DONE" ? `${t("Completed on")}: ${i.completedAt ? dt.format(i.completedAt) : ""}${i.completedBy ? ` · ${i.completedBy}` : ""}${i.note ? ` — ${i.note}` : ""}` : t(i.status.replace("_", " ")),
+    status: i.status === "DONE" ? `${t("Completed on")}: ${i.completedAt ? dt.format(i.completedAt) : ""}${i.completedBy ? ` · ${i.completedBy}` : ""}${i.note ? ` · ${i.note}` : ""}` : t(i.status.replace("_", " ")),
   }));
   const pdf = await renderChecklistPdf({
-    title: t("Control checklist – week {n}", { n: week }),
+    title: t("Week {n} control checklist", { n: week }),
     subtitle: `${d.format(w.from)} – ${d.format(new Date(w.to.getTime() - 86_400_000))}`,
     generated: `${t("Generated")}: ${dt.format(new Date())} · ${actor.name}`,
     rows,

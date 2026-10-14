@@ -182,7 +182,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
           <Stat label={t("Per occupied room")} value={money(d.perOccupiedRoom, cur)} />
           <Stat label={t("Per m²")} value={money(d.perSqm, cur)} hint={t("Department m² master data")} />
         </div>
-        {canManage && <Card title={t("Meter reading")} className="mb-4"><MeterReadingForm meters={meters.map((m) => ({ id: m.id, name: `${m.code} · ${m.name} (${m.unit})${m.readings[0] ? ` — ${t("last {value} on {date}", { value: m.readings[0].value.toString(), date: date(m.readings[0].readingDate) })}` : ""}` }))} /></Card>}
+        {canManage && <Card title={t("Meter reading")} className="mb-4"><MeterReadingForm meters={meters.map((m) => ({ id: m.id, name: `${m.code} · ${m.name} (${m.unit})${m.readings[0] ? ` · ${t("last {value} on {date}", { value: m.readings[0].value.toString(), date: date(m.readings[0].readingDate) })}` : ""}` }))} /></Card>}
         <Card title={t("Utilities")} padded={false}>
           {d.utilities.length === 0 ? <div className="p-4"><Empty title={t("No utility bills in this period")} /></div> : (
             <Table>

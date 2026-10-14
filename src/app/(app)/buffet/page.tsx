@@ -32,7 +32,7 @@ export default async function BreakfastPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         title={t("Breakfast cost control")}
-        subtitle={t("Breakfast only. Each day: record what is issued to breakfast, enter the covers (package-included and sold separately) and, after breakfast, the breakfast count — what is left of each item and whether that remainder is consumption (back to stock) or waste. Cost per cover = breakfast food cost ÷ all covers; totals are over the days whose count is entered.")}
+        subtitle={t("Breakfast only. Each day: record what is issued to breakfast, enter the covers (package-included and sold separately) and, after breakfast, the breakfast count: what is left of each item and whether that remainder is consumption (back to stock) or waste. Cost per cover = breakfast food cost ÷ all covers; totals are over the days whose count is entered.")}
         exportKey="buffet"
         actions={<>
           <Link href={`/buffet/count?date=${today}`}><Button><ClipboardList className="h-4 w-4" /> {t("Breakfast count")}</Button></Link>

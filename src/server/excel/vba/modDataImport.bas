@@ -212,7 +212,7 @@ Public Function ParseExport(ByVal text As String) As Object
         End If
         i = i + 1
     Loop
-    If Not result.Exists("complete") Then Err.Raise vbObjectError + 5, "ParseExport", L("Export truncated (no ##END marker) - incomplete data is never written.")
+    If Not result.Exists("complete") Then Err.Raise vbObjectError + 5, "ParseExport", L("Export truncated (no ##END marker): incomplete data is never written.")
     Set result("meta") = meta
     Set result("summary") = summary
     Set result("sections") = sections

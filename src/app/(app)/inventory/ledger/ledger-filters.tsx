@@ -23,7 +23,7 @@ export function LedgerFilters({ view, warehouses, types, value, product }: { vie
       <input type="hidden" name="productId" value={picked?.id ?? ""} />
       <div><Label htmlFor="lf-wh">{t("Warehouse")}</Label><Select id="lf-wh" name="warehouseId" defaultValue={value.warehouseId ?? ""} className="w-44"><option value="">{t("All")}</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
       <div><Label htmlFor="lf-type">{t("Type")}</Label><Select id="lf-type" name="type" defaultValue={value.type ?? ""} className="w-40"><option value="">{t("All")}</option>{types.slice(0, 2).map((x) => <option key={x} value={x}>{t(x)}</option>)}<optgroup label={t("Other")}>{types.slice(2).map((x) => <option key={x} value={x}>{t(x)}</option>)}</optgroup></Select></div>
-      <div className="w-60"><Label htmlFor="lf-p">{t("Product")}</Label><ProductPicker id="lf-p" value={picked} onChange={setPicked} placeholder={t("All products — search…")} /></div>
+      <div className="w-60"><Label htmlFor="lf-p">{t("Product")}</Label><ProductPicker id="lf-p" value={picked} onChange={setPicked} placeholder={t("Search all products…")} /></div>
     </FilterBar>
   );
 }

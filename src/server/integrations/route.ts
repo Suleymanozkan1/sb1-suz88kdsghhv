@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ZodError } from "zod";
 import { DomainError } from "@/domain/errors";
 import { prisma } from "../db";
+import { readJson } from "../http/handler";
 import type { Actor } from "../auth/actor";
 import { integrationActor } from "./ingest";
 
@@ -16,15 +17,7 @@ export function botApi(fn: (c: { hotelId: string; actor: Actor; body: () => Prom
       const out = await fn({
         ...who,
         query: req.nextUrl.searchParams,
-        body: async () => {
-          const text = await req.text();
-          if (Buffer.byteLength(text) > MAX) throw Object.assign(new Error("Payload too large"), { status: 413 });
-          try {
-            return text ? JSON.parse(text) : {};
-          } catch {
-            throw new DomainError("VALIDATION", "Request body is not valid JSON");
-          }
-        },
+        body: () => readJson(req, MAX),
       });
       return NextResponse.json(out);
     } catch (e) {

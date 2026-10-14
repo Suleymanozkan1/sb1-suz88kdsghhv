@@ -18,6 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { isValidDay } from "../util/time";
 import type { Invoice } from "../contract";
 import { BotError } from "../errors";
 import { log } from "../logger";
@@ -263,8 +264,14 @@ export class FileInvoiceReader implements InvoiceReader {
 
   async commit(day: string): Promise<void> {
     if (this.files.length === 0) return;
+    if (!isValidDay(day)) throw new Error(`invoice files not moved: invalid business day ${JSON.stringify(day)}`);
     const target = path.join(this.dir, "processed", day);
-    fs.mkdirSync(target, { recursive: true });
+    // others may write to the drop folder: never follow a link planted at processed/ or processed/<day>
+    for (const d of [path.dirname(target), target]) {
+      if (!fs.existsSync(d)) fs.mkdirSync(d);
+      if (!fs.lstatSync(d).isDirectory()) throw new Error(`invoice files not moved: ${d} is not a plain folder (a link?)`);
+    }
+    if (fs.realpathSync(target) !== path.join(fs.realpathSync(this.dir), "processed", day)) throw new Error(`invoice files not moved: ${target} leads outside ${this.dir}`);
     for (const file of this.files) {
       const dest = path.join(target, path.basename(file));
       fs.renameSync(file, fs.existsSync(dest) ? `${dest}.${Date.now()}` : dest);

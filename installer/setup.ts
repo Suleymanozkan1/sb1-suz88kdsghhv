@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { Client } from "pg";
+import { installerDemoOptions } from "./demo-options";
 
 const WIN = process.platform === "win32";
 const APP = path.resolve(__dirname);
@@ -387,8 +388,9 @@ async function demo() {
   const { generateDemo } = await import("../src/server/demo/generate");
   const { PROFILES } = await import("../src/server/demo/profiles");
   log("loading demo companies (5 companies, 10 hotels) - this takes several minutes…");
-  const s = await generateDemo(prisma as never, PROFILES[(args.get("profile") ?? "dev") as "dev"], { password: args.get("password") ?? "Demo!2026-QA", log: (x) => log(x) });
-  log(`demo data loaded in ${s.seconds} s - sign in as companyadmin@test.local (password Demo!2026-QA)`);
+  const opts = installerDemoOptions(args.get("password"), (x) => log(x));
+  const s = await generateDemo(prisma as never, PROFILES[(args.get("profile") ?? "dev") as "dev"], opts);
+  log(`demo data loaded in ${s.seconds} s - sign in as companyadmin@test.local with the password ${opts.password} (shown only now: write it down)`);
   await prisma.$disconnect();
 }
 

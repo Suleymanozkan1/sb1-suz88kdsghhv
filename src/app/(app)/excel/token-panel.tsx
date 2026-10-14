@@ -17,6 +17,11 @@ export function TokenPanel({ timezone }: { timezone: string }) {
   const locale = useLocale();
   const [token, setToken] = useState<{ token: string; expiresAt: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [revoked, setRevoked] = useState<number | null>(null);
+  async function revokeAll() {
+    if (!window.confirm(t("Revoke all your API tokens? Excel then asks for a new one."))) return;
+    try { setRevoked((await call<{ revoked: number }>("DELETE", "/api/auth/api-token")).revoked); setToken(null); } catch (e) { setErr(e instanceof Error ? translateMessage(locale, e.message) : t("Failed")); }
+  }
   return (
     <div className="space-y-3 text-sm">
       <p className="text-ink-600">{rich(t("Excel asks for this token when you click the button. It is shown {once}, valid for 30 days, and never stored in the workbook."), { once: <strong>{t("once")}</strong> })}</p>
@@ -29,6 +34,10 @@ export function TokenPanel({ timezone }: { timezone: string }) {
       ) : (
         <Button onClick={async () => { try { setToken(await call("POST", "/api/auth/api-token")); } catch (e) { setErr(e instanceof Error ? translateMessage(locale, e.message) : t("Failed")); } }}>{t("Create token")}</Button>
       )}
+      <div className="flex items-center gap-3">
+        <Button variant="secondary" size="sm" onClick={() => void revokeAll()}>{t("Revoke all my tokens")}</Button>
+        {revoked !== null && <span className="text-xs text-ink-500">{t("{count} token(s) revoked.", { count: revoked })}</span>}
+      </div>
     </div>
   );
 }

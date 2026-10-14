@@ -12,7 +12,7 @@ export interface OrderEmailTemplate {
 }
 
 export const DEFAULT_ORDER_EMAIL: OrderEmailTemplate = {
-  subject: "Sipariş — {hotel} — {date}",
+  subject: "Sipariş: {hotel}, {date}",
   body: [
     "Sayın {supplier},",
     "",

@@ -71,7 +71,7 @@ export default async function CompsPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title={t("On-house & Hospitality")}
-        subtitle={t("Consumption nobody pays for. On-house: free consumption of authorised people (owner / investor, general manager, directors); owner and general manager need no explanation, the others do. Hospitality: offered for a reason (tea for a sales meeting, the chain's welcome drink — billed to the chain later). Records come from Micros / Opera (checks closed as comps); manual entry is the fallback. Comps are deducted from stock through their recipes but never booked as sales revenue; their cost is a separate line of the cost reports and of the theoretical vs actual breakdown.")}
+        subtitle={t("Consumption nobody pays for. On-house: free consumption of authorised people (owner / investor, general manager, directors); owner and general manager need no explanation, the others do. Hospitality: offered for a reason (tea for a sales meeting, the chain's welcome drink, billed to the chain later). Records come from Micros / Opera (checks closed as comps); manual entry is the fallback. Comps are deducted from stock through their recipes but never booked as sales revenue; their cost is a separate line of the cost reports and of the theoretical vs actual breakdown.")}
         exportKey="comps"
         canExport={can(actor, "report:export")}
       />
@@ -142,7 +142,7 @@ export default async function CompsPage({ searchParams }: { searchParams: Promis
 
       {form && (
         <details className="group mt-4 rounded-xl border border-ink-200 bg-white shadow-sm">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-ink-800">{t("Manual entry")} <span className="font-normal text-ink-500">— {t("when a comp did not come through Micros / Opera")}</span></summary>
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-ink-800">{t("Manual entry")} <span className="font-normal text-ink-500">({t("when a comp did not come through Micros / Opera")})</span></summary>
           <div className="border-t border-ink-100 p-4">{form}</div>
         </details>
       )}
@@ -190,7 +190,7 @@ export default async function CompsPage({ searchParams }: { searchParams: Promis
 
       {manage && (
         <details className="mt-4 rounded-xl border border-ink-200 bg-white shadow-sm">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-ink-800">{t("Reasons")} <span className="font-normal text-ink-500">— {t("the list the reasons are chosen from")}</span></summary>
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-ink-800">{t("Reasons")} <span className="font-normal text-ink-500">({t("the list the reasons are chosen from")})</span></summary>
           <div className="border-t border-ink-100 p-4">
             <ReasonList reasons={reasons.map((r) => ({ id: r.id, kind: r.kind, name: r.name, noteRequired: r.noteRequired, active: r.active }))} />
           </div>

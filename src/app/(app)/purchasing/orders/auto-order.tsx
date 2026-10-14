@@ -144,7 +144,7 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
     const r = await call<{ due: number; sent: number; failed: number; emailEnabled: boolean }>("POST", "/api/auto-order/run");
     if (!r.due) return { tone: "green", text: t("No product is at its reorder point.") };
     if (!r.emailEnabled) return { tone: "amber", text: t("{n} product(s) at the reorder point. Automatic e-mail orders are part of the Premium plan: order them by hand.", { n: r.due }) };
-    return r.failed ? { tone: "red", text: t("{sent} order line(s) e-mailed, {failed} failed — see the rows.", { sent: r.sent, failed: r.failed }) } : { tone: "green", text: t("{sent} order line(s) e-mailed to the suppliers.", { sent: r.sent }) };
+    return r.failed ? { tone: "red", text: t("{sent} order line(s) e-mailed, {failed} failed. See the rows.", { sent: r.sent, failed: r.failed }) } : { tone: "green", text: t("{sent} order line(s) e-mailed to the suppliers.", { sent: r.sent }) };
   });
   const create = () => act(async () => {
     if (!add.product) throw new Error(t("Choose a product"));
@@ -158,9 +158,9 @@ export function AutoOrder({ rules, suppliers, canManage, emailEnabled, mailConfi
       {!emailEnabled ? (
         <Alert tone="blue">{t("Basic plan: products at their reorder point are highlighted here. Automatic e-mail orders to suppliers are part of the Premium plan.")}</Alert>
       ) : !mailConfigured ? (
-        <Alert tone="amber">{trial ? t("Trial — every feature is open: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.") : t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
+        <Alert tone="amber">{trial ? t("Trial: every feature is open. E-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.") : t("Premium plan: e-mail orders are on, but no mail server is configured (SMTP_URL). Orders cannot be sent yet.")}</Alert>
       ) : (
-        <Alert tone="green">{trial ? t("Trial — every feature is open: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).") : t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
+        <Alert tone="green">{trial ? t("Trial: every feature is open. When the stock of an active rule reaches its reorder point the order is e-mailed to the supplier with the template below (checked every night and on “Check now”).") : t("Premium plan: when the stock of an active rule reaches its reorder point the order is e-mailed to the supplier (checked every night and on “Check now”).")}</Alert>
       )}
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       <div className="flex flex-wrap items-end gap-2">

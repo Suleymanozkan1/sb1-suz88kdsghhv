@@ -9,7 +9,7 @@ import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { priceChange } from "@/domain/purchasing";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize } from "../auth/actor";
+import { type Actor, authorize, departmentScope } from "../auth/actor";
 import { audit } from "./audit";
 import { finishBatch, openBatch, type BatchMeta } from "./imports";
 import { postMovement } from "./ledger";
@@ -33,7 +33,7 @@ function findProduct<P extends { sku: string; name: string }>(products: P[], r: 
   const byName = !sku && name ? products.filter((p) => p.name.trim().toLowerCase() === name) : [];
   const prod = sku ? products.find((p) => p.sku === sku) : byName.length === 1 ? byName[0] : undefined;
   const shown = (r.product ?? r.name ?? "").trim();
-  const label = sku ? `Unknown SKU "${sku}"` : byName.length > 1 ? `Product "${shown}" is ambiguous (${byName.length} products have this name) — use its stock code` : name ? `Unknown product "${shown}"` : "sku or product is required";
+  const label = sku ? `Unknown SKU "${sku}"` : byName.length > 1 ? `Product "${shown}" is ambiguous (${byName.length} products have this name); use its stock code` : name ? `Unknown product "${shown}"` : "sku or product is required";
   return { prod, label };
 }
 
@@ -78,7 +78,7 @@ export async function previewProducts(db: Db, actor: Actor, hotelId: string, row
     if (!isNum(taxRatePct) || (taxRatePct !== null && (Number(taxRatePct) < 0 || Number(taxRatePct) > 100))) msgs.push(`${"vat (0-100)"} must be a number`);
     if (msgs.length) return { row: i + 1, status: "INVALID", messages: msgs };
     const key = sku ? `sku:${sku}` : `name:${name.toLowerCase()}`;
-    if ((sku && exSku.has(sku)) || exName.has(name.toLowerCase()) || seen.has(key) || seen.has(`name:${name.toLowerCase()}`)) return { row: i + 1, status: "DUPLICATE", messages: [sku && exSku.has(sku) ? `SKU ${sku} already exists — the product master is never overwritten by an import` : `Product "${name}" already exists — the product master is never overwritten by an import`] };
+    if ((sku && exSku.has(sku)) || exName.has(name.toLowerCase()) || seen.has(key) || seen.has(`name:${name.toLowerCase()}`)) return { row: i + 1, status: "DUPLICATE", messages: [sku && exSku.has(sku) ? `SKU ${sku} already exists; the product master is never overwritten by an import` : `Product "${name}" already exists; the product master is never overwritten by an import`] };
     seen.add(key);
     seen.add(`name:${name.toLowerCase()}`);
     return { row: i + 1, status: "VALID", messages: [], data: { sku, name, categoryId: cat!.id, supplierId: sup?.id ?? null, stockUnit, purchaseUnit, recipeUnit, caseSize, standardCost, brand, taxRatePct } };
@@ -177,7 +177,10 @@ const openingRow = z.object({ warehouse: z.string().trim().min(1), sku: z.string
 
 export async function previewOpeningStock(db: Db, actor: Actor, hotelId: string, rows: Array<Record<string, string>>) {
   authorize(actor, "inventory:adjust", { hotelId });
-  const [whs, products, balances] = await Promise.all([db.warehouse.findMany({ where: { hotelId } }), db.product.findMany({ where: { hotelId } }), db.stockBalance.findMany({ where: { hotelId } })]);
+  // the same department scope as a manual opening movement: a store outside the user's departments (or a shared store,
+  // which books hotel-level stock) is an unknown warehouse here, and its balances are never read
+  const whs = await db.warehouse.findMany({ where: { hotelId, ...departmentScope(actor) } });
+  const [products, balances] = await Promise.all([db.product.findMany({ where: { hotelId } }), db.stockBalance.findMany({ where: { hotelId, warehouseId: { in: whs.map((w) => w.id) } } })]);
   const seen = new Set<string>();
   const out: PreviewRow<{ warehouseId: string; productId: string; quantity: string; unitCost: string }>[] = rows.map((r, i) => {
     const parsed = openingRow.safeParse(r);

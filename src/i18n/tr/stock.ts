@@ -90,7 +90,7 @@ export const stock: Record<string, string> = {
 
   // ── stock ledger ──
   "Stock ledger": "Stok hareketleri",
-  "Append-only. Posted entries are never edited or deleted — corrections are reversals approved by a manager.": "Yalnızca ekleme yapılır. İşlenmiş kayıtlar düzenlenmez veya silinmez; düzeltmeler yönetici onaylı ters kayıtlarla yapılır.",
+  "Append-only. Posted entries are never edited or deleted; corrections are reversals approved by a manager.": "Yalnızca ekleme yapılır. İşlenmiş kayıtlar düzenlenmez veya silinmez; düzeltmeler yönetici onaylı ters kayıtlarla yapılır.",
   "{total} movements": "{total} hareket",
   "Balance after": "Sonraki bakiye",
   "reversed": "ters kaydedildi",
@@ -133,7 +133,7 @@ export const stock: Record<string, string> = {
   "Count date": "Sayım tarihi",
   "Start count sheet": "Sayım föyü oluştur",
   "Count posted to the ledger.": "Sayım stok hareketlerine işlendi.",
-  "Variance exceeds the threshold — sent for manager approval.": "Fark eşiği aşıyor, yönetici onayına gönderildi.",
+  "Variance exceeds the threshold: sent for manager approval.": "Fark eşiği aşıyor, yönetici onayına gönderildi.",
   "No products in this warehouse.": "Bu depoda ürün yok.",
   "System": "Sistem",
   "Counted": "Sayılan",
@@ -161,9 +161,9 @@ export const stock: Record<string, string> = {
   "Receive goods": "Mal kabul",
   "Recent receipts": "Son mal kabuller",
   "Supplier invoices come from Micros automatically (see Imports); goods receipts post landed cost to the stock ledger and record supplier price history.": "Tedarikçi faturaları Micros'tan otomatik gelir (bkz. İçe aktarma); mal kabuller maliyete giren tüm giderlerle stoka işlenir ve tedarikçi fiyat geçmişine kaydedilir.",
-  "Receive goods by hand (backup — when an invoice did not come from Micros)": "Elle mal kabul (yedek — fatura Micros'tan gelmediyse)",
+  "Receive goods by hand (backup, when an invoice did not come from Micros)": "Elle mal kabul (yedek yöntem, fatura Micros'tan gelmediyse)",
   "Entered by hand": "Elle girildi",
-  "Latest {n} shown — the export lists the whole period": "Son {n} kayıt gösteriliyor — dışa aktarmada dönemin tamamı var",
+  "Latest {n} shown; the export lists the whole period": "Son {n} kayıt gösteriliyor; dışa aktarmada dönemin tamamı var",
   "Freight and other charges (optional)": "Nakliye ve diğer giderler (isteğe bağlı)",
   "From file import": "Dosyadan içe aktarıldı",
   "No receipts": "Mal kabul yok",
@@ -370,7 +370,7 @@ export const stock: Record<string, string> = {
   "No waste in this period": "Bu dönemde fire yok",
   "Waste type": "Fire türü",
   "Waste posted at cost {cost}.": "Fire {cost} maliyetle işlendi.",
-  "Above the approval threshold — waiting for manager approval. Stock is unchanged until approved.": "Onay eşiğinin üzerinde, yönetici onayı bekleniyor. Onaylanana kadar stok değişmez.",
+  "Above the approval threshold: waiting for manager approval. Stock is unchanged until approved.": "Onay eşiğinin üzerinde, yönetici onayı bekleniyor. Onaylanana kadar stok değişmez.",
 
   // waste types (badges upper case, lists lower case)
   "EXPIRED": "SKT GEÇMİŞ",

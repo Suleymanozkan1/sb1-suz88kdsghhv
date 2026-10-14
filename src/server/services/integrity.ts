@@ -8,11 +8,11 @@ import { Prisma, type CalcStatus } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize, can } from "../auth/actor";
+import { type Actor, authorize, can, departmentScope } from "../auth/actor";
 import type { Permission } from "../auth/permissions";
 import { audit } from "./audit";
 import { MINIBAR_ROOMS, minibarInvariant } from "./minibar";
-import { postSalesConsumption, theoreticalFor } from "./sales";
+import { matchRecipe, postSalesConsumption, theoreticalFor } from "./sales";
 import { businessDay } from "@/domain/business-day";
 
 const STALE_MS = 30 * 60 * 1000;
@@ -331,7 +331,8 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
   try {
     const res = await inTx(db, async (tx) => {
       const [lines, recipes, versions, periods, hotel] = await Promise.all([
-        tx.saleLine.findMany({ where: { hotelId, recipeVersionId: null } }),
+        // like the import and its rollback: a department-scoped user reprocesses only the sales of their departments
+        tx.saleLine.findMany({ where: { hotelId, recipeVersionId: null, ...departmentScope(actor) } }),
         tx.recipe.findMany({ where: { hotelId, active: true } }),
         tx.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } } }),
         tx.costPeriod.findMany({ where: { hotelId } }),
@@ -345,7 +346,6 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
       const byImport = new Map<string | null, string[]>();
       // same matching as the import (commitSales): POS code first, else the recipe name (the POS item name, or the code
       // for lines imported before the name was kept)
-      const byName = (n: string) => recipes.find((x) => x.name.toLocaleLowerCase("tr") === n.toLocaleLowerCase("tr"));
       for (const l of lines) {
         // the stock posting is dated by the business day (a 03:10 sale on the 1st belongs to the last day of the
         // previous month): both that day's period and the sale's own must be open, or the run would fail every time
@@ -353,7 +353,7 @@ export async function reprocessUnmappedSales(db: Db, actor: Actor, hotelId: stri
           skippedClosed++;
           continue;
         }
-        const recipe = recipes.find((r) => r.posCode === l.posCode) ?? byName(l.itemName ?? l.posCode);
+        const recipe = matchRecipe(recipes, l.departmentId, l.posCode, l.itemName);
         if (!recipe) {
           stillUnmapped++;
           continue;

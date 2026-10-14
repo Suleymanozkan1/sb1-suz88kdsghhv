@@ -30,10 +30,10 @@ export default async function ExcelPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title={t("Excel full cost report (.xlsm)")} subtitle={<>
-        {t("The whole cost operation in one macro-enabled workbook — same cost engine as this application, reconciled, audited and refreshable from Excel.")}
+        {t("The whole cost operation in one macro-enabled workbook: same cost engine as this application, reconciled, audited and refreshable from Excel.")}
         <span className="mt-2 block">· {rich(t("Opens on {sheet} with the {button} button; all report sheets are already filled for {hotel}."), { sheet: <strong>01_CONTROL</strong>, button: <strong>TÜM COST RAPORLARINI OLUŞTUR</strong>, hotel: hotel.name })}</span>
         <span className="mt-2 block">· {rich(t("Enable macros to refresh from Excel (Windows): the macro calls this server's {endpoint} with your API token, rebuilds pivots and charts and re-runs reconciliation."), { endpoint: <code>/api/export/full-cost</code> })}</span>
-        <span className="mt-2 block">· {rich(t("Only departments you can access are exported. Modules not yet implemented are marked {badge} — never shown as zero."), { badge: <Badge tone="amber">NOT_AVAILABLE</Badge> })}</span>
+        <span className="mt-2 block">· {rich(t("Only departments you can access are exported. Modules not yet implemented are marked {badge} and never shown as zero."), { badge: <Badge tone="amber">NOT_AVAILABLE</Badge> })}</span>
       </>} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title={t("Generate workbook")} className="lg:col-span-2">

@@ -117,7 +117,7 @@ export function Importer({ allowed, currency }: { allowed: Kind[]; currency: str
           <p className="text-sm">
             <Badge tone="green">{t("{n} valid", { n: preview.counts.valid })}</Badge> <Badge tone="red">{t("{n} invalid", { n: preview.counts.invalid })}</Badge> <Badge tone="amber">{t("{n} duplicate", { n: preview.counts.duplicate })}</Badge> {preview.counts.warning ? <Badge tone="violet">{t("{n} warning", { n: preview.counts.warning })}</Badge> : null}
             {preview.totalAmount && <span className="ml-2">{t("Total {amount}", { amount: money(preview.totalAmount, currency) })}</span>}
-            {preview.counts.invalid > 0 && <span className="ml-2 text-red-700">{t("Fix invalid rows first — imports are all-or-nothing.")}</span>}
+            {preview.counts.invalid > 0 && <span className="ml-2 text-red-700">{t("Fix invalid rows first: imports are all-or-nothing.")}</span>}
           </p>
           {preview.rows.some((r) => r.status !== "VALID") && (
             <Table>

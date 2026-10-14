@@ -24,7 +24,7 @@ export default async function AdminPage() {
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { trainingVideos: true } });
   return (
     <>
-      <PageHeader title={t("Administration")} subtitle={t("{hotel} - users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} exportKey="admin" />
+      <PageHeader title={t("Administration")} subtitle={t("{hotel}: users & access, hotels, departments (with cost centers), warehouses, categories and hotel settings. Everything is audited; nothing referenced by the ledger is ever deleted.", { hotel: o.hotel.name })} exportKey="admin" />
       <AdminConsole
         me={actor.userId}
         canHotels={can(actor, "admin:hotels")}

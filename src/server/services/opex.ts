@@ -10,7 +10,7 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { assertHotelRefs } from "../auth/scope";
-import { assertPostable } from "./period";
+import { assertPeriodsWritable, assertPostable } from "./period";
 import { finishBatch, openBatch, type BatchMeta } from "./imports";
 import { divisionIds, ROOMS_DIVISION } from "./revenue";
 
@@ -268,6 +268,7 @@ export async function recordReading(db: Db, actor: Actor, hotelId: string, raw: 
     if (m.departmentId) requireDepartment(actor, m.departmentId);
     const day = new Date(Date.UTC(v.readingDate.getUTCFullYear(), v.readingDate.getUTCMonth(), v.readingDate.getUTCDate()));
     if (day.getTime() > Date.now() + 86400000) throw new DomainError("VALIDATION", "Reading date is in the future");
+    await assertPeriodsWritable(tx, actor, hotelId, day, new Date(day.getTime() + 86_400_000));
     const prev = await tx.meterReading.findFirst({ where: { meterId: m.id, readingDate: { lt: day } }, orderBy: { readingDate: "desc" } });
     const next = await tx.meterReading.findFirst({ where: { meterId: m.id, readingDate: { gt: day } }, orderBy: { readingDate: "asc" } });
     if (prev && D(v.value).lt(D(prev.value.toString()))) throw new DomainError("VALIDATION", `Reading ${v.value} is lower than the previous reading ${prev.value.toString()} (${prev.readingDate.toISOString().slice(0, 10)})`);
@@ -289,6 +290,8 @@ export async function recordLaundry(db: Db, actor: Actor, hotelId: string, raw: 
   const v = laundryInput.parse(raw);
   return inTx(db, async (tx) => {
     const day = new Date(Date.UTC(v.logDate.getUTCFullYear(), v.logDate.getUTCMonth(), v.logDate.getUTCDate()));
+    // a closed period's laundry volumes (its unit costs) are frozen
+    await assertPeriodsWritable(tx, actor, hotelId, day, new Date(day.getTime() + 86_400_000));
     const existing = await tx.laundryLog.findUnique({ where: { hotelId_logDate_source: { hotelId, logDate: day, source: v.source } } });
     const r = existing
       ? await tx.laundryLog.update({ where: { id: existing.id }, data: { kg: v.kg, pieces: v.pieces, createdById: actor.userId } })

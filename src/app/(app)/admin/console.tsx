@@ -132,7 +132,7 @@ export function AdminConsole(p: Props) {
                 const body: Record<string, unknown> = { name: val(f, "name"), roleKey: val(f, "roleKey"), active: f.get("active") === "on", hotelIds: multi(f, "hotel") };
                 if (!role?.allDepartments) body.departmentIds = multi(f, "dept");
                 if (val(f, "password")) body.password = val(f, "password");
-                if (await run(() => call("PATCH", `/api/admin/users/${edit.id}`, body), "User updated - open sessions were ended where access changed")) setEdit(null);
+                if (await run(() => call("PATCH", `/api/admin/users/${edit.id}`, body), "User updated; open sessions were ended where access changed")) setEdit(null);
               }}>
                 <div><Label htmlFor="e-name">{t("Name")}</Label><Input id="e-name" name="name" defaultValue={edit.name} required /></div>
                 <div><Label htmlFor="e-role">{t("Role")}</Label><Select id="e-role" name="roleKey" value={editRole} onChange={(e) => setEditRole(e.target.value)} disabled={edit.id === p.me}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{edit.id === p.me && <input type="hidden" name="roleKey" value={edit.roleKey} />}</div>
@@ -155,7 +155,7 @@ export function AdminConsole(p: Props) {
               const f = new FormData(e.currentTarget);
               setLink(null);
               let token = "";
-              const ok = await run(async () => { token = (await call<{ token: string }>("POST", "/api/admin/invites", { email: val(f, "email"), name: val(f, "name") || undefined, roleKey: val(f, "roleKey"), hotelIds: multi(f, "hotel"), departmentIds: multi(f, "dept") })).token; }, "Invitation created - send this link (valid 7 days, shown once)", e.currentTarget);
+              const ok = await run(async () => { token = (await call<{ token: string }>("POST", "/api/admin/invites", { email: val(f, "email"), name: val(f, "name") || undefined, roleKey: val(f, "roleKey"), hotelIds: multi(f, "hotel"), departmentIds: multi(f, "dept") })).token; }, "Invitation created: send this link (valid 7 days, shown once)", e.currentTarget);
               if (ok) setLink(`${window.location.origin}/invite?token=${token}`);
             }}>
               <div><Label htmlFor="v-name">{t("Name (optional)")}</Label><Input id="v-name" name="name" /></div>
@@ -190,7 +190,7 @@ export function AdminConsole(p: Props) {
       {tab === "Hotels" && p.canHotels && (
         <>
           <Card title={t("New hotel in your company")}>
-            <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("POST", "/api/admin/hotels", { code: val(f, "code"), name: val(f, "name"), totalRooms: val(f, "rooms") || 0, baseCurrency: val(f, "cur") || "TRY", withDefaults: f.get("defaults") === "on", locale }), "Hotel created - switch to it from the hotel selector", e.currentTarget); }}>
+            <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("POST", "/api/admin/hotels", { code: val(f, "code"), name: val(f, "name"), totalRooms: val(f, "rooms") || 0, baseCurrency: val(f, "cur") || "TRY", withDefaults: f.get("defaults") === "on", locale }), "Hotel created. Switch to it from the hotel selector", e.currentTarget); }}>
               <div><Label htmlFor="h-code">{t("Code")}</Label><Input id="h-code" name="code" required pattern="[A-Z0-9][A-Z0-9_-]*" placeholder="AYT2" /></div>
               <div><Label htmlFor="h-name">{t("Name")}</Label><Input id="h-name" name="name" required /></div>
               <div><Label htmlFor="h-rooms">{t("Rooms")}</Label><Input id="h-rooms" name="rooms" type="number" min={0} defaultValue={0} /></div>
@@ -301,7 +301,7 @@ export function AdminConsole(p: Props) {
               <div><Label htmlFor="c-code">{t("Code")}</Label><Input id="c-code" name="code" required /></div>
               <div><Label htmlFor="c-name">{t("Name")}</Label><Input id="c-name" name="name" required /></div>
               <div><Label htmlFor="c-group">{t("Report group")}</Label><Select id="c-group" name="group">{p.groups.map((g) => <option key={g} value={g}>{t(g)}</option>)}</Select></div>
-              <div><Label htmlFor="c-parent">{t("Parent")}</Label><Select id="c-parent" name="parent" defaultValue=""><option value="">{t("- (top level)")}</option>{p.categories.filter((c) => !c.parentId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></div>
+              <div><Label htmlFor="c-parent">{t("Parent")}</Label><Select id="c-parent" name="parent" defaultValue=""><option value="">{t("(top level)")}</option>{p.categories.filter((c) => !c.parentId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></div>
               <div className="flex items-end"><Button type="submit">{t("Create category")}</Button></div>
             </form>
           </Card>

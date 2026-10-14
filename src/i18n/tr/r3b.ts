@@ -2,8 +2,8 @@
 export const r3b: Record<string, string> = {
   // r3 §4 — Kahvaltı (breakfast cost control, formerly the buffet page)
   "Breakfast cost control": "Kahvaltı Maliyet Kontrolü",
-  "Breakfast only. Each day: record what is issued to breakfast, enter the covers (package-included and sold separately) and, after breakfast, the breakfast count — what is left of each item and whether that remainder is consumption (back to stock) or waste. Cost per cover = breakfast food cost ÷ all covers; totals are over the days whose count is entered.":
-    "Yalnızca kahvaltı. Her gün: kahvaltıya çıkan ürünleri kaydedin, kuverleri (paket dahil ve ayrıca satılan) girin, kahvaltıdan sonra da kahvaltı sayımını yapın — her üründen kalan miktar ve kalanın tüketim (depoya döner) mi fire mi olduğu. Kuver başı maliyet = kahvaltı yiyecek maliyeti ÷ toplam kuver; toplamlar sayımı girilmiş günleri kapsar.",
+  "Breakfast only. Each day: record what is issued to breakfast, enter the covers (package-included and sold separately) and, after breakfast, the breakfast count: what is left of each item and whether that remainder is consumption (back to stock) or waste. Cost per cover = breakfast food cost ÷ all covers; totals are over the days whose count is entered.":
+    "Yalnızca kahvaltı. Her gün: kahvaltıya çıkan ürünleri kaydedin, kuverleri (paket dahil ve ayrıca satılan) girin, kahvaltıdan sonra da kahvaltı sayımını yapın: her üründen kalan miktar ve kalanın tüketim (depoya döner) mi fire mi olduğu. Kuver başı maliyet = kahvaltı yiyecek maliyeti ÷ toplam kuver; toplamlar sayımı girilmiş günleri kapsar.",
   "Breakfast count": "Kahvaltı sayımı",
   "Package-included {a} · not included {b}": "Paket dahil {a} · paket dahil olmayan {b}",
   "Breakfast food cost": "Kahvaltı yiyecek maliyeti",

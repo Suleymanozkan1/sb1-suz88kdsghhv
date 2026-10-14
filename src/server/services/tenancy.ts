@@ -92,6 +92,27 @@ export async function setTenantPlan(db: Db, actor: Actor, organizationId: string
   return { id: organizationId, plan };
 }
 
+/**
+ * A login e-mail is unique across all tenants, and a company administrator can bind any address (invitation or new
+ * user) without its owner. When another tenant needs that address, the platform releases it: the account is kept for
+ * the audit trail, deactivated and renamed, so the owner can then be invited or created anywhere.
+ */
+export async function releaseEmail(db: Db, actor: Actor, input: unknown) {
+  requirePermission(actor, "platform:admin");
+  const p = z.object({ email: z.string().trim().toLowerCase().email().max(200), reason: z.string().trim().min(5, "A reason (min 5 chars) is required").max(500) }).parse(input);
+  const u = await db.user.findUnique({ where: { email: p.email }, include: { organization: { select: { isPlatform: true } } } });
+  if (!u || u.organization.isPlatform) throw new DomainError("NOT_FOUND", "No company user has this e-mail address");
+  const released = `released-${u.id}@released.invalid`;
+  return inTx(db, async (tx) => {
+    await tx.user.update({ where: { id: u.id }, data: { email: released, active: false } });
+    await tx.session.deleteMany({ where: { userId: u.id } });
+    await tx.integrationKey.updateMany({ where: { createdById: u.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.userInvite.updateMany({ where: { organizationId: u.organizationId, email: p.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.auditLog.create({ data: { organizationId: u.organizationId, userId: actor.userId, action: "PLATFORM_EMAIL_RELEASE", entityType: "User", entityId: u.id, before: { email: p.email }, after: { email: released, active: false }, reason: p.reason, source: "PLATFORM" } });
+    return { userId: u.id, email: released };
+  });
+}
+
 // ── company administrator: hotels ──
 
 const hotelInput = z.object({
@@ -155,7 +176,7 @@ export async function inviteUser(db: Db, actor: Actor, hotelId: string, input: u
   if (p.hotelIds.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only invite to hotels you administer");
   const role = await db.role.findUnique({ where: { organizationId_key: { organizationId: actor.organizationId, key: p.roleKey } } });
   if (!role) throw new DomainError("VALIDATION", "Unknown role");
-  if (!role.allDepartments && p.departmentIds.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments - choose at least one`);
+  if (!role.allDepartments && p.departmentIds.length === 0) throw new DomainError("VALIDATION", `${role.name} works on selected departments: choose at least one`);
   if (p.departmentIds.length && (await db.department.count({ where: { id: { in: p.departmentIds }, hotelId: { in: p.hotelIds } } })) !== new Set(p.departmentIds).size) throw new DomainError("VALIDATION", "Unknown department for the selected hotels");
   if (await db.user.findUnique({ where: { email: p.email } })) throw new DomainError("DUPLICATE", "This e-mail address cannot be used");
   const token = randomBytes(32).toString("base64url");
@@ -182,7 +203,7 @@ export async function revokeInvite(db: Db, actor: Actor, hotelId: string, id: st
   authorize(actor, "admin:users", { hotelId });
   const inv = await db.userInvite.findFirst({ where: { id, organizationId: actor.organizationId, hotelIds: { has: hotelId } } });
   if (!inv) throw new DomainError("NOT_FOUND", "Invitation not found");
-  if (inv.acceptedAt) throw new DomainError("CONFLICT", "Already accepted - deactivate the user instead");
+  if (inv.acceptedAt) throw new DomainError("CONFLICT", "Already accepted: deactivate the user instead");
   await db.userInvite.update({ where: { id }, data: { revokedAt: new Date() } });
   await audit(db, actor, { hotelId, action: "USER_INVITE_REVOKE", entityType: "UserInvite", entityId: id });
   return { id };

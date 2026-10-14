@@ -166,10 +166,10 @@ export interface MenuItemInput {
 }
 export type MenuClass = "STAR" | "PLOWHORSE" | "PUZZLE" | "DOG";
 export const MENU_ACTION: Record<MenuClass, string> = {
-  STAR: "High seller, high margin — protect: keep quality and portion, feature it",
-  PLOWHORSE: "High seller, low margin — re-engineer: portion, recipe or price",
-  PUZZLE: "Low seller, high margin — promote: placement, description, upsell",
-  DOG: "Low seller, low margin — replace or remove",
+  STAR: "High seller, high margin. Protect: keep quality and portion, feature it",
+  PLOWHORSE: "High seller, low margin. Re-engineer: portion, recipe or price",
+  PUZZLE: "Low seller, high margin. Promote: placement, description, upsell",
+  DOG: "Low seller, low margin. Replace or remove",
 };
 
 /** Popularity threshold = 70 % of an equal share; margin threshold = weighted average contribution per unit. */

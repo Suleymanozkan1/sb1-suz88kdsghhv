@@ -104,7 +104,7 @@ describe("control calendar by weeks of the month (r3 §13)", () => {
 
   it("a week prints as a PDF checklist", async () => {
     const m = await calendarMonth(prisma, cc, h.hotel.id, 2026, 9);
-    const pdf = await renderChecklistPdf({ title: "Control checklist – week 2", subtitle: "08.09.2026 – 14.09.2026", generated: "test", hotel: h.hotel.name, t: makeT("tr"), locale: "tr", rows: m.weeks[1]!.items.map((i) => ({ due: i.dueDate, title: i.title, owner: i.ownerRole ?? "—", done: i.status === "DONE", status: i.status })) });
+    const pdf = await renderChecklistPdf({ title: "Week 2 control checklist", subtitle: "08.09.2026 – 14.09.2026", generated: "test", hotel: h.hotel.name, t: makeT("tr"), locale: "tr", rows: m.weeks[1]!.items.map((i) => ({ due: i.dueDate, title: i.title, owner: i.ownerRole ?? "—", done: i.status === "DONE", status: i.status })) });
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.length).toBeGreaterThan(2000);
   });

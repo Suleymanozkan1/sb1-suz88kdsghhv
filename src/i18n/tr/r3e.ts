@@ -48,7 +48,7 @@ export const r3e: Record<string, string> = {
   "Completed on": "Tamamlandı",
   "No controls with this status this week.": "Bu hafta bu durumda kontrol yok.",
   "No controls are due this week.": "Bu hafta yapılacak kontrol yok.",
-  "Control checklist – week {n}": "Kontrol listesi – {n}. hafta",
+  "Week {n} control checklist": "{n}. hafta kontrol listesi",
   "Status / note": "Durum / not",
   "Checked by": "Kontrol eden",
   "Sign off": "Tamamla",

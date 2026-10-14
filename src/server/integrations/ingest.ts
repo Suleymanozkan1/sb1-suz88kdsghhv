@@ -21,6 +21,7 @@ import { addSupplier, runAutoOrders } from "../services/auto-order";
 import { createProduct } from "../services/products";
 import { recordMovement } from "../services/minibar";
 import { ingestComps } from "../services/comps";
+import { assertPeriodsWritable } from "../services/period";
 import { lastClosedBusinessDay } from "@/domain/business-day";
 import { ingestSchema, runStatusSchema, type IngestInput, type IngestResult } from "./contract";
 
@@ -59,8 +60,9 @@ export async function integrationActor(db: Db, header: string | null): Promise<{
   if (!k || k.revokedAt || !timingSafeEqual(Buffer.from(k.keyHash), Buffer.from(sha(plain)))) return null;
   const hotel = await db.hotel.findUnique({ where: { id: k.hotelId }, select: { id: true, active: true, organizationId: true, organization: { select: { active: true } } } });
   if (!hotel?.active || !hotel.organization.active) return null;
-  const user = await db.user.findUnique({ where: { id: k.createdById }, select: { id: true, email: true } });
-  if (!user) return null;
+  // the key acts as its creator, so it stops with them: deactivated, no longer an administrator, or off this hotel
+  const user = await db.user.findUnique({ where: { id: k.createdById }, select: { id: true, email: true, active: true, organizationId: true, role: { select: { permissions: true } }, hotelAccess: { where: { hotelId: k.hotelId }, select: { hotelId: true } } } });
+  if (!user?.active || user.organizationId !== hotel.organizationId || !user.role.permissions.includes("admin:hotels") || user.hotelAccess.length === 0) return null;
   await db.integrationKey.update({ where: { id: k.id }, data: { lastUsedAt: new Date() } });
   return {
     hotelId: hotel.id,
@@ -106,7 +108,7 @@ type Out = Omit<IngestResult, "runId" | "kind">;
 async function ingestChecks(db: Db, actor: Actor, hotelId: string, p: Extract<IngestInput, { kind: "checks" }>, runId: string): Promise<Out> {
   const dept = await departmentMatcher(db, hotelId);
   const errors: Out["errors"] = [];
-  type Row = { externalId: string; saleDate: Date; department: string; posCode: string; name: string; quantity: string; netRevenue: string; check: number };
+  type Row = { externalId: string; saleDate: Date; department: string; departmentId: string; posCode: string; name: string; quantity: string; netRevenue: string; check: number };
   const rows: Row[] = [];
   p.items.forEach((c, i) => {
     const d = dept(c.outlet);
@@ -121,16 +123,17 @@ async function ingestChecks(db: Db, actor: Actor, hotelId: string, p: Extract<In
     for (const [code, g] of byItem) {
       if (g.qty.lte(0)) continue;
       // outlets can reuse check numbers on the same day: the outlet is part of the key
-      rows.push({ externalId: `${p.source}:${p.businessDay}:${d.code}:${c.checkNo}:${code}`, saleDate: dayDate(p.businessDay), department: d.code, posCode: code, name: g.name, quantity: toStorage(g.qty).toString(), netRevenue: toStorage(Decimal.max(g.amount, ZERO)).toString(), check: i });
+      rows.push({ externalId: `${p.source}:${p.businessDay}:${d.code}:${c.checkNo}:${code}`, saleDate: dayDate(p.businessDay), department: d.code, departmentId: d.id, posCode: code, name: g.name, quantity: toStorage(g.qty).toString(), netRevenue: toStorage(Decimal.max(g.amount, ZERO)).toString(), check: i });
     }
   });
-  const known = new Set((await db.saleLine.findMany({ where: { hotelId, externalId: { in: rows.map((r) => r.externalId) } }, select: { externalId: true } })).map((s) => s.externalId));
-  const fresh = rows.filter((r) => !known.has(r.externalId));
+  // a sale line id is unique per department: only the outlet's own line is the already-ingested one
+  const known = new Set((await db.saleLine.findMany({ where: { hotelId, departmentId: { in: [...new Set(rows.map((r) => r.departmentId))] }, externalId: { in: rows.map((r) => r.externalId) } }, select: { departmentId: true, externalId: true } })).map((s) => `${s.departmentId}|${s.externalId}`));
+  const fresh = rows.filter((r) => !known.has(`${r.departmentId}|${r.externalId}`));
   const checksWithRows = new Set(rows.map((r) => r.check));
   const dupChecks = [...checksWithRows].filter((i) => !fresh.some((r) => r.check === i)).length;
   if (!fresh.length) return { received: p.items.length, accepted: 0, duplicates: dupChecks, errors };
   try {
-    const res = await commitSales(db, actor, hotelId, { rows: fresh.map(({ check: _c, ...r }) => r), source: "API", fileName: `${p.source} ${p.businessDay} (${runId})`, mappingVersion: "micros-bot-v1" });
+    const res = await commitSales(db, actor, hotelId, { rows: fresh.map(({ check: _c, departmentId: _d, ...r }) => r), source: "API", fileName: `${p.source} ${p.businessDay} (${runId})`, mappingVersion: "micros-bot-v1" });
     for (const r of res.rows) if (r.status === "INVALID") errors.push({ item: fresh[r.row - 1]!.check, message: `${fresh[r.row - 1]!.name}: ${r.messages.join("; ")}` });
     const bad = new Set(res.rows.filter((r) => r.status === "INVALID").map((r) => fresh[r.row - 1]!.check));
     const accepted = new Set(fresh.map((r) => r.check).filter((i) => !bad.has(i))).size;
@@ -171,7 +174,7 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
         let prod = (l.itemCode ? await db.product.findFirst({ where: { hotelId, sku: l.itemCode } }) : null) ?? (await db.product.findFirst({ where: { hotelId, name: { equals: l.itemName.trim(), mode: "insensitive" } } }));
         if (!prod) {
           // a product the hotel has not set up yet: created with the invoice's unit in a "to classify" category
-          if (!unit) throw new DomainError("VALIDATION", `${l.itemName}: unknown unit '${l.unit}' — create the product card first`);
+          if (!unit) throw new DomainError("VALIDATION", `${l.itemName}: unknown unit '${l.unit}'; create the product card first`);
           const cat = await unsortedCategory(db, hotelId);
           prod = await createProduct(db, actor, hotelId, { name: l.itemName.trim(), categoryId: cat.id, defaultSupplierId: s.id, purchaseUnit: unit, stockUnit: unit, recipeUnit: unit === "kg" ? "g" : unit === "l" ? "ml" : unit, taxRatePct: l.taxRatePct ?? undefined });
         }
@@ -181,7 +184,7 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
       // lines as they will be posted (a line without a VAT rate takes its product's rate, as the receipt does)
       if (inv.total !== null && inv.total !== undefined) {
         const lines = items.reduce((a, l) => a + l.quantity * l.unitPrice * (1 + l.taxRatePct / 100), 0);
-        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT) — check that every line was read`);
+        if (Math.abs(lines - inv.total) > Math.max(1, Math.abs(inv.total) * 0.005)) throw new DomainError("VALIDATION", `invoice total ${inv.total.toFixed(2)} does not match its lines ${lines.toFixed(2)} (incl. VAT); check that every line was read`);
       }
       await postGoodsReceipt(db, actor, hotelId, { supplierId: s.id, warehouseId: wh.id, receiptDate: dayDate(inv.invoiceDate), invoiceNo: inv.invoiceNo, idempotencyKey: key, source: p.source === "MICROS" ? "MICROS" : "IMPORT", items });
       accepted++;
@@ -192,7 +195,9 @@ async function ingestInvoices(db: Db, actor: Actor, hotelId: string, p: Extract<
   return { received: p.items.length, accepted, duplicates, errors };
 }
 
-async function ingestCovers(db: Db, hotelId: string, p: Extract<IngestInput, { kind: "covers" }>): Promise<Out> {
+async function ingestCovers(db: Db, actor: Actor, hotelId: string, p: Extract<IngestInput, { kind: "covers" }>): Promise<Out> {
+  const closed = await closedDay(db, actor, hotelId, p.businessDay);
+  if (closed) return { received: p.items.length, accepted: 0, duplicates: 0, errors: [{ item: 0, message: closed }] };
   const dept = await departmentMatcher(db, hotelId);
   const errors: Out["errors"] = [];
   let accepted = 0;
@@ -288,7 +293,21 @@ async function ingestProducts(db: Db, actor: Actor, hotelId: string, p: Extract<
   return { received: p.items.length, accepted, duplicates, errors };
 }
 
-async function ingestOccupancy(db: Db, hotelId: string, p: Extract<IngestInput, { kind: "occupancy" }>): Promise<Out> {
+/** A business day inside a closed cost period: its statistics are frozen until the period is reopened. */
+async function closedDay(db: Db, actor: Actor, hotelId: string, businessDay: string): Promise<string | null> {
+  const from = new Date(`${businessDay}T00:00:00Z`);
+  try {
+    await assertPeriodsWritable(db, actor, hotelId, from, new Date(from.getTime() + 86_400_000));
+    return null;
+  } catch (e) {
+    if (e instanceof DomainError && e.code === "PERIOD_CLOSED") return e.message;
+    throw e;
+  }
+}
+
+async function ingestOccupancy(db: Db, actor: Actor, hotelId: string, p: Extract<IngestInput, { kind: "occupancy" }>): Promise<Out> {
+  const closed = await closedDay(db, actor, hotelId, p.businessDay);
+  if (closed) return { received: 1, accepted: 0, duplicates: 0, errors: [{ item: 0, message: closed }] };
   const o = p.items[0]!;
   const businessDate = new Date(`${p.businessDay}T00:00:00Z`);
   // the sold rooms are kept for the minibar board (only those rooms are checked); a delivery without them keeps the stored list
@@ -304,11 +323,11 @@ export async function ingest(db: Db, actor: Actor, hotelId: string, raw: unknown
   const out =
     p.kind === "checks" ? await ingestChecks(db, actor, hotelId, p, runId)
     : p.kind === "invoices" ? await ingestInvoices(db, actor, hotelId, p)
-    : p.kind === "covers" ? await ingestCovers(db, hotelId, p)
+    : p.kind === "covers" ? await ingestCovers(db, actor, hotelId, p)
     : p.kind === "minibar" ? await ingestMinibar(db, actor, hotelId, p)
     : p.kind === "products" ? await ingestProducts(db, actor, hotelId, p)
     : p.kind === "comps" ? await ingestComps(db, actor, hotelId, p.source, p.businessDay, p.items, await departmentMatcher(db, hotelId))
-    : await ingestOccupancy(db, hotelId, p);
+    : await ingestOccupancy(db, actor, hotelId, p);
   const result: IngestResult = { runId, kind: p.kind, ...out, errors: out.errors.slice(0, 200) };
   const prev = await db.integrationRun.findUnique({ where: { hotelId_runId: { hotelId, runId } } });
   const stats = { ...((prev?.stats as Record<string, unknown> | null) ?? {}), [p.kind]: { received: result.received, accepted: result.accepted, duplicates: result.duplicates, errors: result.errors } };

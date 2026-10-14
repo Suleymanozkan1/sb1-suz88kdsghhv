@@ -15,7 +15,7 @@ export function runSummary(stats: unknown, t: T): string[] {
   if (!stats || typeof stats !== "object") return [];
   return Object.entries(stats as Record<string, { received: number; accepted: number; duplicates: number; errors?: Array<{ message: string }> }>).map(([kind, s]) =>
     t("{kind}: {received} received, {accepted} new, {duplicates} already sent, {errors} errors", { kind: t(`ingest:${kind}`), received: s.received, accepted: s.accepted, duplicates: s.duplicates, errors: s.errors?.length ?? 0 }) +
-      (s.errors?.length ? ` — ${s.errors.slice(0, 3).map((e) => t(e.message)).join("; ")}${s.errors.length > 3 ? " …" : ""}` : ""),
+      (s.errors?.length ? `: ${s.errors.slice(0, 3).map((e) => t(e.message)).join("; ")}${s.errors.length > 3 ? " …" : ""}` : ""),
   );
 }
 
