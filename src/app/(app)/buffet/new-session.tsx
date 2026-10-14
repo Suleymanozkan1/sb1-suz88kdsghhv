@@ -31,7 +31,7 @@ export function NewDay({ today }: { today: string }) {
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-3" data-testid="new-breakfast-day">
       {err && <div className="w-full"><Alert>{err}</Alert></div>}
-      <div className="w-40"><Label htmlFor="bd-meal">{t("Meal")}</Label><Select id="bd-meal" name="type" defaultValue="BREAKFAST"><option value="BREAKFAST">{t("BREAKFAST")}</option></Select></div>
+      <div className="w-40"><Label htmlFor="bd-meal">{t("Meal")}</Label><Select id="bd-meal" name="type" defaultValue="BREAKFAST"><option value="BREAKFAST">{t("Breakfast")}</option></Select></div>
       <div className="w-44"><Label htmlFor="bd-date">{t("Date")}</Label><Input id="bd-date" type="date" value={day} max={today} onChange={(e) => setDay(e.target.value)} /></div>
       <Button type="submit" disabled={busy}>{busy ? t("Opening…") : t("Create")}</Button>
     </form>

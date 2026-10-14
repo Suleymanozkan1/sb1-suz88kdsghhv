@@ -64,10 +64,10 @@ test("recipe flow: create with live server-side cost, approve, view cost explosi
   await expect(page.getByText("Cost per portion")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("E2E Chicken Bowl");
-  await expect(page.getByText("DRAFT", { exact: true })).toBeVisible();
+  await expect(page.getByText("Draft", { exact: true }).first()).toBeVisible();
   // F&B manager has recipe:approve
   await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByRole("cell", { name: "APPROVED" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "In force" })).toBeVisible();
   await expect(page.getByText("Cost explosion")).toBeVisible();
   await expect(page.getByRole("cell", { name: /Chicken Breast/ })).toBeVisible();
 });
@@ -112,7 +112,7 @@ test("stock delete → request → manager rejects then approves → reversal (s
   await row2.getByRole("button", { name: "Approve" }).click();
   await expect(mgr.getByRole("row", { name: new RegExp(`E2E second request ${tag}`) }).getByRole("button", { name: "Approve" })).toHaveCount(0);
   await mgr.goto("/inventory/ledger?type=REVERSAL");
-  await expect(mgr.getByText("REVERSAL").first()).toBeVisible();
+  await expect(mgr.locator("tbody").getByText(/REVERSAL|Reversal/).first()).toBeVisible();
   await mgrCtx.close();
 });
 
