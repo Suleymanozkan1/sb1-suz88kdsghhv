@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { NAV } from "@/components/nav";
+import { BUILT_IN_VIDEOS } from "@/lib/training-videos";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
 
@@ -332,12 +333,12 @@ export function AdminConsole(p: Props) {
       )}
       {tab === "Training videos" && (
         <Card title={t("Training videos")}>
-          <p className="mb-3 text-sm text-ink-500">{t("A short how-to video per page. Paste a YouTube, Vimeo or video file address; the page then shows a \"How to use?\" button next to its title. Leave a page empty to show no button. The addresses apply to every hotel of the company.")}</p>
+          <p className="mb-3 text-sm text-ink-500">{t("Every page has a built-in how-to video behind the \"How to use?\" button next to its title. To use your own video instead, paste a YouTube, Vimeo or video file address; leave the field empty to keep the built-in video. The addresses apply to every hotel of the company.")}</p>
           <form className="grid gap-x-4 gap-y-2 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/training-videos", { videos: Object.fromEntries(NAV.map((n) => [n.href, val(f, `v:${n.href}`)])) }), "Settings saved"); }}>
             {NAV.map((n) => (
               <div key={n.href} className="flex items-center gap-2">
                 <label htmlFor={`v-${n.href}`} className="w-48 shrink-0 text-sm text-ink-700">{t(n.label)}</label>
-                <Input id={`v-${n.href}`} name={`v:${n.href}`} type="url" placeholder="https://" defaultValue={p.trainingVideos[n.href] ?? ""} />
+                <Input id={`v-${n.href}`} name={`v:${n.href}`} placeholder={BUILT_IN_VIDEOS[n.href] ?? "https://"} defaultValue={p.trainingVideos[n.href] ?? ""} />
               </div>
             ))}
             <div className="md:col-span-2"><Button type="submit">{t("Save settings")}</Button></div>

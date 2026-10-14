@@ -5,6 +5,7 @@ import { Shell } from "@/components/shell";
 import { canOpenApprovals } from "@/server/services/approvals";
 import { trainingVideosOf } from "@/server/services/admin";
 import { TrainingVideosProvider } from "@/components/page-help";
+import { effectiveVideos } from "@/lib/training-videos";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   return (
     <Shell user={{ name: actor.name, role: actor.roleName }} hotels={hotels} hotelId={hotelId} permissions={[...actor.permissions]} navFlags={approvals ? ["approvals"] : []} pendingApprovals={pending}>
-      <TrainingVideosProvider videos={trainingVideosOf(org?.trainingVideos)}>{children}</TrainingVideosProvider>
+      <TrainingVideosProvider videos={effectiveVideos(trainingVideosOf(org?.trainingVideos))}>{children}</TrainingVideosProvider>
     </Shell>
   );
 }

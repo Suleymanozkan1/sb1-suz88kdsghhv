@@ -432,7 +432,7 @@ export function trainingVideosOf(raw: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].length > 0));
 }
 
-const videoUrl = z.string().trim().max(500).refine((v) => v === "" || /^https?:\/\//i.test(v) || v.startsWith("/"), "Video address must start with https://");
+const videoUrl = z.string().trim().max(500).refine((v) => v === "" || /^https?:\/\//i.test(v) || /^\/(?!\/)/.test(v), "Video address must start with https://");
 const trainingVideosInput = z.object({ videos: z.record(z.string().regex(/^\/[a-z0-9\-/]*$/i).max(120), videoUrl) });
 
 export async function updateTrainingVideos(db: Db, actor: Actor, hotelId: string, input: unknown) {
