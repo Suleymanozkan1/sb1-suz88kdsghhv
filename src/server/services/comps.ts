@@ -34,7 +34,6 @@ export const DEFAULT_REASONS: Array<{ kind: CompKind; name: string; noteRequired
   { kind: "ON_HOUSE", name: "Diğer yetkili", noteRequired: true },
   { kind: "HOSPITALITY", name: "Satış görüşmesi", noteRequired: true },
   { kind: "HOSPITALITY", name: "Karşılama içeceği", noteRequired: false },
-  { kind: "HOSPITALITY", name: "Zincir standardı (zincire faturalanır)", noteRequired: false },
   { kind: "HOSPITALITY", name: "Diğer", noteRequired: true },
 ];
 

@@ -40,7 +40,7 @@ beforeAll(async () => {
 describe("reasons", () => {
   it("every hotel starts with the default list; owner and GM need no explanation", () => {
     expect(reasons.filter((r) => r.kind === "ON_HOUSE").map((r) => [r.name, r.noteRequired])).toEqual([["Yatırımcı", false], ["Genel müdür", false], ["Direktör", true], ["Diğer yetkili", true]]);
-    expect(reasons.filter((r) => r.kind === "HOSPITALITY").map((r) => r.name)).toEqual(["Satış görüşmesi", "Karşılama içeceği", "Zincir standardı (zincire faturalanır)", "Diğer"]);
+    expect(reasons.filter((r) => r.kind === "HOSPITALITY").map((r) => r.name)).toEqual(["Satış görüşmesi", "Karşılama içeceği", "Diğer"]);
   });
   it("can be added, renamed, reordered and deactivated (comp:manage only)", async () => {
     await expect(createReason(prisma, cc, h.hotel.id, { kind: "ON_HOUSE", name: "yatırımcı" })).rejects.toMatchObject({ code: "DUPLICATE" });
