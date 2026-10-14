@@ -116,7 +116,7 @@ export default async function PurchasingPage({ searchParams }: { searchParams: P
                       <Td>{p.supplier}</Td>
                       <Td align="right">{money(p.previous, cur)}/{p.unit}</Td>
                       <Td align="right">{money(p.current, cur)}/{p.unit}</Td>
-                      <Td align="right"><Badge tone={ch > 0 ? "red" : ch < 0 ? "green" : "gray"}>{ch > 0 ? "+" : ""}{ch.toFixed(1)}%</Badge></Td>
+                      <Td align="right"><Badge tone={ch > 0 ? "red" : ch < 0 ? "green" : "gray"}>{ch > 0 ? "+" : ""}{pct(ch)}</Badge></Td>
                     </tr>
                   );
                 })}

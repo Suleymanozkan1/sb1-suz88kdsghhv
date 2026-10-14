@@ -111,7 +111,7 @@ export async function opportunities(db: Db, actor: Actor, hotelId: string, r: { 
     const over = inv.rows.filter((x) => x.deadStock); // overstock is no longer a stock status (r2 §1); this screen is not reviewed yet
     const value = sum(over.map((x) => x.value));
     const monthlyCarry = value.times(A.carryingCostAnnual).times(days).div(365); // carrying cost for the period
-    add({ key: "OVERSTOCK", driver: "OVERSTOCK", title: `Reduce overstock & dead stock (${over.length} items, ${value.toFixed(0)} in stock)`, current: monthlyCarry, potential: ZERO, formula: "stock value above max / idle > 60 days × carrying cost", assumption: `${(A.carryingCostAnnual * 100).toFixed(0)} % carrying cost per year` });
+    add({ key: "OVERSTOCK", driver: "OVERSTOCK", title: `Reduce overstock & dead stock (${over.length} items, ${value.toFixed(2)} in stock)`, current: monthlyCarry, potential: ZERO, formula: "stock value above max / idle > 60 days × carrying cost", assumption: `${(A.carryingCostAnnual * 100).toFixed(0)} % carrying cost per year` });
   }
 
   if (can(actor, "opex:view") && actor.departmentIds === "ALL") {

@@ -41,7 +41,7 @@ export default async function SavingsPage({ searchParams }: { searchParams: Prom
             <tbody className="divide-y divide-ink-100">
               {opps.data.opportunities.map((o) => (
                 <tr key={o.key} className="align-top">
-                  <Td><Badge>{t(o.driver.replace("_", " "))}</Badge></Td><Td className="font-medium">{t(o.title)}</Td><Td align="right">{money(o.current, cur, 0)}</Td><Td align="right">{money(o.potential, cur, 0)}</Td>
+                  <Td><Badge>{t(o.driver.replace("_", " ")).toLocaleUpperCase("tr-TR")}</Badge></Td><Td className="font-medium">{t(o.title)}</Td><Td align="right">{money(o.current, cur, 0)}</Td><Td align="right">{money(o.potential, cur, 0)}</Td>
                   <Td align="right" className="font-semibold text-brand-700">{money(o.saving, cur, 0)}</Td><Td align="right">{pct(f100(o.savingPct))}</Td>
                   <Td className="max-w-md text-xs text-ink-500">{t(o.formula)}{o.assumption && <div className="text-amber-700">{t("Assumption:")} {t(o.assumption)}</div>}</Td>
                   {manage && <Td>{o.actionId ? <Badge tone="violet">{t("action open")}</Badge> : <CreateAction opportunity={{ key: o.key, driver: o.driver, title: o.title, current: o.current.toString(), saving: o.saving.toString() }} />}</Td>}

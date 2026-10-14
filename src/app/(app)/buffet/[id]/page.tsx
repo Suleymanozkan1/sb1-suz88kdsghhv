@@ -60,7 +60,7 @@ export default async function BreakfastDayPage({ params }: { params: Promise<{ i
                 const kinds = [i.reusable.gt(0) && t("Consumption"), i.waste.gt(0) && t("Waste"), i.staffMeal.gt(0) && t("Staff meal")].filter(Boolean).join(" / ");
                 return (
                   <tr key={i.key}>
-                    <Td><span className="font-medium"><Title>{i.name}</Title></span> {i.isDish && <Badge tone="violet">{t("dish")}</Badge>}</Td><Td>{i.category}</Td>
+                    <Td><span className="font-medium"><Title>{i.name}</Title></span> {i.isDish && <Badge tone="violet">{t("dish")}</Badge>}</Td><Td>{t(i.category)}</Td>
                     <Td align="right">{qty(i.input.toString(), i.unit)}</Td>
                     <Td align="right">{counted ? qty(left.toString(), i.unit) : "—"}</Td>
                     <Td>{counted ? kinds || "—" : "—"}</Td>

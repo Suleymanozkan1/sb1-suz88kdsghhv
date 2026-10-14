@@ -3,8 +3,21 @@ export const r3: Record<string, string> = {
   "About this page": "Bu sayfa hakkında",
   "How to use?": "Nasıl kullanılır?",
   "Training videos": "Eğitim videoları",
-  "A short how-to video per page. Paste a YouTube, Vimeo or video file address; the page then shows a \"How to use?\" button next to its title. Leave a page empty to show no button. The addresses apply to every hotel of the company.":
-    "Her sayfa için kısa bir kullanım videosu. YouTube, Vimeo ya da video dosyası adresini yapıştırın; sayfa başlığının yanında \"Nasıl kullanılır?\" düğmesi görünür. Video istemediğiniz sayfayı boş bırakın. Adresler şirketin tüm otellerinde geçerlidir.",
+  "Every page has a built-in how-to video behind the \"How to use?\" button next to its title. To use your own video instead, paste a YouTube, Vimeo or video file address; leave the field empty to keep the built-in video. The addresses apply to every hotel of the company.":
+    "Her sayfanın başlığının yanındaki \"Nasıl kullanılır?\" düğmesinde hazır bir kullanım videosu vardır. Kendi videonuzu göstermek için YouTube, Vimeo ya da video dosyası adresini yapıştırın; hazır videoyu kullanmak için alanı boş bırakın. Adresler şirketin tüm otellerinde geçerlidir.",
+  // audit trail record types (model names)
+  "AllocationRun": "Dağıtım çalıştırması", "AutoOrderRule": "Otomatik sipariş kuralı", "BuffetLine": "Kahvaltı satırı",
+  "BuffetSession": "Kahvaltı günü", "CalculationRun": "Hesap çalıştırması", "CalendarTask": "Takvim görevi",
+  "CompReason": "Ödenmez / ikram nedeni", "CompRecord": "Ödenmez / ikram kaydı", "CostAllocationRule": "Maliyet dağıtım kuralı",
+  "CostPeriod": "Maliyet dönemi", "CostTarget": "Maliyet hedefi", "Expense": "Gider", "ExportJob": "Dışa aktarma işi",
+  "GoodsReceipt": "Mal kabul", "ImportBatch": "İçe aktarma", "IntegrationKey": "Entegrasyon anahtarı",
+  "IntegrationRequest": "Entegrasyon isteği", "LaundryLog": "Çamaşır kaydı", "MeterReading": "Sayaç okuması",
+  "MinibarPar": "Minibar standart miktarı", "Organization": "Şirket", "ProductCategory": "Ürün kategorisi",
+  "PurchaseOrder": "Satın alma siparişi", "RecipeVersion": "Reçete versiyonu", "RoomCostItem": "Oda maliyet kalemi",
+  "SalesImport": "Satış aktarımı", "SavingAction": "Tasarruf aksiyonu", "StockCount": "Stok sayımı",
+  "StockTransaction": "Stok hareketi", "UserInvite": "Kullanıcı daveti", "WasteRecord": "Fire kaydı",
+  "headcount": "kişi",
+  "Hot & Cold Dishes": "Sıcak ve soğuk yemekler",
   "TRAINING_VIDEOS": "Eğitim videoları değişti",
   // menu entries renamed / added in round 3
   "Breakfast": "Kahvaltı",

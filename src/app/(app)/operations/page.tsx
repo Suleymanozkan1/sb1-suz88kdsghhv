@@ -39,7 +39,7 @@ function LinesTable({ lines, cur, t }: { lines: OpexLine[]; cur: string; t: T })
         {lines.map((l, i) => (
           <tr key={i} className={l.category === "TOTAL" ? "bg-ink-50 font-semibold" : ""}>
             <Td>{tServer(t, l.line)}</Td><Td><Badge tone={l.category === "ALLOCATED" ? "violet" : l.category === "KPI" ? "blue" : "gray"}>{t(l.category)}</Badge></Td>
-            <Td align="right">{l.quantity ? qty(l.quantity, l.unit ?? undefined) : "—"}</Td>
+            <Td align="right">{l.quantity ? qty(l.quantity, l.unit ? t(l.unit) : undefined) : "—"}</Td>
             <Td align="right">{l.value ? money(l.value, cur) : "—"}</Td><Td align="right">{money(l.perOccupiedRoom, cur)}</Td><Td className="text-xs text-ink-500">{tServer(t, l.note)}</Td>
           </tr>
         ))}
@@ -89,7 +89,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
                   <tr key={e.id} className={e.status === "REVERSED" ? "text-ink-400 line-through" : ""}>
                     <Td>{date(e.expenseDate)}</Td><Td><span className="font-medium">{t(e.categoryGroup)}</span>{e.subCategory && <span className="text-xs text-ink-500"> / {t(e.subCategory)}</span>}</Td>
                     <Td>{e.description}{e.invoiceNo && <span className="text-xs text-ink-500"> · {e.invoiceNo}</span>}</Td><Td>{e.department?.name ?? <Badge tone="amber">{t("Hotel level")}</Badge>}</Td>
-                    <Td>{e.asset?.code ?? (e.room ? t("Room {n}", { n: e.room.number }) : "—")}</Td><Td align="right">{e.quantity ? qty(e.quantity, e.unit ?? undefined) : "—"}</Td>
+                    <Td>{e.asset?.code ?? (e.room ? t("Room {n}", { n: e.room.number }) : "—")}</Td><Td align="right">{e.quantity ? qty(e.quantity, e.unit ? t(e.unit) : undefined) : "—"}</Td>
                     <Td align="right" className="font-medium">{money(e.amount, cur)}</Td><Td className="text-xs">{t(e.source)}</Td>
                     <Td>{e.status === "POSTED" ? <Badge tone="green">{t("POSTED")}</Badge> : <Badge tone="red">{t("REVERSED")}</Badge>}</Td>
                     {canManage && <Td>{e.status === "POSTED" && <ReverseButton url={`/api/opex/expenses/${e.id}/reverse`} />}</Td>}

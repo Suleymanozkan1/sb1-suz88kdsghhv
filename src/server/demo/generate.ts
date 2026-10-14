@@ -1021,15 +1021,19 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       if (qty.gt(0)) L.post({ warehouseId: ctx.wh.MAIN!, productId: p.id, type: "STAFF_MEAL", quantity: qty.neg(), txDate: at(d, 13), departmentId: ctx.dept.KITCH!, sourceType: "MANUAL", reason: N.t("Staff canteen") });
     }
     if (rnd() < 0.5) {
-      const p = (ctx.byCat.get("BEV") ?? []).find((x) => L.position(ctx.wh.BAR!, x.id).quantity.gte(2));
+      // drinks leave the bar store, or the main store when the bar holds too little (lean profiles keep the bar nearly empty)
+      const bev = ctx.byCat.get("BEV") ?? [];
+      const inBar = bev.find((x) => L.position(ctx.wh.BAR!, x.id).quantity.gte(2));
+      const p = inBar ?? bev.find((x) => L.position(ctx.wh.MAIN!, x.id).quantity.gte(2));
+      const compWh = inBar ? ctx.wh.BAR! : ctx.wh.MAIN!;
       if (p) {
         // every fourth day the general manager's drinks (Micros), else the chain's welcome drink (Opera); no extra rnd() so the rest of the data stays the same
         const onHouse = d.getUTCDate() % 4 === 0;
         const id = randomUUID();
         const source = onHouse ? "MICROS" : "OPERA";
-        const stx = L.post({ warehouseId: ctx.wh.BAR!, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "COMP", sourceId: id, reason: N.t("VIP welcome"), idempotencyKey: `comp:${id}:0:${p.id}` });
+        const stx = L.post({ warehouseId: compWh, productId: p.id, type: "COMPLIMENTARY", quantity: -2, txDate: at(d, 19), departmentId: ctx.dept.BAR!, sourceType: "COMP", sourceId: id, reason: N.t("VIP welcome"), idempotencyKey: `comp:${id}:0:${p.id}` });
         const cost = stx.totalCost.neg().toString();
-        compRows.push({ id, hotelId: H, kind: onHouse ? "ON_HOUSE" : "HOSPITALITY", businessDate: new Date(`${ymd(d)}T00:00:00Z`), departmentId: ctx.dept.BAR!, warehouseId: ctx.wh.BAR!, reasonId: compReason.get(onHouse ? "Genel müdür" : "Karşılama içeceği") ?? null, person: onHouse ? "Genel Müdür" : "VIP", source, externalId: `${source}:${ymd(d)}:BAR:C${ymd(d).replace(/-/g, "")}`, totalCost: cost, createdById: userId, createdAt: at(d, 19) });
+        compRows.push({ id, hotelId: H, kind: onHouse ? "ON_HOUSE" : "HOSPITALITY", businessDate: new Date(`${ymd(d)}T00:00:00Z`), departmentId: ctx.dept.BAR!, warehouseId: compWh, reasonId: compReason.get(onHouse ? "Genel müdür" : "Karşılama içeceği") ?? null, person: onHouse ? "Genel Müdür" : "VIP", source, externalId: `${source}:${ymd(d)}:BAR:C${ymd(d).replace(/-/g, "")}`, totalCost: cost, createdById: userId, createdAt: at(d, 19) });
         compLines.push({ recordId: id, productId: p.id, itemName: N.product(p.name), quantity: "2", unitCost: stx.unitCost.toString(), totalCost: cost, stockTxId: stx.id });
       }
     }

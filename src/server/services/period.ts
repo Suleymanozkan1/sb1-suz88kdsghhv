@@ -56,7 +56,8 @@ export async function closeChecklist(db: Db, hotelId: string, period: CostPeriod
   const range = { gte: period.startDate, lt: end };
   const days = Math.trunc((end.getTime() - period.startDate.getTime()) / 86400000 + 0.5);
   const [pendingApprovals, unmappedSales, openPOs, counts, pendingWaste, draftCounts, openBuffets, minibarStore, minibarMoves, noInvoice, salesDays, outletSales, rooms, pmsDays, payroll, utilities, production] = await Promise.all([
-    db.approval.count({ where: { hotelId, status: "PENDING" } }),
+    // requests raised after the month (about later activity) do not hold this month; its waste and counts are checked below by their own dates
+    db.approval.count({ where: { hotelId, status: "PENDING", requestedAt: { lt: end } } }),
     db.saleLine.count({ where: { hotelId, saleDate: range, recipeVersionId: null } }),
     db.purchaseOrder.count({ where: { hotelId, status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] }, expectedDate: { lte: period.endDate } } }),
     db.stockCount.count({ where: { hotelId, status: "POSTED", deletedAt: null, countDate: { gte: new Date(period.endDate.getTime() - 7 * 86400000), lt: range.lt } } }),

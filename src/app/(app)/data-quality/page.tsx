@@ -4,7 +4,7 @@ import { pageContext, guarded } from "@/server/page";
 import { dataQuality, dqText } from "@/server/services/data-quality";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th, cn } from "@/components/ui";
-import { pct } from "@/lib/format";
+import { pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
 
@@ -29,7 +29,7 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
     <>
       <PageHeader title={t("Data quality center")} subtitle={t("We never present estimates as exact. These checks decide how much confidence the cost figures deserve. Click a check to see its records, why each one is a problem and where to fix it.")} exportKey="data-quality" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <Stat label={t("Accuracy score")} value={score.accuracyScore ?? "—"} tone={score.status === "GREEN" ? "good" : score.status === "YELLOW" ? "warn" : "bad"} badge={<Badge tone={score.status === "GREEN" ? "green" : score.status === "YELLOW" ? "amber" : "red"}>{t(score.status)}</Badge>} href="#checks" />
+        <Stat label={t("Accuracy score")} value={qty(score.accuracyScore, undefined, 1)} tone={score.status === "GREEN" ? "good" : score.status === "YELLOW" ? "warn" : "bad"} badge={<Badge tone={score.status === "GREEN" ? "green" : score.status === "YELLOW" ? "amber" : "red"}>{t(score.status)}</Badge>} href="#checks" />
         <Stat label={t("Confidence")} value={t(score.confidence.replace("_", " "))} href="#checks" />
         <Stat label={t("Recipe completeness")} value={pct(score.recipeCompleteness)} href={open("recipes")} active={selected?.key === "recipes"} />
         <Stat label={t("Cost completeness")} value={pct(score.costCompleteness)} href={open("missing_cost")} active={selected?.key === "missing_cost"} />

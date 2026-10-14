@@ -44,7 +44,7 @@ export default async function RoomCostExpensesPage({ searchParams }: { searchPar
         }
       />
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={t("Expenses for {month}", { month })} className="lg:col-span-2">
+        <Card title={t("Expenses for {month}", { month: new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`)) })} className="lg:col-span-2">
           {!r.saved && <div className="mb-3"><Alert tone="blue">{r.defaults ? t("Nothing entered for this month yet: the standard items are listed, enter their amounts.") : t("Nothing entered for this month yet: the items of the last entered month are listed, enter their amounts.")}</Alert></div>}
           <RoomCostItemsForm
             key={month}

@@ -45,7 +45,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <div className="w-72"><Label htmlFor="pf-q">{t("Search")}</Label><Input id="pf-q" name="q" defaultValue={q} placeholder={t("Name, stock code, brand, category")} /></div>
         </FilterBar>
       </>} />
-      {manage && <Card title={t("New product (manual)")} className="mb-4"><ProductForm categories={categories.map((c) => ({ id: c.id, name: `${c.group} › ${c.name}` }))} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} /></Card>}
+      {manage && <Card title={t("New product (manual)")} className="mb-4"><ProductForm categories={categories.map((c) => ({ id: c.id, name: `${t(c.group)} › ${c.name}` }))} suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} /></Card>}
       <Card padded={false} title={total > rows.length ? t("{from}–{to} of {n} products", { from: (page - 1) * PAGE + 1, to: (page - 1) * PAGE + rows.length, n: total }) : t("{n} products", { n: total })}>
         <Table>
           <thead><tr><Th>{t("Product")}</Th><Th>{t("Category")}</Th><Th>{t("Units (purchase → stock → recipe)")}</Th><Th>{t("Default supplier")}</Th><Th align="right">{t("VAT %")}</Th><Th align="right">{t("Current cost")}</Th><Th>{t("Status")}</Th></tr></thead>

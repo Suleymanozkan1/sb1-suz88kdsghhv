@@ -59,6 +59,8 @@ export function translateMessage(locale: Locale, msg: string): string {
     // a part may itself be a server message ("Line 2: Cannot waste more …"): translated too (always shorter → ends)
     if (m) return c.tr.replace(/\{(\d+)\}/g, (_, i: string) => {
       const part = m[Number(i) + 1] ?? "";
+      // plain decimals in a message ("available 0.613 kg") read the Turkish way
+      if (/^-?\d+\.\d+$/.test(part)) { const d = part.split(".")[1]!.length; return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(Number(part)); }
       const c1 = code(part);
       return c1 !== part || part.length < 12 ? c1 : translateMessage(locale, part);
     });

@@ -18,7 +18,7 @@ export const setup: Record<string, string> = {
   "Number of rooms": "Oda sayısı",
   "Currency": "Para birimi",
   "Administrator": "Yönetici",
-  "Name": "Ad soyad",
+  "Name": "Ad",
   "min 10": "en az 10",
   "Password again": "Şifre (tekrar)",
   "Also load demo companies": "Demo şirketlerini de yükle",
