@@ -71,7 +71,7 @@ export default async function CompsPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title={t("On-house & Hospitality")}
-        subtitle={t("Consumption nobody pays for. On-house: free consumption of authorised people (owner / investor, general manager, directors); owner and general manager need no explanation, the others do. Hospitality: offered for a reason (tea for a sales meeting, the chain's welcome drink, billed to the chain later). Records come from Micros / Opera (checks closed as comps); manual entry is the fallback. Comps are deducted from stock through their recipes but never booked as sales revenue; their cost is a separate line of the cost reports and of the theoretical vs actual breakdown.")}
+        subtitle={t("Consumption nobody pays for. On-house: free consumption of authorised people (owner / investor, general manager, directors); owner and general manager need no explanation, the others do. Hospitality: offered for a reason (tea for a sales meeting, a welcome drink). Records come from Micros / Opera (checks closed as comps); manual entry is the fallback. Comps are deducted from stock through their recipes but never booked as sales revenue; their cost is a separate line of the cost reports and of the theoretical vs actual breakdown.")}
         exportKey="comps"
         canExport={can(actor, "report:export")}
       />

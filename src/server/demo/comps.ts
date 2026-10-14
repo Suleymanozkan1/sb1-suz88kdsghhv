@@ -15,7 +15,7 @@ type Event = { source: "MICROS" | "OPERA" | "MANUAL"; outlet: string; kind: Comp
 /** One per pattern slot; the days cycle through them. Item codes are recipe POS codes (Micros menu item numbers); quantities stay within the seeded stores' stock. */
 const EVENTS: Event[] = [
   { source: "MICROS", outlet: "REST", kind: "ON_HOUSE", reason: "Yatırımcı", person: "Mehmet Aydın (yatırımcı)", items: [["CHKSALAD", 2]] },
-  { source: "OPERA", outlet: "BAR", kind: "HOSPITALITY", reason: "Zincir standardı (zincire faturalanır)", person: "Yeni giriş misafirleri", items: [["COLA", 2]] },
+  { source: "OPERA", outlet: "BAR", kind: "HOSPITALITY", reason: "Karşılama içeceği", person: "Yeni giriş misafirleri", items: [["COLA", 2]] },
   { source: "MICROS", outlet: "CAFE", kind: "ON_HOUSE", reason: "Genel müdür", person: "Genel Müdür", items: [["CAPPU", 2], ["LATTE", 1]] },
   { source: "MICROS", outlet: "CAFE", kind: "HOSPITALITY", reason: "Satış görüşmesi", person: "ABC Turizm", note: "Kontrat görüşmesi, 4 kişi", items: [["LATTE", 4]] },
   { source: "MICROS", outlet: "REST", kind: "ON_HOUSE", reason: "Direktör", person: "Satış Direktörü", note: "Acente ile iş yemeği", items: [["SALMON", 1], ["CHKSALAD", 1]] },
