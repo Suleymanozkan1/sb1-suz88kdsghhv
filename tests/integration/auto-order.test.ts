@@ -7,6 +7,7 @@ import { orderRecommendations } from "@/server/services/inventory";
 import { inventoryStatus } from "@/server/services/insights";
 import { sentMail } from "@/server/mail";
 import type { Actor } from "@/server/auth/actor";
+import { resetBillingCache } from "@/server/plans";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
 let pm: Actor;
@@ -14,13 +15,22 @@ let viewer: Actor;
 let oil: Awaited<ReturnType<typeof makeProduct>>;
 let flour: Awaited<ReturnType<typeof makeProduct>>;
 const prevTransport = process.env.MAIL_TRANSPORT;
+
+async function ensurePlatform() {
+  if (!(await prisma.organization.count({ where: { isPlatform: true } }))) await prisma.organization.create({ data: { name: "Platform (auto-order test)", isPlatform: true } });
+  resetBillingCache();
+}
 const prevTrial = process.env.TRIAL_ALL_FEATURES;
 
 beforeAll(async () => {
   process.env.MAIL_TRANSPORT = "memory";
-  // the plan tests below check the packages themselves: the trial switch (every feature open) is turned off
+  // the plan tests below check the packages themselves: no global switch, and billing in force (it applies only when
+  // a platform operator exists; created here so the result does not depend on which test file ran first)
   process.env.TRIAL_ALL_FEATURES = "0";
+  await ensurePlatform();
   h = await makeHotel("AUTOORD");
+  // past its free trial and paid: the organization's own (BASIC) plan applies
+  await prisma.organization.update({ where: { id: h.org.id }, data: { trialEndsAt: new Date(Date.now() - 86_400_000), paidThrough: new Date(Date.now() + 30 * 86_400_000) } });
   pm = await h.actor("purchasing_manager");
   viewer = await h.actor("viewer");
   oil = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "OIL", name: "Olive Oil", stockUnit: "l", supplierId: h.supplier.id });
@@ -134,8 +144,8 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
   });
 });
 
-describe("trial: every feature open (TRIAL_ALL_FEATURES, default on)", () => {
-  it("a basic-plan organization gets automatic e-mail orders while the trial switch is on", async () => {
+describe("trial: every feature open during the tenant's free trial", () => {
+  it("a basic-plan organization gets automatic e-mail orders until its trial ends", async () => {
     const t = await makeHotel("AOTRIAL");
     const p = await t.actor("purchasing_manager");
     const salt = await makeProduct(t.hotel.id, t.cats.food.id, { sku: "SALT", name: "Salt", supplierId: t.supplier.id });
@@ -143,17 +153,22 @@ describe("trial: every feature open (TRIAL_ALL_FEATURES, default on)", () => {
     await prisma.supplier.update({ where: { id: t.supplier.id }, data: { email: "trial@supplier.test" } });
     await saveRule(prisma, p, t.hotel.id, { productId: salt.id, supplierId: t.supplier.id, reorderPoint: "5", orderQty: "10" });
     expect((await prisma.organization.findUniqueOrThrow({ where: { id: t.org.id } })).plan).toBe("BASIC");
-    delete process.env.TRIAL_ALL_FEATURES; // default: on
+    // a new organization starts its 30-day trial by itself (database default)
+    const o = await autoOrderOverview(prisma, p, t.hotel.id);
+    expect(o).toMatchObject({ plan: "PREMIUM", trial: true, emailEnabled: true });
+    const before = sentMail.length;
+    expect(await runAutoOrders(prisma, t.hotel.id, { now: new Date("2026-09-03T02:00:00Z") })).toMatchObject({ due: 1, sent: 1 });
+    expect(sentMail.slice(before).map((m) => m.to)).toEqual(["trial@supplier.test"]);
+    // trial over, paid on BASIC: the package decides again
+    await prisma.organization.update({ where: { id: t.org.id }, data: { trialEndsAt: new Date(Date.now() - 1000), paidThrough: new Date(Date.now() + 30 * 86_400_000) } });
+    expect(await autoOrderOverview(prisma, p, t.hotel.id)).toMatchObject({ plan: "BASIC", trial: false, emailEnabled: false });
+    // the explicit QA switch still opens everything
+    process.env.TRIAL_ALL_FEATURES = "1";
     try {
-      const o = await autoOrderOverview(prisma, p, t.hotel.id);
-      expect(o).toMatchObject({ plan: "PREMIUM", trial: true, emailEnabled: true });
-      const before = sentMail.length;
-      expect(await runAutoOrders(prisma, t.hotel.id, { now: new Date("2026-09-03T02:00:00Z") })).toMatchObject({ due: 1, sent: 1 });
-      expect(sentMail.slice(before).map((m) => m.to)).toEqual(["trial@supplier.test"]);
+      expect(await autoOrderOverview(prisma, p, t.hotel.id)).toMatchObject({ plan: "PREMIUM", trial: true, emailEnabled: true });
     } finally {
       process.env.TRIAL_ALL_FEATURES = "0";
     }
-    expect(await autoOrderOverview(prisma, p, t.hotel.id)).toMatchObject({ plan: "BASIC", trial: false, emailEnabled: false });
   });
 });
 

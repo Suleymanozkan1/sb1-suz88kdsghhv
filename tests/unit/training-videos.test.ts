@@ -7,8 +7,11 @@ import { embedUrl, videoFor } from "@/components/page-help";
 
 describe("built-in training videos (r3 §0.4)", () => {
   it("every menu page has its recorded video in public/videos", () => {
-    const missing = NAV.map((n) => n.href).filter((h) => !fs.existsSync(path.join("public", BUILT_IN_VIDEOS[h]!)));
+    const missing = NAV.filter((n) => !n.noVideo).map((n) => n.href).filter((h) => !fs.existsSync(path.join("public", BUILT_IN_VIDEOS[h]!)));
     expect(missing).toEqual([]);
+  });
+  it("a page marked noVideo gets no built-in video button (no link to a file that does not exist)", () => {
+    for (const n of NAV.filter((x) => x.noVideo)) expect(BUILT_IN_VIDEOS[n.href]).toBeUndefined();
   });
   it("slugs are stable file names", () => {
     expect(videoSlug("/")).toBe("dashboard");

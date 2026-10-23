@@ -30,8 +30,12 @@ import { menuEngineering } from "./reports/menu-engineering";
 import { savings } from "./reports/savings";
 import { review } from "./reports/review";
 import { dataQuality } from "./reports/data-quality";
+import { allocation, budget, forecast } from "./reports/planning";
 
 export const REPORTS: Record<string, ReportDef> = {
+  allocation,
+  budget,
+  forecast,
   inventory,
   recipes,
   recipe,

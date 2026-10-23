@@ -1,0 +1,4 @@
+# VBA modules are embedded byte-for-byte (scripts/gen-vba.ts) and compared in tests/unit/vba-project.test.ts:
+# a Windows checkout with core.autocrlf=true turned them into CRLF and the sync test failed on every Windows machine.
+*.bas text eol=lf
+*.cls text eol=lf

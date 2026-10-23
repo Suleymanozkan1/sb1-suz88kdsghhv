@@ -78,15 +78,15 @@ Both feed the variance engine as documented causes (`BUFFET_CONSUMPTION`, `MINIB
 
 - **Expenses** (`/operations`, `/api/opex/*`): housekeeping, amenities, laundry, labor (payroll), energy (per utility), engineering (per asset / room), A&G, S&M, rent, insurance, depreciation. Each expense posts one `CostTransaction` (kind `EXPENSE`, DIRECT); posted expenses cannot be edited or deleted (DB trigger) — they are reversed.
 - **Imports** (`/imports`, `/api/imports/{expenses|occupancy|reservations}/{preview|commit}`): accounting / payroll / utility CSV and PMS daily statistics + reservations. Preview first, all-or-nothing, the same file cannot be posted twice (content hash), every batch can be rolled back (expenses through ledger reversals).
-- **Allocation** (`/allocation`, `/api/allocation/*`): rules (source category / sub-category / department → destinations) with drivers revenue, covers, m², headcount, sub-meter consumption or fixed weights. Preview → post (ALLOCATED rows, net zero for the hotel, one run per period) → reverse. An "ALL" rule keeps each cost category, so allocated payroll stays labor. *(Screen removed in feedback round 2 (10/2026); the service and data are kept.)*
+- **Allocation** (`/allocation`, `/api/allocation/*`): rules (source category / sub-category / department → destinations) with drivers revenue, covers, m², headcount, sub-meter consumption or fixed weights. Preview → post (ALLOCATED rows, net zero for the hotel, one run per period) → reverse. An "ALL" rule keeps each cost category, so allocated payroll stays labor. *(Premium package; the screen was removed in feedback round 2 and restored after the 10/2026 audit.)*
 - **Room cost** (`/rooms`): rooms-division cost (Rooms, Housekeeping, Laundry) split to rooms by occupied nights × m², plus room-tagged costs and the monthly room expenses entered at `/rooms/expenses`; by room, type, floor and area; occupancy, ADR (room revenue ÷ sold nights), RevPAR (room revenue ÷ sellable nights, out-of-order / out-of-service excluded), cost of unsold rooms, room revenue per guest; CPOR, CPAR, cost per guest, cost per stay; warnings when allocation or occupancy is missing.
 - **Module reports**: housekeeping (per occupied room / guest night), laundry (per kg / piece / occupied room, linen lost / damaged / discarded / replacement), labor (by department, cost %), energy (billed vs metered, unit cost, per room / m²), engineering (by type, emergency vs preventive, cost per asset).
 - **Excel**: sheets 18–24 and 37 are filled (plus floor/area, channel, linen, meter and asset tables); P&L reaches GOP and EBITDA when payroll, energy and occupancy data exist (never estimated). Export contract `exportVersion` 1.1.
 
 ## Planning (Phase 4)
 
-- **Budget & targets** (`/budget`, `/api/budgets/*`, `/api/targets`): budgets per year (month × department × category, revenue lines and cost-% targets), CSV load, approval (frozen by DB trigger), revisions (copy × factor) that supersede the approved version. Budget vs actual by category and department, month and YTD. Configurable targets with early-warning level for food / beverage / waste / unexplained %, labor %, energy per room, room cost per night, CPOR, buffet cost per cover, minibar shrinkage. *(Screen removed in feedback round 2 (10/2026); the service and data are kept.)*
-- **Forecast & what-if** (`/forecast`, `/api/forecast`, `/api/what-if`): month forecast per category from the last 3 months (fixed / variable split), expected occupancy (input, or actual + on-the-books), covers, known price change; base / best / worst scenarios with revenue and result. What-if levers: ingredient price (with affected recipes and monthly impact), occupancy, buffet covers, waste points, labor, energy. *(Screen removed in feedback round 2 (10/2026); the service and data are kept.)*
+- **Budget & targets** (`/budget`, `/api/budgets/*`, `/api/targets`): budgets per year (month × department × category, revenue lines and cost-% targets), CSV load, approval (frozen by DB trigger), revisions (copy × factor) that supersede the approved version. Budget vs actual by category and department, month and YTD. Configurable targets with early-warning level for food / beverage / waste / unexplained %, labor %, energy per room, room cost per night, CPOR, buffet cost per cover, minibar shrinkage. *(Premium package; restored after the 10/2026 audit.)*
+- **Forecast & what-if** (`/forecast`, `/api/forecast`, `/api/what-if`): month forecast per category from the last 3 months (fixed / variable split), expected occupancy (input, or actual + on-the-books), covers, known price change; base / best / worst scenarios with revenue and result. What-if levers: ingredient price (with affected recipes and monthly impact), occupancy, buffet covers, waste points, labor, energy. *(Premium package; restored after the 10/2026 audit.)*
 - **Menu engineering** (`/menu-engineering`): Kasavana–Smith classes from sales × frozen recipe cost, margin vs the hotel target, cost change since sale.
 - **Savings** (`/savings`, `/api/savings/*`): opportunities (supplier price, waste, portion control, yield, recipe re-engineering, overstock carrying cost, energy, labor, OTA → direct) each with formula and stated assumption; actions with root cause, owner, due date, target vs realized saving, overdue flag.
 - **Excel**: sheets 39–41 filled, menu engineering on sheet 54, department / cost-center budget columns; export contract `exportVersion` 1.2.
@@ -114,6 +114,24 @@ Roles and screens:
 - Users switch between their hotels in the sidebar.
 
 Details and scaling path: [`docs/MULTI_TENANCY.md`](docs/MULTI_TENANCY.md).
+
+## Packages, subscriptions and billing
+
+Packages are switched in one place, `src/server/plans.ts` (shared table in `src/lib/features.ts`):
+
+| Package | Includes |
+|---|---|
+| **Basic** (Temel) | purchasing, stock, counts, recipes, waste, sales, theoretical vs actual, imports, reports & PDF pack, data quality, audit trail, reorder alerts |
+| **Standard** (Orta) | + breakfast / buffet, minibar, room cost, operating costs, on-house & hospitality, menu engineering, Excel workbook, Micros / Opera automation |
+| **Premium** (Üst) | + cost allocation, budget & targets, forecast & what-if, cost savings, e-mailed orders |
+
+- **Subscription state is derived, never stored** (`src/domain/billing.ts`): from `trialEndsAt` and `paidThrough` → `TRIAL` (every feature), `ACTIVE`, `PAST_DUE` (7-day grace, still writable), `EXPIRED` (**read-only**: every number stays visible and exportable, new postings wait for payment; nothing is ever deleted).
+- Every new organization gets a 30-day trial from a database default, whichever code path creates it; the migration gave every existing tenant the same 30 days.
+- Gates: the API wrapper maps route prefixes to features (one table, so a new route in a gated module cannot forget its check) and answers `403 PLAN_REQUIRED` / `402 PAYMENT_REQUIRED`; module folders carry a `layout.tsx` gate that explains the package instead of showing errors; the menu shows locked modules with a lock.
+- **Manual billing (bank transfer)**: the platform console (`/platform`) holds list prices (per active hotel / month, VAT excluded), bank details and VAT rate, issues **payment notices** (`HC-YYYY-NNNN`, proforma, not a tax invoice), marks them paid with the transfer reference (extends `paidThrough`, sets the plan) or voids them; extends trials; decides package requests. Amounts of an issued notice are fixed by a DB trigger. Company administrators see `/billing`: status, notices, transfer details, package comparison, invoice recipient, package request.
+- Billing applies only when a platform operator organization exists. A **self-hosted** installation (no operator) keeps every feature; `PLAN_OVERRIDE` fixes a plan for licensed installs, `TRIAL_ALL_FEATURES=1` opens everything for QA, `BILLING_ENFORCEMENT=off` disables enforcement.
+- Product page: `/welcome` (set `PUBLIC_LANDING=1` so visitors without a session land there; `PUBLIC_CONTACT_EMAIL` for the demo button). It shows the real list prices and invents no customers or savings.
+- **Getting started**: the dashboard lists the steps to the first variance (products, supplier prices, opening stock, an approved recipe, sales, an approved count, the team), each checked from the hotel's data; it disappears when all are done.
 
 ## Demo, QA and staging data
 
@@ -170,8 +188,13 @@ Upgrades keep the data and apply new migrations. See [`docs/WINDOWS_INSTALL.md`]
 - **Security:**
   - authorize before validate on every service; IDOR tests cover Phase 3–5 objects;
   - a deactivated user's session is refused;
-  - production CSP without `'unsafe-eval'`, plus `object-src 'none'`;
+  - Content-Security-Policy with a per-request script nonce (`src/middleware.ts`): no `'unsafe-inline'` or `'unsafe-eval'` for scripts in production, `object-src 'none'`, `frame-ancestors 'none'`;
   - formula-injection-safe exports.
+- **Append-only, enforced by the database alone** (`tests/integration/integrity-hardening.test.ts`): ledger, audit, expense, budget, recipe-line and payment-notice triggers let a delete through only inside a demo purge (`hotelcost.demo_purge`) **and** only for rows of a demo organization; a real organization can never become a demo or platform one, is never deleted, and a hotel never moves to another organization; `TRUNCATE` is refused on the append-only tables. The application no longer needs `ALTER TABLE … DISABLE TRIGGER`, so it can (and should) run as a database role that does **not** own the tables — only migrations need the owner.
+- **Database time zone = UTC**: every calendar-day comparison assumes UTC; a migration pins the database to UTC (a non-UTC server, e.g. the Windows installer's PostgreSQL in Europe/Istanbul, used to drop the last day of a month from its own period). `/api/health` reports `dbTimeZone` and warns if it is not UTC.
+- **Reverse proxy**: an internet-facing self-hosted install must run behind a proxy that overwrites `X-Forwarded-For` (set `TRUSTED_PROXY_HOPS`); Next.js gives route handlers no socket address, so the per-IP login limit cannot verify the client by itself (the per-account limit always applies).
+- **Observability** (`src/server/log.ts`): JSON-line logs; every API call logs method, path, status, duration, user and hotel with an `x-request-id` (returned to the client and shown on 500 responses); unhandled errors with a stack; `ERROR_WEBHOOK_URL` posts errors to Slack / Teams / Discord or any endpoint (throttled). `/api/health` checks the database round trip and time zone.
+- **CI** (`.github/workflows/ci.yml`): typecheck, lint, unit and integration tests against PostgreSQL 17 (deliberately started in a non-UTC zone) on every push and pull request.
 - **Accessibility:** axe-core WCAG 2 A/AA scan of the main screens and the login screen (`tests/e2e/hardening.spec.ts`): no serious or critical violations. Muted text colours were darkened to at least 4.5:1, and tables are keyboard-scrollable.
 - **Backup and restore:**
   - `npm run ops:backup`, then `ops:restore`, then `ops:verify-restore`;

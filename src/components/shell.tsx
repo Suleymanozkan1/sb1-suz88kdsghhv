@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, LogOut, Menu, X } from "lucide-react";
+import { Building2, Lock, LogOut, Menu, X } from "lucide-react";
 import { cn } from "./ui";
-import { navItems } from "./nav";
+import { navItems, NAV_GROUPS } from "./nav";
 import { ApiError, call } from "@/lib/client";
 import { setLocaleCookie, useLocale, useT } from "@/i18n/client";
 import type { Locale } from "@/i18n/core";
 
 
-export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendingApprovals, children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; navFlags?: string[]; pendingApprovals: number; children: React.ReactNode }) {
+export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendingApprovals, locked = [], children }: { user: { name: string; role: string }; hotels: { id: string; name: string }[]; hotelId: string; permissions: string[]; navFlags?: string[]; pendingApprovals: number; /** package features the tenant does not have */ locked?: string[]; children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -52,15 +52,31 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
     router.refresh();
   }
 
+  const off = new Set(locked);
   const nav = (
-    <nav aria-label={t("Main")} className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-      {items.map((n) => (
-        <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={isActive(n.href) ? "page" : undefined} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition", isActive(n.href) ? "bg-brand-600/15 text-white" : "text-ink-300 hover:bg-white/5 hover:text-white")}>
-          <n.icon className={cn("h-4 w-4", isActive(n.href) ? "text-brand-300" : "text-ink-300")} aria-hidden />
-          <span className="flex-1">{t(n.label)}</span>
-          {n.href === "/approvals" && pendingApprovals > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-ink-950">{pendingApprovals}</span>}
-        </Link>
-      ))}
+    <nav aria-label={t("Main")} className="flex-1 overflow-y-auto px-3 py-3">
+      {NAV_GROUPS.map((g) => {
+        const entries = items.filter((n) => n.group === g.key);
+        if (!entries.length) return null;
+        return (
+          <div key={g.key} className="mb-3">
+            <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-300">{t(g.label)}</p>
+            <div className="space-y-0.5">
+              {entries.map((n) => {
+                const isLocked = n.feature !== undefined && off.has(n.feature);
+                return (
+                  <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={isActive(n.href) ? "page" : undefined} title={isLocked ? t("Not in your package") : undefined} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition", isActive(n.href) ? "bg-brand-600/15 text-white" : isLocked ? "text-ink-300 hover:bg-white/5 hover:text-white" : "text-ink-300 hover:bg-white/5 hover:text-white")}>
+                    <n.icon className={cn("h-4 w-4", isActive(n.href) ? "text-brand-300" : isLocked ? "text-ink-400" : "text-ink-300")} aria-hidden />
+                    <span className="flex-1">{t(n.label)}</span>
+                    {isLocked && <Lock className="h-3.5 w-3.5 text-ink-400" aria-label={t("Not in your package")} />}
+                    {n.href === "/approvals" && pendingApprovals > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-ink-950">{pendingApprovals}</span>}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </nav>
   );
 

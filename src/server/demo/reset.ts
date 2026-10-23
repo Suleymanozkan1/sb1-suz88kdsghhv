@@ -2,22 +2,17 @@
  * Removal of whole DEMO tenants (spec 120, 123-124). Real tenants are never deleted: ledgers are
  * append-only and protected by triggers. For demo / QA organizations only, outside production, this
  * removes every row that belongs to them, in foreign-key order derived from the live schema, inside one
- * transaction (the immutability triggers are suspended for that transaction only).
+ * transaction.
+ *
+ * The immutability triggers are NOT suspended (that needed the table owner, so the application had to run with
+ * owner rights). The transaction sets `hotelcost.demo_purge`, and each trigger lets a delete through only for rows of
+ * a demo organization (migration 20261023091000_integrity_hardening): a real tenant's ledger stays immutable even if
+ * this flag were set by mistake.
  */
 import type { PrismaClient } from "@prisma/client";
 import { DomainError } from "@/domain/errors";
 import { type Actor, requirePermission } from "../auth/actor";
 import { assertDemoAllowed } from "./generate";
-
-const GUARDED_TRIGGERS: Array<[string, string]> = [
-  ["StockTransaction", "stock_tx_immutable"],
-  ["CostTransaction", "cost_tx_immutable"],
-  ["AuditLog", "audit_log_immutable"],
-  ["RecipeIngredient", "recipe_line_frozen"],
-  ["Expense", "expense_guard"],
-  ["BudgetLine", "budget_line_frozen"],
-  ["Budget", "budget_status_guard"],
-];
 
 type Fk = { table: string; column: string; ref: string };
 
@@ -79,7 +74,7 @@ export async function purgeDemoOrganizations(db: PrismaClient, organizationIds: 
   const out: Record<string, number> = {};
   await db.$transaction(
     async (tx) => {
-      for (const [t, trg] of GUARDED_TRIGGERS) await tx.$executeRawUnsafe(`ALTER TABLE ${q(t)} DISABLE TRIGGER ${q(trg)}`);
+      await tx.$queryRaw`SELECT set_config('hotelcost.demo_purge', 'on', true)`;
       const keep = await tx.organization.findFirst({ where: { id: { notIn: organizationIds } }, orderBy: { isPlatform: "desc" } });
       if (keep) await tx.currency.updateMany({ where: { organizationId: { in: organizationIds } }, data: { organizationId: keep.id } });
       else await tx.currency.deleteMany({ where: { organizationId: { in: organizationIds } } });
@@ -88,7 +83,6 @@ export async function purgeDemoOrganizations(db: PrismaClient, organizationIds: 
         const n = await tx.$executeRawUnsafe(`DELETE FROM ${q(t)} WHERE ${pred.get(t)}`);
         if (n) out[t] = n;
       }
-      for (const [t, trg] of GUARDED_TRIGGERS) await tx.$executeRawUnsafe(`ALTER TABLE ${q(t)} ENABLE TRIGGER ${q(trg)}`);
     },
     { timeout: 30 * 60_000, maxWait: 60_000 },
   );

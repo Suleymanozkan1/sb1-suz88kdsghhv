@@ -15,6 +15,8 @@ import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
 import { homeHref } from "@/components/nav";
 import { Title } from "@/components/title";
+import { gettingStarted } from "@/server/services/onboarding";
+import { GettingStarted } from "@/components/getting-started";
 
 export const metadata = { title: "Dashboard" };
 
@@ -33,7 +35,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const range = monthRange(await searchParams);
   const res = await guarded(() => homeDashboard(prisma, actor, hotelId, range));
   if (!res.ok) return <Alert>{res.error}</Alert>;
-  const banner = <IntegrationBanner link health={await integrationHealth(prisma, hotelId)} />;
+  const onboarding = await gettingStarted(prisma, actor, hotelId);
+  const banner = (
+    <>
+      <GettingStarted {...onboarding} permissions={actor.permissions} />
+      <IntegrationBanner link health={await integrationHealth(prisma, hotelId)} />
+    </>
+  );
   if (res.data.kind === "basic") return <>{banner}<BasicDashboard hotelName={hotel.name} currency={hotel.baseCurrency} timezone={hotel.timezone} range={range} d={res.data.data} /></>;
   const d = res.data.data;
   const k = d.kpis;

@@ -21,6 +21,7 @@ import { secaMessages } from "./seca";
 import { secbMessages } from "./secb";
 import { seccMessages } from "./secc";
 import { secdMessages } from "./secd";
+import { denetimMessages } from "./denetim";
 
 export const TR_MESSAGES: Record<string, string> = {
   ...r2cMessages,
@@ -38,6 +39,7 @@ export const TR_MESSAGES: Record<string, string> = {
   ...secbMessages,
   ...seccMessages,
   ...secdMessages,
+  ...denetimMessages,
   // ── HTTP / generic ──
   "Invalid input": "Geçersiz giriş",
   "Approval already decided": "Bu onay talebi zaten karara bağlanmış",

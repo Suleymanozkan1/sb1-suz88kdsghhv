@@ -17,6 +17,7 @@ const EXEMPT: Record<string, string> = {
   "excel/page.tsx": "the workbook export page itself",
   "operations/page.tsx": "operating costs — on hold until the next meeting (no code changes)",
   "inventory/counts/summary/page.tsx": "redirect to /inventory/counts/results (r3 §10)",
+  "billing/page.tsx": "subscription status and payment details, not a report",
 };
 
 function pages(dir: string, out: string[] = []): string[] {

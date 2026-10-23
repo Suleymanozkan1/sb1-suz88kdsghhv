@@ -8,7 +8,7 @@ import { NAV } from "@/components/nav";
 /** "/" → "dashboard", "/inventory/counts/results" → "inventory-counts-results" */
 export const videoSlug = (href: string) => (href === "/" ? "dashboard" : href.slice(1).replace(/\//g, "-"));
 
-export const BUILT_IN_VIDEOS: Readonly<Record<string, string>> = Object.fromEntries(NAV.map((n) => [n.href, `/videos/${videoSlug(n.href)}.mp4`]));
+export const BUILT_IN_VIDEOS: Readonly<Record<string, string>> = Object.fromEntries(NAV.filter((n) => !n.noVideo).map((n) => [n.href, `/videos/${videoSlug(n.href)}.mp4`]));
 
 export function effectiveVideos(own: Record<string, string>): Record<string, string> {
   return { ...BUILT_IN_VIDEOS, ...own };
