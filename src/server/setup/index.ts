@@ -11,6 +11,7 @@ import { bootstrapInstallation } from "@/server/services/admin";
 import { demoStepId, demoSteps, runDemoStep } from "@/server/demo/generate";
 import { PROFILES } from "@/server/demo/profiles";
 import { purgeDemoOrganizations } from "@/server/demo/reset";
+import { billingEnabled } from "@/server/plans";
 
 export const SETUP_LOCK = 7_204_201; // pg advisory lock: one setup at a time
 const DEMO_STARTED = "DEMO_LOAD_STARTED";
@@ -69,6 +70,9 @@ export async function assertInstallationOwner(db: PrismaClient, actor: Actor) {
   const org = await db.organization.findUniqueOrThrow({ where: { id: actor.organizationId } });
   if (org.isDemo || org.isPlatform) throw new DomainError("FORBIDDEN", "Only the installation owner can manage demo data");
   if ((await db.organization.count({ where: { isDemo: false, isPlatform: false } })) !== 1) throw new DomainError("FORBIDDEN", "Demo data can only be added to a single-company installation");
+  // On a SaaS installation demo tenants are the platform operator's: a first customer's administrator would
+  // otherwise create unbilled Premium companies with ownerConsent and could purge the operator's demos (audit v2, S2)
+  if (await billingEnabled(db)) throw new DomainError("FORBIDDEN", "Demo data is managed by the platform operator on this installation");
 }
 
 export type DemoState = {

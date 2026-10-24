@@ -12,7 +12,7 @@ import { actorForUser } from "@/server/auth/session";
 import type { Actor } from "@/server/auth/actor";
 import { billingOverview, createBillingInvoice, decidePlanRequest, extendTrial, markBillingInvoicePaid, requestPlan, saveBillingProfile, saveBillingSettings, savePlanPrices, tenantSubscriptions, voidBillingInvoice } from "@/server/services/billing";
 import { organizationAccess, resetBillingCache } from "@/server/plans";
-import { GET as buffetSessionsGET } from "@/app/api/buffet/sessions/route";
+import { GET as minibarRoomsGET } from "@/app/api/minibar/rooms/route";
 import { POST as productsPOST, GET as productsGET } from "@/app/api/products/route";
 import { POST as billingRequestPOST } from "@/app/api/billing/request/route";
 
@@ -65,7 +65,7 @@ describe("payment notice → paid → plan and paid-through", () => {
 
   it("amounts follow the list price, the active hotels, the months and the VAT rate", async () => {
     const inv = await createBillingInvoice(prisma, superAdmin, h.org.id, { months: 2, plan: "STANDARD" });
-    expect(inv.number).toMatch(/^HC-\d{4}-\d{4}$/);
+    expect(inv.number).toMatch(/^HC-\d{4}-\d{4,}$/); // at least four digits; the yearly sequence may pass 9999
     expect(inv.netAmount.toFixed(2)).toBe("11000.00");
     expect(inv.taxAmount.toFixed(2)).toBe("2200.00");
     expect(inv.total.toFixed(2)).toBe("13200.00");
@@ -97,8 +97,8 @@ describe("payment notice → paid → plan and paid-through", () => {
     const a = await organizationAccess(prisma, h.org.id);
     expect(a.access?.state).toBe("ACTIVE");
     expect(a.plan).toBe("STANDARD");
-    await expect(markBillingInvoicePaid(prisma, superAdmin, inv.id, { paymentRef: "again" })).rejects.toThrow(/already PAID/);
-    await expect(voidBillingInvoice(prisma, superAdmin, inv.id, "wrong notice")).rejects.toThrow(/already PAID/);
+    await expect(markBillingInvoicePaid(prisma, superAdmin, inv.id, { paymentRef: "again" })).rejects.toThrow(/already paid/);
+    await expect(voidBillingInvoice(prisma, superAdmin, inv.id, "wrong notice")).rejects.toThrow(/already paid/);
     // the database refuses edits even outside the service
     await expect(prisma.billingInvoice.update({ where: { id: inv.id }, data: { total: "1" } })).rejects.toThrow(/LEDGER_IMMUTABLE/);
     await expect(prisma.billingInvoice.delete({ where: { id: inv.id } })).rejects.toThrow(/LEDGER_IMMUTABLE/);
@@ -141,7 +141,7 @@ describe("packages gate routes; an expired subscription is read-only", () => {
   it("BASIC after the trial: core works, a STANDARD module answers PLAN_REQUIRED", async () => {
     await prisma.organization.update({ where: { id: h.org.id }, data: { plan: "BASIC", trialEndsAt: new Date(Date.now() - DAY), paidThrough: new Date(Date.now() + 10 * DAY) } });
     expect((await productsGET(req("/api/products", token, h.hotel.id), noParams)).status).toBe(200);
-    const res = await buffetSessionsGET(req("/api/buffet/sessions", token, h.hotel.id), noParams);
+    const res = await minibarRoomsGET(req("/api/minibar/rooms", token, h.hotel.id), noParams);
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe("PLAN_REQUIRED");
     expect(res.headers.get("x-request-id")).toBeTruthy();
@@ -149,7 +149,7 @@ describe("packages gate routes; an expired subscription is read-only", () => {
 
   it("STANDARD opens it", async () => {
     await prisma.organization.update({ where: { id: h.org.id }, data: { plan: "STANDARD" } });
-    expect((await buffetSessionsGET(req("/api/buffet/sessions", token, h.hotel.id), noParams)).status).toBe(200);
+    expect((await minibarRoomsGET(req("/api/minibar/rooms", token, h.hotel.id), noParams)).status).toBe(200);
   });
 
   it("expired: reads still work, writes answer 402, paying stays possible", async () => {

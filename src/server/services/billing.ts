@@ -17,8 +17,11 @@ import { accessState, invoiceAmounts, invoiceNumber, nextPeriod } from "@/domain
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, requirePermission } from "../auth/actor";
 import { FEATURES, FEATURE_LABEL, PLANS, billingEnabled, organizationAccess, type Feature } from "../plans";
+import { noticeInvoiceIssued, noticePaymentReceived } from "./notices";
 
 const DAY = 86_400_000;
+/** a final notice, said in words (the status code alone reached the screen untranslated) */
+const FINAL_MESSAGE = { PAID: "This payment notice is already paid", VOID: "This payment notice is already voided" } as const;
 
 export interface BillingSettings {
   bankName: string;
@@ -155,15 +158,16 @@ export async function createBillingInvoice(db: Db, actor: Actor, organizationId:
   const amounts = invoiceAmounts(prices[plan].monthlyPerHotel, hotels, p.months, settings.taxRate);
   const now = new Date();
   const period = nextPeriod(org.paidThrough, p.months, now);
-  return inTx(db, async (tx) => {
+  const inv = await inTx(db, async (tx) => {
     // one lock for both rules below, so two operators clicking at once cannot break either
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('hotelcost.billing_invoice_number', 0))`;
     // an open notice already covers the next period: issuing a second one would bill the same months twice
     if (await tx.billingInvoice.count({ where: { organizationId, status: "OPEN" } })) throw new DomainError("CONFLICT", "This tenant already has an open payment notice: mark it paid or void it first");
     // yearly sequence without gaps
     const year = now.getUTCFullYear();
-    const last = await tx.billingInvoice.findFirst({ where: { number: { startsWith: `HC-${year}-` } }, orderBy: { number: "desc" }, select: { number: true } });
-    const seq = last ? Number(last.number.slice(-4)) + 1 : 1;
+    // numeric maximum: a text sort put "HC-2026-9999" after "HC-2026-10000" and the year's numbering got stuck
+    const n = (await tx.$queryRaw<Array<{ n: number }>>`SELECT COALESCE(MAX(CAST(split_part("number", '-', 3) AS integer)), 0)::int AS n FROM "BillingInvoice" WHERE "number" LIKE ${`HC-${year}-%`}`)[0]?.n ?? 0;
+    const seq = n + 1;
     const inv = await tx.billingInvoice.create({
       data: {
         organizationId,
@@ -187,6 +191,8 @@ export async function createBillingInvoice(db: Db, actor: Actor, organizationId:
     await platformAudit(tx, actor, organizationId, "PLATFORM_INVOICE_ISSUE", { entityType: "BillingInvoice", entityId: inv.id, after: { number: inv.number, plan, hotels, months: p.months, total: inv.total.toString() } });
     return inv;
   });
+  await noticeInvoiceIssued(db, organizationId, inv, settings.iban ? settings : null);
+  return inv;
 }
 
 const paidInput = z.object({
@@ -198,11 +204,11 @@ const paidInput = z.object({
 export async function markBillingInvoicePaid(db: Db, actor: Actor, invoiceId: string, input: unknown) {
   requirePermission(actor, "platform:admin");
   const p = paidInput.parse(input);
-  return inTx(db, async (tx) => {
+  const done = await inTx(db, async (tx) => {
     const [locked] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "BillingInvoice" WHERE id = ${invoiceId} FOR UPDATE`;
     const inv = locked ? await tx.billingInvoice.findUnique({ where: { id: invoiceId }, include: { organization: { select: { paidThrough: true, plan: true } } } }) : null;
     if (!inv) throw new DomainError("NOT_FOUND", "Payment notice not found");
-    if (inv.status !== "OPEN") throw new DomainError("CONFLICT", `This payment notice is already ${inv.status}`);
+    if (inv.status !== "OPEN") throw new DomainError("CONFLICT", FINAL_MESSAGE[inv.status as "PAID" | "VOID"]);
     const paidAt = p.paidAt ?? new Date();
     if (paidAt.getTime() > Date.now() + DAY) throw new DomainError("VALIDATION", "The payment date cannot be in the future");
     await tx.billingInvoice.update({ where: { id: invoiceId }, data: { status: "PAID", paidAt, paymentRef: p.paymentRef } });
@@ -212,8 +218,10 @@ export async function markBillingInvoicePaid(db: Db, actor: Actor, invoiceId: st
     // a paid package answers the tenant's open request for it
     await tx.planRequest.updateMany({ where: { organizationId: inv.organizationId, status: "OPEN", plan: inv.plan }, data: { status: "DONE", decidedAt: new Date(), decidedById: actor.userId } });
     await platformAudit(tx, actor, inv.organizationId, "PLATFORM_INVOICE_PAID", { entityType: "BillingInvoice", entityId: inv.id, before: { plan: before.plan, paidThrough: before.paidThrough }, after: { number: inv.number, plan: inv.plan, paidThrough, paymentRef: p.paymentRef } });
-    return { id: inv.id, status: "PAID" as const, paidThrough, plan: inv.plan };
+    return { id: inv.id, number: inv.number, organizationId: inv.organizationId, status: "PAID" as const, paidThrough, plan: inv.plan };
   });
+  await noticePaymentReceived(db, done.organizationId, { number: done.number }, done.paidThrough);
+  return { id: done.id, status: done.status, paidThrough: done.paidThrough, plan: done.plan };
 }
 
 export async function voidBillingInvoice(db: Db, actor: Actor, invoiceId: string, reason: string) {
@@ -223,7 +231,7 @@ export async function voidBillingInvoice(db: Db, actor: Actor, invoiceId: string
     const [locked] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "BillingInvoice" WHERE id = ${invoiceId} FOR UPDATE`;
     const inv = locked ? await tx.billingInvoice.findUnique({ where: { id: invoiceId } }) : null;
     if (!inv) throw new DomainError("NOT_FOUND", "Payment notice not found");
-    if (inv.status !== "OPEN") throw new DomainError("CONFLICT", `This payment notice is already ${inv.status}`);
+    if (inv.status !== "OPEN") throw new DomainError("CONFLICT", FINAL_MESSAGE[inv.status as "PAID" | "VOID"]);
     await tx.billingInvoice.update({ where: { id: invoiceId }, data: { status: "VOID", voidReason: reason.trim() } });
     await platformAudit(tx, actor, inv.organizationId, "PLATFORM_INVOICE_VOID", { entityType: "BillingInvoice", entityId: inv.id, after: { number: inv.number }, reason: reason.trim() });
     return { id: inv.id, status: "VOID" as const };
@@ -238,9 +246,37 @@ export async function extendTrial(db: Db, actor: Actor, organizationId: string, 
   if (!org) throw new DomainError("NOT_FOUND", "Tenant not found");
   const base = org.trialEndsAt && org.trialEndsAt.getTime() > Date.now() ? org.trialEndsAt : new Date();
   const trialEndsAt = new Date(base.getTime() + p.days * DAY);
-  await db.organization.update({ where: { id: organizationId }, data: { trialEndsAt } });
-  await platformAudit(db, actor, organizationId, "PLATFORM_TRIAL_EXTEND", { before: { trialEndsAt: org.trialEndsAt }, after: { trialEndsAt }, reason: p.reason });
+  await inTx(db, async (tx) => {
+    await tx.organization.update({ where: { id: organizationId }, data: { trialEndsAt } });
+    await platformAudit(tx, actor, organizationId, "PLATFORM_TRIAL_EXTEND", { before: { trialEndsAt: org.trialEndsAt }, after: { trialEndsAt }, reason: p.reason });
+  });
   return { id: organizationId, trialEndsAt };
+}
+
+const grantInput = z.object({
+  /** last day of access, YYYY-MM-DD (inclusive) */
+  until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD"),
+  plan: z.enum(PLANS as [Plan, ...Plan[]]).optional(),
+  reason: z.string().trim().min(5, "A reason (min 5 chars) is required").max(500),
+});
+
+/**
+ * Access without a payment notice: an existing customer from before billing, a pilot, a complimentary account.
+ * Sets paid-through (and optionally the plan) directly; audited with the reason. Never shortens a paid period.
+ */
+export async function grantAccess(db: Db, actor: Actor, organizationId: string, input: unknown) {
+  requirePermission(actor, "platform:admin");
+  const p = grantInput.parse(input);
+  const until = new Date(`${p.until}T23:59:59.999Z`);
+  if (Number.isNaN(until.getTime()) || until.getTime() < Date.now()) throw new DomainError("VALIDATION", "The date must be today or later");
+  const org = await db.organization.findFirst({ where: { id: organizationId, isPlatform: false }, select: { plan: true, paidThrough: true } });
+  if (!org) throw new DomainError("NOT_FOUND", "Tenant not found");
+  if (org.paidThrough && org.paidThrough > until) throw new DomainError("CONFLICT", "The tenant is already paid beyond this date");
+  return inTx(db, async (tx) => {
+    await tx.organization.update({ where: { id: organizationId }, data: { paidThrough: until, ...(p.plan ? { plan: p.plan } : {}) } });
+    await platformAudit(tx, actor, organizationId, "PLATFORM_ACCESS_GRANT", { before: { plan: org.plan, paidThrough: org.paidThrough }, after: { plan: p.plan ?? org.plan, paidThrough: until }, reason: p.reason });
+    return { id: organizationId, paidThrough: until, plan: p.plan ?? org.plan };
+  });
 }
 
 export async function decidePlanRequest(db: Db, actor: Actor, requestId: string, status: "DONE" | "REJECTED") {

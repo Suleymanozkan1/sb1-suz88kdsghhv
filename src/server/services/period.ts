@@ -36,13 +36,16 @@ const POSTABLE: PeriodStatus[] = ["OPEN", "REOPENED"];
  * of the caller's transaction: a close (FOR UPDATE in setPeriodStatus) waits for postings that already passed this
  * check, and later postings see its new status.
  */
+// DATE columns are compared as UTC midnights ("col"::timestamp AT TIME ZONE 'UTC'), not by PostgreSQL's implicit
+// date → timestamptz cast in the SESSION time zone: on a non-UTC database the last day of a month otherwise fell
+// outside its own period. The migration also pins the database to UTC; this keeps the queries right without it.
 export async function assertPostable(db: Db, actor: Actor, hotelId: string, date: Date): Promise<CostPeriod> {
   if (Number.isNaN(date.getTime())) throw new DomainError("VALIDATION", "Invalid transaction date");
   const maxFuture = Date.now() + 24 * 3600 * 1000;
   if (date.getTime() > maxFuture) throw new DomainError("VALIDATION", "Transactions cannot be dated in the future");
   const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const rows = await db.$queryRaw<Array<{ id: string; code: string; status: PeriodStatus; startDate: Date }>>`
-    SELECT "id", "code", "status", "startDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND "endDate" >= ${day} ORDER BY "startDate" FOR SHARE`;
+    SELECT "id", "code", "status", "startDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND ("endDate"::timestamp AT TIME ZONE 'UTC') >= ${day} ORDER BY "startDate" FOR SHARE`;
   const covering = rows.find((r) => r.startDate <= day);
   // a later closed month starts from the ledger up to its first day: only an explicit reopen may change an earlier
   // month, and a missing month is never created OPEN behind a closed one
@@ -64,7 +67,7 @@ export async function assertPostable(db: Db, actor: Actor, hotelId: string, date
  */
 export async function assertPeriodsWritable(db: Db, actor: Actor, hotelId: string, from: Date, to: Date, ranges?: Array<{ from: Date; to: Date }>): Promise<void> {
   const rows = await db.$queryRaw<Array<{ id: string; code: string; status: PeriodStatus; startDate: Date; endDate: Date }>>`
-    SELECT "id", "code", "status", "startDate", "endDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND "startDate" < ${to} AND "endDate" > ${new Date(from.getTime() - 86_400_000)} ORDER BY "startDate" FOR SHARE`;
+    SELECT "id", "code", "status", "startDate", "endDate" FROM "CostPeriod" WHERE "hotelId" = ${hotelId} AND ("startDate"::timestamp AT TIME ZONE 'UTC') < ${to} AND ("endDate"::timestamp AT TIME ZONE 'UTC') > ${new Date(from.getTime() - 86_400_000)} ORDER BY "startDate" FOR SHARE`;
   for (const p of rows) {
     if (POSTABLE.includes(p.status) || (p.status === "SOFT_CLOSED" && can(actor, "period:manage"))) continue;
     const end = p.endDate.getTime() + 86_400_000;

@@ -18,8 +18,18 @@ import { PLAN_LABEL } from "@/components/feature-gate";
 import { LanguageSwitch } from "@/components/language-switch";
 import { money } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { DemoForm } from "./demo-form";
 
-export const metadata = { title: "Hotel food & beverage cost control", description: "Explains, line by line, the difference between what a hotel bought and what its recipes should have used." };
+export async function generateMetadata() {
+  const t = await getT();
+  return { title: t("Hotel food & beverage cost control"), description: t("Explains, line by line, the difference between what a hotel bought and what its recipes should have used.") };
+}
+
+/** Company details shown in the footer (Turkish B2B buyers ask "who are you?" first). Each line only when set. */
+function companyLines(): string[] {
+  const e = process.env;
+  return [e.PUBLIC_COMPANY_NAME, e.PUBLIC_COMPANY_ADDRESS, e.PUBLIC_COMPANY_TAX_ID, e.PUBLIC_COMPANY_PHONE].map((v) => v?.trim()).filter((v): v is string => !!v);
+}
 export const dynamic = "force-dynamic";
 
 /** Illustrative split of one month's variance; shown with an explicit "example" label. */
@@ -60,8 +70,8 @@ export default async function WelcomePage() {
             <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{t("Find the money your kitchen loses every month.")}</h1>
             <p className="mt-5 max-w-xl text-lg text-ink-600">{t("HotelCost compares what you bought with what your recipes should have used, and explains the difference line by line: price, waste, buffet, minibar, on-house, and the part nobody can explain yet.")}</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              {contact ? <a href={`mailto:${contact}?subject=${encodeURIComponent("HotelCost demo")}`} className="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">{t("Book a demo")}</a> : null}
-              <Link href="/login" className={contact ? "rounded-lg border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-800 hover:bg-ink-50" : "rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"}>{t("Sign in")}</Link>
+              <a href="#demo" className="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">{t("Book a demo")}</a>
+              <Link href="/login" className="rounded-lg border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-800 hover:bg-ink-50">{t("Sign in")}</Link>
             </div>
             <p className="mt-4 text-sm text-ink-500">{t("30-day free trial with every feature. Your data stays yours: nothing is deleted when a trial ends.")}</p>
           </div>
@@ -144,12 +154,23 @@ export default async function WelcomePage() {
             <p className="mt-6 text-sm text-ink-600">{t("Getting started takes data, not weeks of consulting: product, price and opening-stock imports come with templates, and the app shows the next step until your first variance is ready.")}</p>
           </div>
         </section>
+        <section id="demo" className="mx-auto max-w-3xl scroll-mt-6 px-4 py-14 sm:px-6">
+          <h2 className="text-2xl font-semibold">{t("Book a demo")}</h2>
+          <p className="mt-2 text-sm text-ink-600">{t("Tell us about your hotel; we show the product on the kind of data you work with: breakfast, outlets, recipes.")}</p>
+          <div className="mt-6 rounded-xl border border-ink-200 bg-white p-5"><DemoForm /></div>
+        </section>
       </main>
 
       <footer className="border-t border-ink-100">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-ink-500 sm:px-6">
-          <span>HotelCost</span>
-          {contact && <a href={`mailto:${contact}`} className="hover:text-ink-800">{contact}</a>}
+          <div className="space-y-0.5">
+            <p className="font-medium text-ink-700">HotelCost</p>
+            {companyLines().map((l) => <p key={l}>{l}</p>)}
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/guvenlik" className="hover:text-ink-800">{t("Security & data")}</Link>
+            {contact && <a href={`mailto:${contact}`} className="hover:text-ink-800">{contact}</a>}
+          </div>
         </div>
       </footer>
     </div>

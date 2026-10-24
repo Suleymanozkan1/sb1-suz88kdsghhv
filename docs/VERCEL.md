@@ -11,6 +11,8 @@ HotelCost runs on Vercel as a regular Next.js project. The only external piece i
 
 In the new project: **Storage → Create Database → Neon (Postgres)**, region Frankfurt, connected to the project for **all** environments (Production, Preview and Development). A deployment of an environment without the database fails at build time. Neon sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) automatically. The build uses the direct URL for migrations and the app uses the pooled one.
 
+**Preview deployments and the production database.** Connected this way, Preview deployments use the **production** database. The build therefore runs migrations and the recipe refreeze only for Production (`scripts/vercel-db-steps.mjs`): a preview of a branch with a new migration runs against the old schema, and people testing a preview still read and write live data. The safe setup is a separate database per preview: in the Neon integration enable **Create a branch for each Preview deployment**, then set `PREVIEW_DB_ISOLATED=1` for the Preview environment so previews migrate their own branch.
+
 Any other PostgreSQL 15+ also works (Supabase, AWS RDS, Azure, your own server). Set `DATABASE_URL`, plus `DATABASE_URL_UNPOOLED` if the main URL goes through a pooler.
 
 ## 3. Environment variables

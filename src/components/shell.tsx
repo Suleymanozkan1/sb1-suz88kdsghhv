@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Building2, Lock, LogOut, Menu, X } from "lucide-react";
@@ -68,6 +68,7 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
                   <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={isActive(n.href) ? "page" : undefined} title={isLocked ? t("Not in your package") : undefined} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition", isActive(n.href) ? "bg-brand-600/15 text-white" : isLocked ? "text-ink-300 hover:bg-white/5 hover:text-white" : "text-ink-300 hover:bg-white/5 hover:text-white")}>
                     <n.icon className={cn("h-4 w-4", isActive(n.href) ? "text-brand-300" : isLocked ? "text-ink-400" : "text-ink-300")} aria-hidden />
                     <span className="flex-1">{t(n.label)}</span>
+                    <NavPending />
                     {isLocked && <Lock className="h-3.5 w-3.5 text-ink-400" aria-label={t("Not in your package")} />}
                     {n.href === "/approvals" && pendingApprovals > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-ink-950">{pendingApprovals}</span>}
                   </Link>
@@ -135,5 +136,22 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Pending state of the menu link just clicked: a heavy page (variance, ledger, reports) renders on the server while
+ * the old page stays on screen. An app-wide loading.tsx stalled same-page navigations, so the feedback lives in the
+ * link itself (Next's useLinkStatus) plus a thin bar at the top of the window.
+ */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  const t = useT();
+  if (!pending) return null;
+  return (
+    <>
+      <span className="h-3 w-3 animate-spin rounded-full border-2 border-ink-400 border-t-white motion-reduce:animate-none" role="status" aria-label={t("Loading")} />
+      <span className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-brand-500 motion-reduce:animate-none" aria-hidden />
+    </>
   );
 }

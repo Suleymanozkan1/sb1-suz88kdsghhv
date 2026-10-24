@@ -257,37 +257,38 @@ enum Plan {
 }
 
 model Organization {
-  id              String           @id @default(cuid())
-  name            String
+  id                  String               @id @default(cuid())
+  name                String
   /// demo/QA tenant: may be reset by the demo tooling (never in production)
-  isDemo          Boolean          @default(false)
+  isDemo              Boolean              @default(false)
   /// a deactivated tenant cannot sign in
-  active          Boolean          @default(true)
+  active              Boolean              @default(true)
   /// the platform operator's own organization (super administrators live here, it owns no hotels)
-  isPlatform      Boolean          @default(false)
+  isPlatform          Boolean              @default(false)
   /// subscription package: features are switched on per plan (src/server/plans.ts)
-  plan            Plan             @default(BASIC)
+  plan                Plan                 @default(BASIC)
   /// end of the free trial (every feature open until then). The access state is derived from this and paidThrough
   /// (src/domain/billing.ts); every new tenant starts a 30-day trial, whichever code path creates it.
-  trialEndsAt     DateTime?        @default(dbgenerated("(now() + '30 days'::interval)"))
+  trialEndsAt         DateTime?            @default(dbgenerated("(now() + '30 days'::interval)"))
   /// service paid up to this moment: a manual invoice marked paid by the platform operator extends it
-  paidThrough     DateTime?
+  paidThrough         DateTime?
   /// recipient printed on payment notices
-  billingName     String?
-  billingTaxId    String?
-  billingAddress  String?
-  billingEmail    String?
-  billingInvoices BillingInvoice[]
-  planRequests    PlanRequest[]
+  billingName         String?
+  billingTaxId        String?
+  billingAddress      String?
+  billingEmail        String?
+  billingInvoices     BillingInvoice[]
+  planRequests        PlanRequest[]
   /// short training video per page: { "/inventory": "https://…" } (set in Administration; no entry = no video button)
-  trainingVideos  Json             @default("{}")
-  createdAt       DateTime         @default(now())
-  invites         UserInvite[]
-  auditLogs       AuditLog[]
-  hotels          Hotel[]
-  users           User[]
-  roles           Role[]
-  currencies      Currency[]
+  trainingVideos      Json                 @default("{}")
+  createdAt           DateTime             @default(now())
+  invites             UserInvite[]
+  auditLogs           AuditLog[]
+  hotels              Hotel[]
+  users               User[]
+  roles               Role[]
+  currencies          Currency[]
+  subscriptionNotices SubscriptionNotice[]
 }
 
 enum BillingInvoiceStatus {
@@ -365,6 +366,40 @@ model PlanRequest {
 
   @@index([status, createdAt])
   @@index([organizationId, createdAt])
+}
+
+/// One e-mail per company and event (trial ending, grace, expiry, notice issued, payment received): the unique
+/// key makes the nightly job idempotent, so a re-run or a second instance never e-mails twice.
+model SubscriptionNotice {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  kind           String
+  /// kind + the date / number it is about, e.g. "TRIAL_7:2026-11-22"
+  key            String
+  recipients     String
+  ok             Boolean
+  error          String?
+  sentAt         DateTime     @default(now())
+
+  @@unique([organizationId, key])
+}
+
+/// A prospect's request from the public product page (instead of a bare mailto).
+model DemoRequest {
+  id        String    @id @default(cuid())
+  name      String
+  company   String
+  email     String
+  phone     String?
+  rooms     Int?
+  message   String?
+  /// hashed client address, for rate limiting only
+  ipHash    String
+  handledAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([createdAt])
 }
 
 model Hotel {

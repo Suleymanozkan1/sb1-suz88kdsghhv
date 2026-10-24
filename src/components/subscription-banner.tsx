@@ -17,7 +17,7 @@ export async function SubscriptionBanner({ state, daysLeft, admin }: { state: Ac
     text = t("Your paid period ends in {n} days.", { n: days });
     tone = "amber";
   } else if (state === "PAST_DUE") {
-    text = t("Payment is overdue: {n} days left before your data becomes read-only.", { n: days });
+    text = t("Your trial or paid period has ended: {n} days left before your data becomes read-only.", { n: days });
     tone = "amber";
   } else if (state === "EXPIRED") {
     text = t("Your subscription has ended. Your data is safe and can be viewed and exported, but new entries are paused until payment.");

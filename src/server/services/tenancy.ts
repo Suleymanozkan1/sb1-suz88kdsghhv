@@ -17,6 +17,8 @@ import { type Actor, authorize, requirePermission } from "../auth/actor";
 import { audit } from "./audit";
 import { applyHotelDefaults, createTenantRoles, currencyCode, timeZone } from "./admin";
 import type { Plan } from "@prisma/client";
+import { TRIAL_DAYS } from "@/domain/billing";
+import { sendInvitationEmail } from "./notices";
 
 const INVITE_DAYS = 7;
 const code = z.string().trim().min(2).max(20).regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Use capitals, digits, - or _");
@@ -43,10 +45,12 @@ const tenantInput = z.object({
   adminEmail: z.string().trim().toLowerCase().email(),
   adminName: z.string().trim().min(2).max(120),
   withDefaults: z.boolean().default(true),
+  /** language of the default department / warehouse / category names: the tenant's, not the operator's */
+  locale: z.enum(["tr", "en"]).default("tr"),
 });
 
 /** New tenant with its first hotel, all role templates and an invitation for its company administrator (spec 29, 144–145). */
-export async function createTenant(db: Db, actor: Actor, input: unknown) {
+export async function createTenant(db: Db, actor: Actor, input: unknown, baseUrl?: string) {
   requirePermission(actor, "platform:admin");
   const p = tenantInput.parse(input);
   if (await db.user.findUnique({ where: { email: p.adminEmail } })) throw new DomainError("DUPLICATE", "A user with this e-mail already exists");
@@ -57,7 +61,7 @@ export async function createTenant(db: Db, actor: Actor, input: unknown) {
       const org = await tx.organization.create({ data: { name: p.organizationName } });
       await tx.currency.upsert({ where: { code: p.baseCurrency }, create: { code: p.baseCurrency, organizationId: org.id, name: p.baseCurrency }, update: {} });
       const hotel = await tx.hotel.create({ data: { organizationId: org.id, code: p.hotelCode, name: p.hotelName, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency } });
-      if (p.withDefaults) await applyHotelDefaults(tx, hotel.id);
+      if (p.withDefaults) await applyHotelDefaults(tx, hotel.id, p.locale);
       await createTenantRoles(tx, org.id);
       const invite = await tx.userInvite.create({ data: { organizationId: org.id, email: p.adminEmail, name: p.adminName, roleKey: "admin", hotelIds: [hotel.id], departmentIds: [], tokenHash: sha(token), invitedById: actor.userId, expiresAt: new Date(Date.now() + INVITE_DAYS * 86400_000) } });
       await audit(tx, actor, { hotelId: hotel.id, action: "PLATFORM_TENANT_CREATE", entityType: "Organization", entityId: org.id, after: { organization: p.organizationName, hotel: p.hotelCode, admin: p.adminEmail, by: actor.email }, source: "PLATFORM" });
@@ -65,7 +69,9 @@ export async function createTenant(db: Db, actor: Actor, input: unknown) {
     },
     { timeout: 60_000 },
   );
-  return { ...out, inviteToken: token };
+  // e-mailed when a mail server is configured; the link is still returned (shown once) for messaging apps
+  const emailed = baseUrl ? await sendInvitationEmail(p.adminEmail, p.organizationName, `${baseUrl}/invite?token=${token}`, out.expiresAt) : false;
+  return { ...out, inviteToken: token, emailed };
 }
 
 export async function setTenantActive(db: Db, actor: Actor, organizationId: string, active: boolean, reason: string) {
@@ -170,7 +176,7 @@ const inviteInput = z.object({
   departmentIds: z.array(z.string()).max(200).default([]),
 });
 
-export async function inviteUser(db: Db, actor: Actor, hotelId: string, input: unknown) {
+export async function inviteUser(db: Db, actor: Actor, hotelId: string, input: unknown, baseUrl?: string) {
   authorize(actor, "admin:users", { hotelId });
   const p = inviteInput.parse(input);
   if (p.hotelIds.some((h) => !actor.hotelIds.includes(h))) throw new DomainError("FORBIDDEN", "You can only invite to hotels you administer");
@@ -180,13 +186,16 @@ export async function inviteUser(db: Db, actor: Actor, hotelId: string, input: u
   if (p.departmentIds.length && (await db.department.count({ where: { id: { in: p.departmentIds }, hotelId: { in: p.hotelIds } } })) !== new Set(p.departmentIds).size) throw new DomainError("VALIDATION", "Unknown department for the selected hotels");
   if (await db.user.findUnique({ where: { email: p.email } })) throw new DomainError("DUPLICATE", "This e-mail address cannot be used");
   const token = randomBytes(32).toString("base64url");
-  return inTx(db, async (tx) => {
+  const created = await inTx(db, async (tx) => {
     // a new invitation replaces any open one for the same address
     await tx.userInvite.updateMany({ where: { organizationId: actor.organizationId, email: p.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
     const inv = await tx.userInvite.create({ data: { organizationId: actor.organizationId, email: p.email, name: p.name ?? null, roleKey: role.key, hotelIds: p.hotelIds, departmentIds: role.allDepartments ? [] : p.departmentIds, tokenHash: sha(token), invitedById: actor.userId, expiresAt: new Date(Date.now() + INVITE_DAYS * 86400_000) } });
     await audit(tx, actor, { hotelId, action: "USER_INVITE", entityType: "UserInvite", entityId: inv.id, after: { email: p.email, role: role.key, hotels: p.hotelIds, departments: p.departmentIds } });
     return { id: inv.id, email: inv.email, expiresAt: inv.expiresAt, token };
   });
+  const org = baseUrl ? await db.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { name: true } }) : null;
+  const emailed = org ? await sendInvitationEmail(created.email, org.name, `${baseUrl}/invite?token=${created.token}`, created.expiresAt) : false;
+  return { ...created, emailed };
 }
 
 export async function listInvites(db: Db, actor: Actor, hotelId: string) {
@@ -232,7 +241,14 @@ export async function acceptInvite(db: Db, input: unknown) {
     if (!role) throw new DomainError("CONFLICT", "The invited role no longer exists");
     const hotels = await tx.hotel.findMany({ where: { id: { in: inv.hotelIds }, organizationId: inv.organizationId }, select: { id: true } });
     const depts = inv.departmentIds.length ? await tx.department.findMany({ where: { id: { in: inv.departmentIds }, hotel: { organizationId: inv.organizationId } }, select: { id: true } }) : [];
+    const firstUser = (await tx.user.count({ where: { organizationId: inv.organizationId } })) === 0;
     const u = await tx.user.create({ data: { organizationId: inv.organizationId, email: inv.email, name: p.name, passwordHash: hash, roleId: role.id } });
+    // the free trial starts when the company's first user joins: an invitation opened a week late no longer
+    // costs the customer a week of trial (audit v2). Never shortens a longer trial, never touches a paid company.
+    if (firstUser && !inv.organization.paidThrough) {
+      const start = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
+      if (!inv.organization.trialEndsAt || inv.organization.trialEndsAt < start) await tx.organization.update({ where: { id: inv.organizationId }, data: { trialEndsAt: start } });
+    }
     await tx.userHotelAccess.createMany({ data: hotels.map((h) => ({ userId: u.id, hotelId: h.id })) });
     if (!role.allDepartments && depts.length) await tx.userDepartmentAccess.createMany({ data: depts.map((d) => ({ userId: u.id, departmentId: d.id })) });
     await tx.userInvite.update({ where: { id: inv.id }, data: { acceptedAt: new Date() } });

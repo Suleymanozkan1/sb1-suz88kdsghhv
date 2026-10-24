@@ -15,7 +15,7 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
-import { hotelAccess, hotelPlan, planHas, trialAllFeatures } from "../plans";
+import { hotelAccess, planHas, trialAllFeatures } from "../plans";
 import { mailConfigured, sendMail } from "../mail";
 import { date, decimalText, localDay } from "@/lib/format";
 import { DEFAULT_ORDER_EMAIL, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
@@ -204,7 +204,10 @@ export async function fillFromRecommendations(db: Db, actor: Actor, hotelId: str
 export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Actor; now?: Date } = {}) {
   if (opts.actor) authorize(opts.actor, "purchase:manage", { hotelId });
   const now = opts.now ?? new Date();
-  const plan = await hotelPlan(db, hotelId);
+  const access = await hotelAccess(db, hotelId);
+  const plan = access.plan;
+  // an expired subscription is read-only for the nightly job too: no supplier e-mails, no rule updates (audit v2, S5)
+  if (access.readOnly) return { due: 0, sent: 0, failed: 0, plan, emailEnabled: false, readOnly: true };
   const rules = await db.autoOrderRule.findMany({ where: { hotelId, active: true }, include: { product: true, supplier: true } });
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
   const low = (r: (typeof rules)[number]) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString()));

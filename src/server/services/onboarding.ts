@@ -21,14 +21,17 @@ export interface OnboardingStep {
 
 export async function gettingStarted(db: Db, actor: Actor, hotelId: string): Promise<{ steps: OnboardingStep[]; done: number; total: number }> {
   authorize(actor, "dashboard:view", { hotelId });
+  // existence checks (stop at the first row), not COUNT(*): the dashboard runs this on every load and the stock and
+  // sales tables grow by the hundred thousand a month (audit v2, O8)
+  const has = (p: Promise<unknown>) => p.then((r) => (r ? 1 : 0));
   const [products, prices, opening, approved, sales, counts, users] = await Promise.all([
-    db.product.count({ where: { hotelId } }),
-    db.supplierPrice.count({ where: { hotelId } }),
-    db.stockTransaction.count({ where: { hotelId, type: { in: ["OPENING", "PURCHASE"] } } }),
-    db.recipeVersion.count({ where: { recipe: { hotelId }, status: "APPROVED" } }),
-    db.saleLine.count({ where: { hotelId } }),
-    db.stockCount.count({ where: { hotelId, status: { in: ["APPROVED", "POSTED"] } } }),
-    db.user.count({ where: { organizationId: actor.organizationId, active: true } }),
+    has(db.product.findFirst({ where: { hotelId }, select: { id: true } })),
+    has(db.supplierPrice.findFirst({ where: { hotelId }, select: { id: true } })),
+    has(db.stockTransaction.findFirst({ where: { hotelId, type: { in: ["OPENING", "PURCHASE"] } }, select: { id: true } })),
+    has(db.recipeVersion.findFirst({ where: { recipe: { hotelId }, status: "APPROVED" }, select: { id: true } })),
+    has(db.saleLine.findFirst({ where: { hotelId }, select: { id: true } })),
+    has(db.stockCount.findFirst({ where: { hotelId, status: { in: ["APPROVED", "POSTED"] } }, select: { id: true } })),
+    db.user.findMany({ where: { organizationId: actor.organizationId, active: true }, select: { id: true }, take: 2 }).then((r) => r.length),
   ]);
   const steps: OnboardingStep[] = [
     { key: "products", title: "Add your products", hint: "Import the product list (or pull it from Micros) with purchase, stock and recipe units.", href: "/imports", perm: "product:view", done: products > 0 },

@@ -96,7 +96,7 @@ export default async function BillingPage() {
       <Card title={t("Payment notices")} className="mb-4" padded={false}>
         {d.invoices.length === 0 ? <div className="p-4"><Empty title={t("No payment notices yet")} /></div> : (
           <Table label={t("Payment notices")}>
-            <thead><tr><Th>{t("Number")}</Th><Th>{t("Period")}</Th><Th>{t("Package")}</Th><Th align="right">{t("Hotels")}</Th><Th align="right">{t("Total incl. VAT")}</Th><Th>{t("Due")}</Th><Th>{t("Status")}</Th></tr></thead>
+            <thead><tr><Th>{t("Number")}</Th><Th>{t("Period")}</Th><Th>{t("Package")}</Th><Th align="right">{t("Hotels")}</Th><Th align="right">{t("Total incl. VAT")}</Th><Th>{t("Due")}</Th><Th>{t("Status")}</Th><Th /></tr></thead>
             <tbody className="divide-y divide-ink-100">
               {d.invoices.map((i) => (
                 <tr key={i.id}>
@@ -107,6 +107,7 @@ export default async function BillingPage() {
                   <Td align="right" className="tabular-nums">{money(i.total.toString(), i.currency)}</Td>
                   <Td>{date(i.dueDate)}</Td>
                   <Td><Badge tone={INVOICE_TONE[i.status]}>{t(INVOICE_LABEL[i.status])}</Badge>{i.status === "PAID" && i.paidAt && <span className="ml-1 text-xs text-ink-500">{date(i.paidAt)}</span>}</Td>
+                  <Td><a href={`/api/billing/invoices/${i.id}/pdf`} className="text-xs font-medium text-brand-700 hover:underline">PDF</a></Td>
                 </tr>
               ))}
             </tbody>
