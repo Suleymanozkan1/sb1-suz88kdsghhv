@@ -4,7 +4,7 @@ import { orderRecommendations } from "@/server/services/inventory";
 import { autoOrderOverview } from "@/server/services/auto-order";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
-import { trialAllFeatures } from "@/server/plans";
+import { hotelAccess, trialAllFeatures } from "@/server/plans";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
@@ -34,7 +34,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const t = await getT();
   const { actor, hotelId } = await pageContext();
   // trial: every feature is open (full package); the plan badges say so instead of looking locked
-  const trial = trialAllFeatures();
+  const trial = (await hotelAccess(prisma, hotelId)).access?.state === "TRIAL" || trialAllFeatures();
   const link = (v: Tab, label: string, badge?: React.ReactNode) => (
     <Link href={v === "recommendations" ? "?" : `?tab=${v}`} className={cn("flex items-center gap-1.5 rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium", tab === v ? "border-brand-600 text-brand-800" : "border-transparent text-ink-500 hover:text-ink-800")}>{label}{badge}</Link>
   );

@@ -6,5 +6,6 @@ export default function globalSetup() {
   execSync("npx prisma migrate deploy", { env, stdio: "inherit" });
   execSync("npx tsx prisma/seed.ts", { env, stdio: "inherit" });
   // login/export counters live in the DB now; start every run with fresh windows
-  execSync(`psql "${env.DATABASE_URL!.split("?")[0]}" -qc 'DELETE FROM "RateLimitBucket"'`, { env, stdio: "inherit" });
+  // through Prisma rather than psql, which many machines (Windows in particular) do not have
+  execSync(`npx prisma db execute --stdin --url "${env.DATABASE_URL}"`, { env, input: 'DELETE FROM "RateLimitBucket";', stdio: ["pipe", "inherit", "inherit"] });
 }

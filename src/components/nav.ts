@@ -1,45 +1,79 @@
 /**
  * Main navigation: one list for the sidebar (shell.tsx) and for server pages that need the first page a
  * role can open (home redirect, "back" link on /forbidden). No "use client": importable on both sides.
+ *
+ * Grouped by job (audit 10/2026: 29 flat entries were hard to scan). The order inside the list still decides a
+ * role's start page (homeHref), so the dashboard stays first. Entries of a module outside the tenant's package are
+ * shown with a lock instead of hidden: the user learns the module exists and which package has it.
  */
 import {
-  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, FileUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users, Gift, ClipboardPen,
+  BarChart3, Boxes, FileSpreadsheet, UtensilsCrossed, Wine, ChefHat, ClipboardCheck, ClipboardList, FileSearch, Gauge, Package, Receipt, ShieldCheck, ShoppingCart, Trash2, Upload, CalendarClock, Truck, BedDouble, Wrench, FileUp, LayoutGrid, PiggyBank, FileText, CalendarCheck, ListChecks, ShieldAlert, Users, Gift, ClipboardPen, Split, Target, TrendingUp, CreditCard,
 } from "lucide-react";
+import type { Feature } from "@/lib/features";
 
-export const NAV = [
-  { href: "/", label: "Dashboard", icon: Gauge, perm: "dashboard:view" },
-  { href: "/variance", label: "Theoretical vs Actual", icon: BarChart3, perm: "variance:view" },
-  { href: "/inventory", label: "Inventory", icon: Boxes, perm: "inventory:view" },
-  { href: "/inventory/ledger", label: "Stock Ledger", icon: ClipboardList, perm: "inventory:view" },
-  { href: "/inventory/counts", label: "Stock Counts", icon: ClipboardCheck, perm: "inventory:count" },
+export type NavGroup = "overview" | "stock" | "kitchen" | "hotel" | "planning" | "control" | "admin";
+
+export const NAV_GROUPS: Array<{ key: NavGroup; label: string }> = [
+  { key: "overview", label: "Overview" },
+  { key: "stock", label: "Stock & purchasing" },
+  { key: "kitchen", label: "Kitchen & outlets" },
+  { key: "hotel", label: "Hotel costs" },
+  { key: "planning", label: "Planning" },
+  { key: "control", label: "Reports & control" },
+  { key: "admin", label: "Company" },
+];
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Gauge;
+  perm: string;
+  group: NavGroup;
+  flag?: string;
+  /** module that belongs to a package (src/server/plans.ts) */
+  feature?: Feature;
+  /** no built-in how-to video recorded for this page (yet) */
+  noVideo?: boolean;
+};
+
+export const NAV: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: Gauge, perm: "dashboard:view", group: "overview" },
+  { href: "/variance", label: "Theoretical vs Actual", icon: BarChart3, perm: "variance:view", group: "overview" },
+  { href: "/review", label: "Cost Review", icon: ListChecks, perm: "report:view", group: "overview" },
+  { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view", group: "overview" },
+  { href: "/inventory", label: "Inventory", icon: Boxes, perm: "inventory:view", group: "stock" },
+  { href: "/inventory/ledger", label: "Stock Ledger", icon: ClipboardList, perm: "inventory:view", group: "stock" },
+  { href: "/inventory/counts", label: "Stock Counts", icon: ClipboardCheck, perm: "inventory:count", group: "stock" },
   // approved count results by store (feedback r3 §10): for managers who neither count nor approve
-  { href: "/inventory/counts/results", label: "Count Results", icon: ClipboardPen, perm: "inventory:view" },
-  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, perm: "purchase:view" },
-  { href: "/purchasing/orders", label: "Order Suggestions", icon: Truck, perm: "purchase:view" },
-  { href: "/products", label: "Products", icon: Package, perm: "product:view" },
-  { href: "/recipes", label: "Recipes", icon: ChefHat, perm: "recipe:view" },
-  { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view" },
-  { href: "/buffet", label: "Breakfast", icon: UtensilsCrossed, perm: "buffet:view" },
-  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view" },
-  { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view" },
-  { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view" },
-  { href: "/imports", label: "Imports", icon: FileUp, perm: "report:view" },
-  { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view" },
-  { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view" },
-  { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import" },
+  { href: "/inventory/counts/results", label: "Count Results", icon: ClipboardPen, perm: "inventory:view", group: "stock" },
+  { href: "/purchasing", label: "Purchasing", icon: ShoppingCart, perm: "purchase:view", group: "stock" },
+  { href: "/purchasing/orders", label: "Order Suggestions", icon: Truck, perm: "purchase:view", group: "stock" },
+  { href: "/products", label: "Products", icon: Package, perm: "product:view", group: "stock" },
+  { href: "/recipes", label: "Recipes", icon: ChefHat, perm: "recipe:view", group: "kitchen" },
+  { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import", group: "kitchen" },
+  { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view", group: "kitchen" },
+  { href: "/buffet", label: "Breakfast", icon: UtensilsCrossed, perm: "buffet:view", group: "kitchen", feature: "buffet" },
+  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view", group: "kitchen", feature: "minibar" },
   // free consumption: on-house (owners, GM …) and hospitality (feedback r3 §8)
-  { href: "/comps", label: "On-house & Hospitality", icon: Gift, perm: "comp:view" },
+  { href: "/comps", label: "On-house & Hospitality", icon: Gift, perm: "comp:view", group: "kitchen", feature: "comps" },
+  { href: "/menu-engineering", label: "Menu Engineering", icon: LayoutGrid, perm: "recipe:view", group: "kitchen", feature: "menuEngineering" },
+  { href: "/rooms", label: "Room Cost", icon: BedDouble, perm: "rooms:view", group: "hotel", feature: "rooms" },
+  { href: "/operations", label: "Operating Costs", icon: Wrench, perm: "opex:view", group: "hotel", feature: "opex" },
+  { href: "/allocation", label: "Cost Allocation", icon: Split, perm: "opex:view", group: "hotel", feature: "allocation", noVideo: true },
+  { href: "/budget", label: "Budget & Targets", icon: Target, perm: "budget:view", group: "planning", feature: "budget", noVideo: true },
+  { href: "/forecast", label: "Forecast & What-if", icon: TrendingUp, perm: "budget:view", group: "planning", feature: "forecast", noVideo: true },
+  { href: "/savings", label: "Cost Savings", icon: PiggyBank, perm: "budget:view", group: "planning", feature: "savings" },
+  { href: "/reports", label: "Reports & Pack", icon: FileText, perm: "report:view", group: "control" },
+  { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export", group: "control", feature: "excel" },
+  { href: "/imports", label: "Imports", icon: FileUp, perm: "report:view", group: "control" },
   // also for approval:decide and count approvers without the dashboard: the layout computes the "approvals" flag
-  { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view", flag: "approvals" },
-  { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage" },
-  { href: "/review", label: "Cost Review", icon: ListChecks, perm: "report:view" },
-  { href: "/calendar", label: "Control Calendar", icon: CalendarCheck, perm: "report:view" },
-  { href: "/reports", label: "Reports & Pack", icon: FileText, perm: "report:view" },
-  { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view" },
-  { href: "/excel", label: "Excel Export", icon: FileSpreadsheet, perm: "report:export" },
-  { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view" },
-  { href: "/integrity", label: "Calculation Integrity", icon: ShieldAlert, perm: "audit:view" },
-  { href: "/admin", label: "Administration", icon: Users, perm: "admin:users" },
+  { href: "/approvals", label: "Approvals", icon: Receipt, perm: "dashboard:view", flag: "approvals", group: "control" },
+  { href: "/periods", label: "Cost Periods", icon: CalendarClock, perm: "period:manage", group: "control" },
+  { href: "/data-quality", label: "Data Quality", icon: ShieldCheck, perm: "dashboard:view", group: "control" },
+  { href: "/audit", label: "Audit Trail", icon: FileSearch, perm: "audit:view", group: "control" },
+  { href: "/integrity", label: "Calculation Integrity", icon: ShieldAlert, perm: "audit:view", group: "control" },
+  { href: "/admin", label: "Administration", icon: Users, perm: "admin:users", group: "admin" },
+  { href: "/billing", label: "Subscription", icon: CreditCard, perm: "admin:users", group: "admin", noVideo: true },
 ];
 
 /** Menu entries the user may open: by permission, or by a flag the server computed (e.g. "approvals" for count approvers). */
@@ -49,7 +83,11 @@ export function navItems(permissions: Iterable<string>, flags: Iterable<string> 
   return NAV.filter((n) => has.has(n.perm) || (n.flag !== undefined && flag.has(n.flag)));
 }
 
-/** The role's start page: the dashboard, else the first menu entry it may open (null: none at all). */
-export function homeHref(permissions: Iterable<string>, flags: Iterable<string> = []): string | null {
-  return navItems(permissions, flags)[0]?.href ?? null;
+/**
+ * The role's start page: the dashboard, else the first menu entry it may open (null: none at all). A module outside
+ * the package is skipped, so nobody lands on a locked page.
+ */
+export function homeHref(permissions: Iterable<string>, flags: Iterable<string> = [], locked: Iterable<string> = []): string | null {
+  const off = new Set(locked);
+  return navItems(permissions, flags).find((n) => !n.feature || !off.has(n.feature))?.href ?? null;
 }

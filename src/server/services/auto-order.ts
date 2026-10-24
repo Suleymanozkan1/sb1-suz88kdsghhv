@@ -15,7 +15,7 @@ import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
-import { hotelPlan, planHas, trialAllFeatures } from "../plans";
+import { hotelAccess, hotelPlan, planHas, trialAllFeatures } from "../plans";
 import { mailConfigured, sendMail } from "../mail";
 import { date, decimalText, localDay } from "@/lib/format";
 import { DEFAULT_ORDER_EMAIL, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
@@ -78,17 +78,18 @@ export async function resetOrderEmailTemplate(db: Db, actor: Actor, hotelId: str
 
 export async function autoOrderOverview(db: Db, actor: Actor, hotelId: string) {
   authorize(actor, "purchase:view", { hotelId });
-  const [plan, rules, template, hotel] = await Promise.all([
-    hotelPlan(db, hotelId),
+  const [access, rules, template, hotel] = await Promise.all([
+    hotelAccess(db, hotelId),
     db.autoOrderRule.findMany({ where: { hotelId }, include: { product: { include: { category: true } }, supplier: true, sends: { orderBy: { sentAt: "desc" }, take: 1 } }, orderBy: [{ supplier: { name: "asc" } }, { product: { name: "asc" } }] }),
     orderEmailTemplate(db, hotelId),
     db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true, timezone: true } }),
   ]);
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
+  const plan = access.plan;
   return {
     plan,
-    /** the trial switch is on: every feature is open whatever the organization's plan */
-    trial: trialAllFeatures(),
+    /** in the free trial (or the QA switch is on): every feature is open whatever the organization's plan */
+    trial: access.access?.state === "TRIAL" || trialAllFeatures(),
     emailEnabled: planHas(plan, "autoOrderEmail"),
     mailConfigured: mailConfigured(),
     template,

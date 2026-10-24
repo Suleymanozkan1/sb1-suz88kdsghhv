@@ -257,25 +257,114 @@ enum Plan {
 }
 
 model Organization {
-  id             String       @id @default(cuid())
-  name           String
+  id              String           @id @default(cuid())
+  name            String
   /// demo/QA tenant: may be reset by the demo tooling (never in production)
-  isDemo         Boolean      @default(false)
+  isDemo          Boolean          @default(false)
   /// a deactivated tenant cannot sign in
-  active         Boolean      @default(true)
+  active          Boolean          @default(true)
   /// the platform operator's own organization (super administrators live here, it owns no hotels)
-  isPlatform     Boolean      @default(false)
+  isPlatform      Boolean          @default(false)
   /// subscription package: features are switched on per plan (src/server/plans.ts)
-  plan           Plan         @default(BASIC)
+  plan            Plan             @default(BASIC)
+  /// end of the free trial (every feature open until then). The access state is derived from this and paidThrough
+  /// (src/domain/billing.ts); every new tenant starts a 30-day trial, whichever code path creates it.
+  trialEndsAt     DateTime?        @default(dbgenerated("(now() + '30 days'::interval)"))
+  /// service paid up to this moment: a manual invoice marked paid by the platform operator extends it
+  paidThrough     DateTime?
+  /// recipient printed on payment notices
+  billingName     String?
+  billingTaxId    String?
+  billingAddress  String?
+  billingEmail    String?
+  billingInvoices BillingInvoice[]
+  planRequests    PlanRequest[]
   /// short training video per page: { "/inventory": "https://…" } (set in Administration; no entry = no video button)
-  trainingVideos Json         @default("{}")
-  createdAt      DateTime     @default(now())
-  invites        UserInvite[]
-  auditLogs      AuditLog[]
-  hotels         Hotel[]
-  users          User[]
-  roles          Role[]
-  currencies     Currency[]
+  trainingVideos  Json             @default("{}")
+  createdAt       DateTime         @default(now())
+  invites         UserInvite[]
+  auditLogs       AuditLog[]
+  hotels          Hotel[]
+  users           User[]
+  roles           Role[]
+  currencies      Currency[]
+}
+
+enum BillingInvoiceStatus {
+  OPEN
+  PAID
+  VOID
+}
+
+/// A payment notice (proforma) for a period of service, paid by bank transfer and marked paid by the platform operator.
+/// It is not a legal e-invoice: the operator issues that from their own accounting system.
+model BillingInvoice {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  /// HC-YYYY-NNNN, yearly sequence
+  number         String               @unique
+  plan           Plan
+  hotelCount     Int
+  months         Int
+  unitPrice      Decimal              @db.Decimal(20, 6)
+  netAmount      Decimal              @db.Decimal(20, 6)
+  taxRate        Decimal              @db.Decimal(20, 6)
+  taxAmount      Decimal              @db.Decimal(20, 6)
+  total          Decimal              @db.Decimal(20, 6)
+  currency       String               @default("TRY")
+  periodStart    DateTime
+  periodEnd      DateTime
+  dueDate        DateTime
+  status         BillingInvoiceStatus @default(OPEN)
+  paidAt         DateTime?
+  /// bank transfer reference / description entered when marking paid
+  paymentRef     String?
+  note           String?
+  voidReason     String?
+  createdById    String?
+  createdAt      DateTime             @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([status, dueDate])
+}
+
+/// List price per plan: monthly, per active hotel. Edited in the platform console.
+model PlanPrice {
+  plan            Plan     @id
+  monthlyPerHotel Decimal  @db.Decimal(20, 6)
+  currency        String   @default("TRY")
+  updatedAt       DateTime @updatedAt
+}
+
+/// Platform-wide settings (key → JSON), e.g. "billing": bank account, tax rate, payment terms.
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+enum PlanRequestStatus {
+  OPEN
+  DONE
+  REJECTED
+}
+
+/// A company administrator asks for another package; the platform operator decides (and invoices).
+model PlanRequest {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  plan           Plan
+  note           String?
+  requestedById  String
+  status         PlanRequestStatus @default(OPEN)
+  decidedAt      DateTime?
+  decidedById    String?
+  createdAt      DateTime          @default(now())
+
+  @@index([status, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 model Hotel {
@@ -1070,6 +1159,8 @@ model CostTransaction {
 
   @@index([hotelId, periodId, kind])
   @@index([hotelId, departmentId, txDate])
+  /// reverseMovement looks up the cost rows of the stock movement it reverses
+  @@index([stockTxId])
 }
 
 model CostSnapshot {

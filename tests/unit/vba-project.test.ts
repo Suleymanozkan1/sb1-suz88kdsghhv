@@ -58,7 +58,7 @@ describe("vbaProject.bin", () => {
 describe("VBA source quality gates (spec 81-84, 138-139)", () => {
   const files = readdirSync(VBA_DIR).filter((f) => /\.(bas|cls)$/.test(f));
   it("embedded sources are in sync with src/server/excel/vba (run `npx tsx scripts/gen-vba.ts`)", () => {
-    for (const f of files) expect(VBA_SOURCES[f.replace(/\.(bas|cls)$/, "")]).toBe(readFileSync(path.join(VBA_DIR, f), "utf8"));
+    for (const f of files) expect(VBA_SOURCES[f.replace(/\.(bas|cls)$/, "")]).toBe(readFileSync(path.join(VBA_DIR, f), "utf8").replace(/\r\n/g, "\n"));
     expect(Object.keys(VBA_SOURCES)).toHaveLength(files.length);
   });
   it("has the modular architecture required by the spec", () => {

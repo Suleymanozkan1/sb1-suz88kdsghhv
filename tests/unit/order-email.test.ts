@@ -43,9 +43,14 @@ describe("trial switch (every feature open)", () => {
     }
   });
 
-  it("is on by default: a basic plan has the premium features", () => {
+  // the global switch used to default to ON; each tenant now has its own 30-day trial (src/domain/billing.ts),
+  // so the switch is an explicit QA/demo override that is OFF unless set
+  it("is off by default; set to 1 a basic plan has the premium features", () => {
     delete process.env.TRIAL_ALL_FEATURES;
     delete process.env.PLAN_OVERRIDE;
+    expect(trialAllFeatures()).toBe(false);
+    expect(planHas("BASIC", "autoOrderEmail")).toBe(false);
+    process.env.TRIAL_ALL_FEATURES = "1";
     expect(trialAllFeatures()).toBe(true);
     expect(effectivePlan("BASIC")).toBe("PREMIUM");
     expect(planHas("BASIC", "autoOrderEmail")).toBe(true);

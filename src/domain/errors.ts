@@ -13,7 +13,11 @@ export type DomainErrorCode =
   | "APPROVAL_REQUIRED"
   | "IMMUTABLE"
   | "DUPLICATE"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  /** the feature belongs to a higher package */
+  | "PLAN_REQUIRED"
+  /** the subscription expired: the tenant's data is read-only until payment */
+  | "PAYMENT_REQUIRED";
 
 export class DomainError extends Error {
   constructor(
