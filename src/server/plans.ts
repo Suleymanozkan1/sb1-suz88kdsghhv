@@ -2,9 +2,8 @@
  * Packages (Temel / Orta / Üst): every feature is switched on per plan here, nowhere else.
  *
  *   BASIC    core cost control: purchasing, stock, counts, recipes, waste, sales, theoretical vs actual, imports,
- *            reports & PDF pack, data quality, audit trail, reorder alerts
- *   STANDARD + the hotel-specific modules: breakfast/buffet, minibar, room cost, operating costs, on-house &
- *            hospitality, menu engineering, the Excel workbook, Micros / Opera automation
+ *            reports & PDF pack, data quality, audit trail, reorder alerts, breakfast/buffet, on-house & hospitality
+ *   STANDARD + minibar, room cost, operating costs, menu engineering, the Excel workbook, Micros / Opera automation
  *   PREMIUM  + planning: cost allocation, budget & targets, forecast & what-if, cost savings, e-mailed orders
  *
  * Which plan a tenant gets right now depends on its subscription (src/domain/billing.ts): the full package during

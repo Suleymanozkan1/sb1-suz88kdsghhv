@@ -6,7 +6,8 @@
  *
  *   TRIAL     now < trialEndsAt                         → every feature open
  *   ACTIVE    now ≤ paidThrough                         → the tenant's own plan
- *   PAST_DUE  paidThrough < now ≤ paidThrough + grace   → own plan, warned, still writable
+ *   PAST_DUE  the trial or the paid period ended less than `grace` days ago → own plan, warned, still writable
+ *             (after the trial too: a customer is never locked the morning after a trial nobody reminded them of)
  *   EXPIRED   trial over and nothing paid within grace  → READ-ONLY: every number stays visible, nothing is lost,
  *                                                         but new postings wait for payment
  *
@@ -16,6 +17,8 @@ import { D, roundMoney, type Decimal, type Numeric } from "./money";
 import type { Plan } from "./plan";
 
 export const GRACE_DAYS = 7;
+/** free trial length; it starts when the company's first user joins (tenancy.acceptInvite), not when the operator creates it */
+export const TRIAL_DAYS = 30;
 const DAY = 86_400_000;
 
 export type AccessState = "TRIAL" | "ACTIVE" | "PAST_DUE" | "EXPIRED";
@@ -42,8 +45,9 @@ export function accessState(s: SubscriptionDates, now: Date = new Date(), graceD
   // a payment always wins over a trial: a tenant who paid early is ACTIVE, not "in trial"
   if (s.paidThrough && now.getTime() <= s.paidThrough.getTime()) return { state: "ACTIVE", readOnly: false, daysLeft: daysUntil(s.paidThrough, now), graceEndsAt: null };
   if (s.trialEndsAt && now.getTime() < s.trialEndsAt.getTime()) return { state: "TRIAL", readOnly: false, daysLeft: daysUntil(s.trialEndsAt, now), graceEndsAt: null };
-  if (s.paidThrough) {
-    const graceEndsAt = new Date(s.paidThrough.getTime() + graceDays * DAY);
+  const lastEnd = Math.max(s.paidThrough?.getTime() ?? 0, s.trialEndsAt?.getTime() ?? 0);
+  if (lastEnd) {
+    const graceEndsAt = new Date(lastEnd + graceDays * DAY);
     if (now.getTime() <= graceEndsAt.getTime()) return { state: "PAST_DUE", readOnly: false, daysLeft: daysUntil(graceEndsAt, now), graceEndsAt };
   }
   return { state: "EXPIRED", readOnly: true, daysLeft: null, graceEndsAt: null };

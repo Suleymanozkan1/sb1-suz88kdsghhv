@@ -6,6 +6,8 @@ import { rateLimit } from "@/server/auth/session";
 import { DomainError } from "@/domain/errors";
 import { prisma } from "@/server/db";
 import { csvSafe } from "@/server/util/csv";
+import { requireFeature, hasFeature } from "@/server/plans";
+import { EXPORT_GROUP_FEATURE, EXPORT_TABLE_FEATURE } from "@/lib/features";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -27,15 +29,24 @@ const GROUPS: Record<string, string[]> = {
 export const GET = api(async ({ actor, hotelId, query, params }) => {
   const keys = GROUPS[params.section ?? ""];
   if (!keys) throw new DomainError("NOT_FOUND", `Unknown export '${params.section}'. Available: ${Object.keys(GROUPS).join(", ")}, full-cost, workbook`);
+  // sub-exports of gated modules follow the package like their screens (audit v2, S4)
+  const groupFeature = EXPORT_GROUP_FEATURE[params.section!];
+  if (groupFeature) await requireFeature(prisma, hotelId, groupFeature);
+  const allowed: string[] = [];
+  for (const k of keys) {
+    const f = EXPORT_TABLE_FEATURE[k];
+    if (!f || (await hasFeature(prisma, hotelId, f))) allowed.push(k);
+  }
   await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const e = await buildFullCostExport(prisma, actor, hotelId, parseExportParams(query));
   // CSV (spec 250): one section at a time (?format=csv&table=<section key>), formula-injection safe
   if (query.get("format") === "csv") {
     const table = query.get("table") ?? keys[0]!;
-    const s = keys.includes(table) ? e.sections[table] : undefined;
+    if (keys.includes(table) && !allowed.includes(table)) await requireFeature(prisma, hotelId, EXPORT_TABLE_FEATURE[table]!);
+    const s = allowed.includes(table) ? e.sections[table] : undefined;
     if (!s) throw new DomainError("NOT_FOUND", `Unknown table '${table}' in '${params.section}'. Available: ${keys.join(", ")}`);
     const lines = [s.columns.map((c) => csvSafe(c.header)).join(","), ...s.rows.map((r) => s.columns.map((c) => csvSafe(r[c.key] ?? "")).join(","))];
     return new NextResponse(`\uFEFF${lines.join("\r\n")}\r\n`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="HotelCost_${table}_${e.meta.period.from}_${e.meta.period.to}.csv"`, "cache-control": "no-store" } });
   }
-  return NextResponse.json({ exportVersion: e.exportVersion, exportId: e.exportId, meta: e.meta, sections: Object.fromEntries(keys.map((k) => [k, e.sections[k]])) }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ exportVersion: e.exportVersion, exportId: e.exportId, meta: e.meta, sections: Object.fromEntries(allowed.map((k) => [k, e.sections[k]])) }, { headers: { "cache-control": "no-store" } });
 });

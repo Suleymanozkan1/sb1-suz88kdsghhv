@@ -8,15 +8,15 @@ import type { Plan } from "@/domain/plan";
 export const FEATURES = {
   /** list of products at their reorder point */
   reorderAlerts: "BASIC",
-  /** breakfast / buffet sessions */
-  buffet: "STANDARD",
+  /** breakfast / buffet sessions: the biggest F&B cost line of a Turkish B&B / all-inclusive hotel, so in every plan (audit v2) */
+  buffet: "BASIC",
   minibar: "STANDARD",
   /** room cost, room expenses */
   rooms: "STANDARD",
   /** operating costs: labor, energy, laundry, engineering … */
   opex: "STANDARD",
   /** on-house & hospitality (free consumption) */
-  comps: "STANDARD",
+  comps: "BASIC",
   menuEngineering: "STANDARD",
   /** macro-enabled full-cost workbook (.xlsm) and its refresh token */
   excel: "STANDARD",
@@ -42,7 +42,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   minibar: "Minibar",
   rooms: "Room cost",
   opex: "Operating costs",
-  comps: "On-house & hospitality",
+  comps: "On-house & Hospitality",
   menuEngineering: "Menu engineering",
   excel: "Excel workbook",
   integrations: "Micros / Opera automation",
@@ -92,11 +92,35 @@ export const FEATURE_ROUTES: Array<[string, Feature]> = [
   ["/api/table-export/forecast", "forecast"],
 ];
 
+/**
+ * The path as the router resolves it. Next matches a percent-encoded segment to its decoded route
+ * ("/api/table-export/%62udget" runs the [key] = "budget" handler), so the gate must compare the decoded path:
+ * the raw one let an encoded key through (audit v2, S1). Undecodable input and repeated slashes never match a
+ * gated prefix by accident: they are normalised or rejected.
+ */
+export function canonicalPath(raw: string): string | null {
+  let p: string;
+  try {
+    p = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  return p.replace(/\/+/g, "/").toLowerCase();
+}
+
 export function featureForPath(path: string): Feature | null {
+  const p = canonicalPath(path) ?? path;
   let best: [string, Feature] | null = null;
-  for (const r of FEATURE_ROUTES) if ((path === r[0] || path.startsWith(r[0] + "/")) && (!best || r[0].length > best[0].length)) best = r;
+  for (const r of FEATURE_ROUTES) if ((p === r[0] || p.startsWith(r[0] + "/")) && (!best || r[0].length > best[0].length)) best = r;
   return best?.[1] ?? null;
 }
+
+/** Import kinds that write a gated module's data (the import screen itself is in every plan). */
+export const IMPORT_FEATURE: Partial<Record<string, Feature>> = { expenses: "opex", occupancy: "rooms", reservations: "rooms" };
+
+/** /api/export/{group} sub-exports of gated modules, and single tables inside an otherwise open group. */
+export const EXPORT_GROUP_FEATURE: Partial<Record<string, Feature>> = { buffet: "buffet", minibar: "minibar", rooms: "rooms" };
+export const EXPORT_TABLE_FEATURE: Partial<Record<string, Feature>> = { costSaving: "savings", menuEngineering: "menuEngineering" };
 
 /** Page path → feature, for the menu and the page guard. */
 export const FEATURE_PAGES: Array<[string, Feature]> = [

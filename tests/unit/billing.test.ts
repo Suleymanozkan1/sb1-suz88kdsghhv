@@ -12,9 +12,14 @@ describe("access state is derived from the two dates", () => {
     expect(accessState({ trialEndsAt: at(5), paidThrough: null }, now)).toMatchObject({ state: "TRIAL", readOnly: false, daysLeft: 5 });
     expect(accessState({ trialEndsAt: at(-1), paidThrough: at(20) }, now)).toMatchObject({ state: "ACTIVE", readOnly: false, daysLeft: 20 });
     expect(accessState({ trialEndsAt: null, paidThrough: at(-3) }, now)).toMatchObject({ state: "PAST_DUE", readOnly: false, daysLeft: GRACE_DAYS - 3 });
-    expect(accessState({ trialEndsAt: at(-1), paidThrough: at(-(GRACE_DAYS + 1)) }, now)).toMatchObject({ state: "EXPIRED", readOnly: true });
-    expect(accessState({ trialEndsAt: at(-1), paidThrough: null }, now)).toMatchObject({ state: "EXPIRED", readOnly: true });
+    expect(accessState({ trialEndsAt: at(-40), paidThrough: at(-(GRACE_DAYS + 1)) }, now)).toMatchObject({ state: "EXPIRED", readOnly: true });
+    expect(accessState({ trialEndsAt: at(-(GRACE_DAYS + 1)), paidThrough: null }, now)).toMatchObject({ state: "EXPIRED", readOnly: true });
     expect(accessState({ trialEndsAt: null, paidThrough: null }, now).state).toBe("EXPIRED");
+  });
+  it("after the trial too, a grace period comes before read-only (no lock the morning after a trial)", () => {
+    expect(accessState({ trialEndsAt: at(-1), paidThrough: null }, now)).toMatchObject({ state: "PAST_DUE", readOnly: false, daysLeft: GRACE_DAYS - 1 });
+    // the later of the two end dates counts
+    expect(accessState({ trialEndsAt: at(-2), paidThrough: at(-30) }, now).state).toBe("PAST_DUE");
   });
   it("a payment wins over a running trial", () => {
     expect(accessState({ trialEndsAt: at(10), paidThrough: at(40) }, now).state).toBe("ACTIVE");
@@ -95,8 +100,9 @@ describe("tenant access", () => {
     const count = (plan: OrgBilling["plan"]) => (Object.keys(FEATURES) as Array<keyof typeof FEATURES>).filter((f) => accessHas(a(plan), f)).length;
     expect(count("BASIC")).toBeLessThan(count("STANDARD"));
     expect(count("STANDARD")).toBeLessThan(count("PREMIUM"));
-    expect(accessHas(a("BASIC"), "buffet")).toBe(false);
-    expect(accessHas(a("STANDARD"), "buffet")).toBe(true);
+    expect(accessHas(a("BASIC"), "buffet")).toBe(true); // breakfast is in every plan (audit v2)
+    expect(accessHas(a("BASIC"), "minibar")).toBe(false);
+    expect(accessHas(a("STANDARD"), "minibar")).toBe(true);
     expect(accessHas(a("STANDARD"), "budget")).toBe(false);
     expect(accessHas(a("PREMIUM"), "budget")).toBe(true);
   });
@@ -134,5 +140,39 @@ describe("content security policy", () => {
   });
   it("the dev server keeps eval for React Refresh only", () => {
     expect(buildCsp("n", true)).toContain("'unsafe-eval'");
+  });
+});
+
+describe("audit v2: gate hardening and notices", () => {
+  it("the gate compares the decoded path: an encoded segment is no side door", async () => {
+    const { canonicalPath } = await import("@/lib/features");
+    expect(featureForPath("/api/table-export/%62udget")).toBe("budget");
+    expect(featureForPath("/api/%62udgets/x")).toBe("budget");
+    expect(featureForPath("/api//minibar/rooms")).toBe("minibar");
+    expect(canonicalPath("/api/%E0%A4%A")).toBeNull();
+  });
+  it("import kinds and export groups of gated modules are mapped", async () => {
+    const { IMPORT_FEATURE, EXPORT_GROUP_FEATURE, EXPORT_TABLE_FEATURE } = await import("@/lib/features");
+    expect(IMPORT_FEATURE.expenses).toBe("opex");
+    expect(IMPORT_FEATURE.reservations).toBe("rooms");
+    expect(IMPORT_FEATURE.products).toBeUndefined();
+    expect(EXPORT_GROUP_FEATURE.minibar).toBe("minibar");
+    expect(EXPORT_TABLE_FEATURE.menuEngineering).toBe("menuEngineering");
+    for (const f of [...Object.values(IMPORT_FEATURE), ...Object.values(EXPORT_GROUP_FEATURE), ...Object.values(EXPORT_TABLE_FEATURE)]) expect(FEATURES[f!]).toBeDefined();
+  });
+  it("a webhook never carries e-mail addresses or long numbers", async () => {
+    const { maskPersonal } = await import("@/server/log");
+    expect(maskPersonal("duplicate key for ali.veli@otel.com.tr, IBAN TR33 0006 1005 1978 6457 8413 26, tax 1234567890")).toBe("duplicate key for [e-mail], IBAN [number], tax [number]");
+    expect(maskPersonal("Unexpected token at 12")).toBe("Unexpected token at 12");
+  });
+  it("reminders: trial T-7 and T-1, grace, expiry; nothing on other days", async () => {
+    const { dueReminder } = await import("@/server/services/notices");
+    const end = new Date("2026-11-22T10:00:00Z");
+    expect(dueReminder("TRIAL", 7, end)).toEqual({ kind: "TRIAL_7", key: "2026-11-22" });
+    expect(dueReminder("TRIAL", 1, end)).toEqual({ kind: "TRIAL_1", key: "2026-11-22" });
+    expect(dueReminder("TRIAL", 3, end)).toBeNull();
+    expect(dueReminder("PAST_DUE", 5, end)?.kind).toBe("GRACE");
+    expect(dueReminder("EXPIRED", null, end)?.kind).toBe("EXPIRED");
+    expect(dueReminder("ACTIVE", 20, end)).toBeNull();
   });
 });

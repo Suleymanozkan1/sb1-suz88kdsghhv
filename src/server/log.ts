@@ -28,6 +28,12 @@ export function errorFields(e: unknown): LogFields {
   return { error: String(e) };
 }
 
+/** E-mail addresses and runs of 6+ digits (IBAN, tax number, phone) replaced before anything leaves the server. */
+export function maskPersonal(s: string): string {
+  return s.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[e-mail]").replace(/(?:TR)?\d[\d ]{5,}\d/gi, "[number]");
+}
+
+
 const lastPost = new Map<string, number>();
 const POST_EVERY_MS = 60_000;
 
@@ -39,9 +45,12 @@ function notify(entry: LogFields) {
   if ((lastPost.get(key) ?? 0) > now - POST_EVERY_MS) return;
   lastPost.set(key, now);
   if (lastPost.size > 500) lastPost.clear();
-  const text = `HotelCost ${process.env.HOTELCOST_ENV ?? process.env.NODE_ENV ?? ""}: ${entry.msg}${entry.error ? ` — ${String(entry.error)}` : ""}${entry.requestId ? ` (request ${String(entry.requestId)})` : ""}`;
-  // `text` is what Slack/Teams/Discord-compatible webhooks display; the rest is for generic receivers
-  void fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, content: text, ...entry }), signal: AbortSignal.timeout(5000) }).catch(() => undefined);
+  // a third-party channel gets no personal data: e-mail addresses and long digit runs (IBAN, tax id, phone) are
+  // masked, the message is cut short, and no stack or extra fields are sent (audit v2, O11)
+  const error = entry.error ? maskPersonal(String(entry.error)).slice(0, 300) : "";
+  const text = `HotelCost ${process.env.HOTELCOST_ENV ?? process.env.NODE_ENV ?? ""}: ${entry.msg}${error ? ` — ${error}` : ""}${entry.requestId ? ` (request ${String(entry.requestId)})` : ""}`;
+  // `text` is what Slack/Teams/Discord-compatible webhooks display
+  void fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, content: text, level: entry.level, msg: entry.msg, requestId: entry.requestId ?? null }), signal: AbortSignal.timeout(5000) }).catch(() => undefined);
 }
 
 function write(level: Level, msg: string, fields?: LogFields) {

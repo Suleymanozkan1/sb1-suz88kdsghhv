@@ -4,6 +4,8 @@ import { prisma } from "@/server/db";
 import { DomainError } from "@/domain/errors";
 import { authorize } from "@/server/auth/actor";
 import { IMPORT_PERMISSION, type ImportKind } from "@/server/services/imports";
+import { requireFeature } from "@/server/plans";
+import { IMPORT_FEATURE } from "@/lib/features";
 import { csvToObjects } from "@/server/util/csv";
 import { xlsxToObjects } from "@/server/util/xlsx";
 import { previewExpenseImport, commitExpenseImport } from "@/server/services/opex";
@@ -31,6 +33,9 @@ export const POST = api(async ({ actor, hotelId, params, body: read }) => {
   const k = kinds[params.kind as keyof typeof kinds];
   if (!k) throw new DomainError("NOT_FOUND", `Unknown import ${params.kind}`);
   authorize(actor, IMPORT_PERMISSION[KIND[params.kind as keyof typeof kinds]], { hotelId }); // before reading the payload
+  // expenses, occupancy and reservations feed Standard modules: the import is no side door into them
+  const gated = IMPORT_FEATURE[params.kind!];
+  if (gated) await requireFeature(prisma, hotelId, gated);
   const b = body.parse(await read());
   const { rows, sourceFormat } = await rowsOf(b);
   return k[1](prisma, actor, hotelId, b.fileName ?? `${params.kind}.${sourceFormat === "XLSX" ? "xlsx" : "csv"}`, rows, { sourceFormat });

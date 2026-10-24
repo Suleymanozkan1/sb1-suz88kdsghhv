@@ -121,8 +121,8 @@ Packages are switched in one place, `src/server/plans.ts` (shared table in `src/
 
 | Package | Includes |
 |---|---|
-| **Basic** (Temel) | purchasing, stock, counts, recipes, waste, sales, theoretical vs actual, imports, reports & PDF pack, data quality, audit trail, reorder alerts |
-| **Standard** (Orta) | + breakfast / buffet, minibar, room cost, operating costs, on-house & hospitality, menu engineering, Excel workbook, Micros / Opera automation |
+| **Basic** (Temel) | purchasing, stock, counts, recipes, waste, sales, theoretical vs actual, imports, reports & PDF pack, data quality, audit trail, reorder alerts, breakfast / buffet, on-house & hospitality |
+| **Standard** (Orta) | + minibar, room cost, operating costs, menu engineering, Excel workbook, Micros / Opera automation |
 | **Premium** (Üst) | + cost allocation, budget & targets, forecast & what-if, cost savings, e-mailed orders |
 
 - **Subscription state is derived, never stored** (`src/domain/billing.ts`): from `trialEndsAt` and `paidThrough` → `TRIAL` (every feature), `ACTIVE`, `PAST_DUE` (7-day grace, still writable), `EXPIRED` (**read-only**: every number stays visible and exportable, new postings wait for payment; nothing is ever deleted).
@@ -131,6 +131,7 @@ Packages are switched in one place, `src/server/plans.ts` (shared table in `src/
 - **Manual billing (bank transfer)**: the platform console (`/platform`) holds list prices (per active hotel / month, VAT excluded), bank details and VAT rate, issues **payment notices** (`HC-YYYY-NNNN`, proforma, not a tax invoice), marks them paid with the transfer reference (extends `paidThrough`, sets the plan) or voids them; extends trials; decides package requests. Amounts of an issued notice are fixed by a DB trigger. Company administrators see `/billing`: status, notices, transfer details, package comparison, invoice recipient, package request.
 - Billing applies only when a platform operator organization exists. A **self-hosted** installation (no operator) keeps every feature; `PLAN_OVERRIDE` fixes a plan for licensed installs, `TRIAL_ALL_FEATURES=1` opens everything for QA, `BILLING_ENFORCEMENT=off` disables enforcement.
 - Product page: `/welcome` (set `PUBLIC_LANDING=1` so visitors without a session land there; `PUBLIC_CONTACT_EMAIL` for the demo button). It shows the real list prices and invents no customers or savings.
+- **Second audit (10/2026)**: the gate compares the decoded path (an encoded segment such as `/api/table-export/%62udget` reached a Premium report), import kinds and export groups of gated modules are mapped, demo loading is closed on a SaaS installation, the nightly job does nothing for a read-only tenant; trials start when the company's first user joins and end in a 7-day grace period before read-only; the operator can grant access without a notice (existing customers, pilots); subscription e-mails (trial T-7 / T-1, grace, expiry, notice issued, payment received) and invitation e-mails are sent once per event (`SubscriptionNotice`); payment notices download as PDF; demo requests from `/welcome` are stored and listed in the platform console; `/guvenlik` states the security measures; preview builds no longer migrate the production database; period guards are time-zone independent even without the UTC migration.
 - **Getting started**: the dashboard lists the steps to the first variance (products, supplier prices, opening stock, an approved recipe, sales, an approved count, the team), each checked from the hotel's data; it disappears when all are done.
 
 ## Demo, QA and staging data

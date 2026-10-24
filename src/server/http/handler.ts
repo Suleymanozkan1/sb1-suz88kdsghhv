@@ -14,6 +14,12 @@ import { actorFromToken, isApiToken, SESSION_COOKIE, HOTEL_COOKIE } from "../aut
 import { errorFields, log } from "../log";
 import { prisma } from "../db";
 import { accessHas, FEATURES, featureForPath, organizationAccess, type Feature } from "../plans";
+import { canonicalPath } from "@/lib/features";
+
+/** Public address for links in e-mails: PUBLIC_BASE_URL, else the host the request came to. */
+export function publicBaseUrl(req: NextRequest): string {
+  return (process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`).replace(/\/$/, "");
+}
 
 /** A caller-supplied request id is kept only if it looks like one (it is echoed into logs and a header). */
 export function requestIdOf(req: Request): string {
@@ -225,8 +231,10 @@ async function handle(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permiss
   }
   // package and subscription: one place for every route (src/server/plans.ts)
   const path = req.nextUrl.pathname;
+  // a path that cannot be decoded is not a route of ours (and must not slip past the gate below)
+  if (canonicalPath(path) === null) throw new DomainError("NOT_FOUND", "Not found");
   const feature = opts.feature ?? featureForPath(path);
-  const exempt = READ_ONLY_EXEMPT.some((p) => path.startsWith(p));
+  const exempt = READ_ONLY_EXEMPT.some((p) => (canonicalPath(path) ?? "").startsWith(p));
   if (feature || (writing && !exempt)) {
     const access = await organizationAccess(prisma, actor.organizationId);
     if (feature && !accessHas(access, feature)) throw new DomainError("PLAN_REQUIRED", `This feature is part of the ${FEATURES[feature]} plan`, { feature, plan: FEATURES[feature] });

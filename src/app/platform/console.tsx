@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
 
 interface Tenant { id: string; name: string; active: boolean; isDemo: boolean; plan: string; createdAt: string; users: number; hotels: Array<{ id: string; code: string; name: string; active: boolean }> }
 
 export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
   const router = useRouter();
   const t = useT();
+  const locale = useLocale();
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -20,7 +21,7 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
     const f = new FormData(e.currentTarget);
     setBusy(true); setMsg(null); setLink(null);
     try {
-      const r = await call<{ inviteToken: string }>("POST", "/api/platform/tenants", Object.fromEntries(["organizationName", "hotelCode", "hotelName", "totalRooms", "baseCurrency", "adminEmail", "adminName"].map((k) => [k, String(f.get(k) ?? "")])));
+      const r = await call<{ inviteToken: string }>("POST", "/api/platform/tenants", Object.fromEntries(["organizationName", "hotelCode", "hotelName", "totalRooms", "baseCurrency", "adminEmail", "adminName", "locale"].map((k) => [k, String(f.get(k) ?? "")])));
       setLink(`${window.location.origin}/invite?token=${r.inviteToken}`);
       setMsg({ tone: "green", text: t("Tenant created. Send the invitation link to its company administrator (valid 7 days, shown once).") });
       (e.target as HTMLFormElement).reset();
@@ -65,6 +66,8 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
           <div><Label htmlFor="t-hotel">{t("First hotel name")}</Label><Input id="t-hotel" name="hotelName" required /></div>
           <div><Label htmlFor="t-rooms">{t("Rooms")}</Label><Input id="t-rooms" name="totalRooms" type="number" min={0} defaultValue={0} /></div>
           <div><Label htmlFor="t-cur">{t("Currency")}</Label><Input id="t-cur" name="baseCurrency" defaultValue="TRY" maxLength={3} /></div>
+          {/* language of the ready-made departments, warehouses and categories: the customer's (defaults to the screen language) */}
+          <div><Label htmlFor="t-lang">{t("Language of the default names")}</Label><Select id="t-lang" name="locale" defaultValue={locale}><option value="tr">Türkçe</option><option value="en">English</option></Select></div>
           <div><Label htmlFor="t-aname">{t("Company administrator")}</Label><Input id="t-aname" name="adminName" required /></div>
           <div><Label htmlFor="t-amail">{t("Administrator e-mail")}</Label><Input id="t-amail" name="adminEmail" type="email" required /></div>
           <div className="md:col-span-4"><Button type="submit" disabled={busy}>{busy ? t("Creating…") : t("Create tenant")}</Button></div>

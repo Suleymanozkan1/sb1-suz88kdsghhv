@@ -89,12 +89,16 @@ describe("xlsxToObjects limits", () => {
     const b64 = await crafted((x) => x.replace("</sheetData>", '<row r="10000000"><c r="A10000000" t="inlineStr"><is><t>Leek</t></is></c></row></sheetData>'));
     const t = Date.now();
     const rows = await xlsxToObjects(b64);
-    expect(Date.now() - t).toBeLessThan(2000);
+    // walking 10 million row numbers takes minutes; a few seconds is the bound that still proves it is not walked
+    // (2 s failed on a laptop on battery while the code was unchanged)
+    expect(Date.now() - t).toBeLessThan(5000);
     expect(rows.map((r) => r.name)).toEqual(["Tomato", "Onion", "Leek"]);
   });
 
   it("refuses a decompression bomb by the bytes it really inflates to", async () => {
     const b64 = await crafted((x) => x, { "xl/media/pad.xml": "<a>" + " ".repeat(110 * 1024 * 1024) + "</a>" });
     await expect(xlsxToObjects(b64)).rejects.toThrow(/too large/);
-  });
+    // building and inflating a 110 MB entry alone takes ~3 s on a fast machine: the default 5 s timeout made this
+    // test fail on slower ones although what it checks (the refusal) did not change
+  }, 30_000);
 });

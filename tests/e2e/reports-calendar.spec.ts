@@ -8,7 +8,9 @@ test("management pack PDF downloads and its archive entry reproduces (spec 252â€
   await page.getByRole("button", { name: /Download management pack/ }).click();
   const d = await download;
   expect(d.suggestedFilename()).toMatch(/^HotelCost_Management_Pack_.*\.pdf$/);
-  await page.waitForLoadState("load");
+  // the new archive entry appears only after the page refreshes; clicking Verify before that hit the previous first
+  // row, which the refresh then pushed down. Reloading makes the newest entry (archive sorted newest first) row one.
+  await page.reload();
   const row = page.getByRole("row").filter({ hasText: "Management pack (PDF)" }).first();
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Verify" }).click();
