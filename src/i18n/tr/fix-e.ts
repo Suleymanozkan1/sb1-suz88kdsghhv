@@ -46,6 +46,8 @@ export const fixE: Record<string, string> = {
   "Decision": "Karar",
   "Store": "Depo",
   "Differences": "Farklar",
+  // keyboard: skip link before the menu (FE-04)
+  "Skip to main content": "Ana içeriğe geç",
   // validation messages name the field (FE-08)
   "Subcategory": "Alt kategori",
 };

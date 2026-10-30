@@ -115,6 +115,8 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
 
   return (
     <div className="min-h-screen">
+      {/* first stop of the keyboard: past the hotel picker and the 30+ menu links (WCAG 2.4.1) */}
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-brand-700 focus:shadow focus:outline-none focus:ring-2 focus:ring-brand-500">{t("Skip to main content")}</a>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">{sidebar}</aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
@@ -132,7 +134,7 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
           </button>
           <span className="font-semibold">HotelCost</span>
         </header>
-        <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main id="main" tabIndex={-1} className="mx-auto max-w-[1400px] px-4 py-6 focus:outline-none sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   );
