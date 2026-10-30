@@ -25,6 +25,12 @@ export default defineConfig({
       },
     ],
     fileParallelism: false,
-    coverage: { provider: "v8", include: ["src/domain/**", "src/server/services/**"] },
+    coverage: {
+      provider: "v8",
+      include: ["src/domain/**", "src/server/**"],
+      // ratchet for `npm run test:coverage` (unit project, run in CI), a little below the value measured 10/2026
+      // (src/server 18.0% lines, 20.4% functions, 77.3% branches; the services are covered by the integration suite)
+      thresholds: { "src/server/**": { lines: 17, statements: 17, functions: 19, branches: 75 } },
+    },
   },
 });

@@ -342,7 +342,11 @@ async function main() {
     });
     if (res?.approvalId && i % 2 === 0) await decideApproval(prisma, admin, H, { approvalId: res.approvalId, decision: "APPROVE", note: "Verified with outlet manager" });
   }
-  for (const d of days.filter((_, i) => i % 7 === 2)) {
+  // the canteen's rice comes on its own delivery: the weekly orders only cover the recipes, and the seeded period
+  // (previous month + this month to yesterday) grows with the date, so 3 kg a week ran the store dry from ~8 weeks
+  const canteenDays = days.filter((_, i) => i % 7 === 2);
+  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: wh.MAIN, receiptDate: at(days[0]!, 7), invoiceNo: `${supplierDefs[3]![0]}-CANTEEN`, freight: "0", items: [{ productId: pid["DRY-RICE"], quantity: String(canteenDays.length * 3), unit: "kg", unitPrice: "62.00" }] });
+  for (const d of canteenDays) {
     await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.MAIN!, productId: pid["DRY-RICE"]!, type: "STAFF_MEAL", quantity: -3, txDate: at(d, 13), departmentId: dept.KITCH, sourceType: "MANUAL", reason: "Staff canteen" });
   }
   // Ödenmez / İkram: comp checks from Micros, welcome drinks from Opera, a manual entry (through the comps service)
