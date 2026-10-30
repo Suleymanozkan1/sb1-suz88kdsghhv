@@ -7,11 +7,11 @@ import { ProductPicker, unitsFor, type PickedProduct } from "@/components/produc
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
 
-export function MovementForm({ warehouses, departments, canAdjust, today }: { warehouses: { id: string; name: string }[]; departments: { id: string; name: string }[]; canAdjust: boolean; today: string }) {
+export function MovementForm({ warehouses, departments, canAdjust, approvalValue, today }: { warehouses: { id: string; name: string }[]; departments: { id: string; name: string }[]; canAdjust: boolean; /** the hotel's adjustment approval value, formatted */ approvalValue?: string; today: string }) {
   const router = useRouter();
   const t = useT();
   const [product, setProduct] = useState<PickedProduct | null>(null);
-  const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ tone: "red" | "green" | "amber"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [type, setType] = useState("CONSUMPTION");
 
@@ -29,8 +29,10 @@ export function MovementForm({ warehouses, departments, canAdjust, today }: { wa
       body.idempotencyKey = crypto.randomUUID();
       if (!body.departmentId) delete body.departmentId;
       if (!body.unitCost) delete body.unitCost;
-      const r = await call<{ totalCost: string; unitCost: string }>("POST", "/api/inventory/movements", body);
-      setMsg({ tone: "green", text: t("Posted. Cost {cost} at {unitCost}/unit.", { cost: Math.abs(Number(r.totalCost)).toFixed(2), unitCost: Number(r.unitCost).toFixed(4) }) });
+      const r = await call<{ status: "POSTED"; totalCost: string; unitCost: string } | { status: "PENDING_APPROVAL"; estimatedValue: string }>("POST", "/api/inventory/movements", body);
+      // a large adjustment is not posted yet: it waits on /approvals
+      if (r.status === "PENDING_APPROVAL") setMsg({ tone: "amber", text: t("Sent for approval. Estimated value {cost}. The stock changes when it is approved.", { cost: Math.abs(Number(r.estimatedValue)).toFixed(2) }) });
+      else setMsg({ tone: "green", text: t("Posted. Cost {cost} at {unitCost}/unit.", { cost: Math.abs(Number(r.totalCost)).toFixed(2), unitCost: Number(r.unitCost).toFixed(4) }) });
       // a second click must not post the same movement again under a new idempotency key
       form.reset();
       setProduct(null);
@@ -64,6 +66,7 @@ export function MovementForm({ warehouses, departments, canAdjust, today }: { wa
       <div><Label htmlFor="mv-unit">{t("Unit")}</Label><Select id="mv-unit" name="unit" key={product?.id}>{unitsFor(product).map((u) => <option key={u}>{u}</option>)}</Select></div>
       {type === "OPENING" && <div><Label htmlFor="mv-cost">{t("Unit cost")}</Label><Input id="mv-cost" name="unitCost" inputMode="decimal" /></div>}
       <div className="md:col-span-2"><Label htmlFor="mv-reason">{t("Reason / note")}</Label><Input id="mv-reason" name="reason" /></div>
+      {type.startsWith("ADJUSTMENT") && approvalValue && <p className="text-xs text-ink-500 md:col-span-6">{t("Adjustments worth {value} or more go to approval and are posted once someone else approves them.", { value: approvalValue })}</p>}
       <div className="flex items-end"><Button type="submit" disabled={busy}>{busy ? t("Posting…") : t("Post")}</Button></div>
     </form>
   );

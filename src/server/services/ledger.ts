@@ -88,7 +88,7 @@ async function openLayers(tx: Tx, warehouseId: string, productId: string): Promi
   return layers.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
 }
 
-async function fallbackCost(tx: Tx, hotelId: string, productId: string): Promise<Decimal | null> {
+async function fallbackCost(tx: Db | Tx, hotelId: string, productId: string): Promise<Decimal | null> {
   const last = await tx.supplierPrice.findFirst({ where: { hotelId, productId }, orderBy: { priceDate: "desc" } });
   if (last) return D(last.unitPrice.toString());
   const p = await tx.product.findFirst({ where: { id: productId, hotelId }, select: { standardCost: true } });
@@ -511,6 +511,18 @@ export async function previewIssueCost(db: Db | Tx, hotelId: string, warehouseId
     return drawn.plus(qty.minus(available).times(latest));
   }
   return qty.times(pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost);
+}
+
+/**
+ * What receiving `qty` (stock unit, positive) into one store without a stated unit cost would be valued at if it
+ * were posted now — read-only, postMovement's inbound fallback: the store's average, then the last supplier price or
+ * the standard cost. Null when no cost is known (the posting itself would be refused).
+ */
+export async function previewReceiptCost(db: Db | Tx, hotelId: string, warehouseId: string, productId: string, qty: Decimal): Promise<Decimal | null> {
+  const bal = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId, productId } } });
+  const pos = { quantity: D(bal?.quantity.toString() ?? 0), value: D(bal?.value.toString() ?? 0), avgCost: D(bal?.avgCost.toString() ?? 0) };
+  const c = pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost.gt(0) ? pos.avgCost : await fallbackCost(db, hotelId, productId);
+  return c === null ? null : qty.times(c);
 }
 
 export { ZERO };
