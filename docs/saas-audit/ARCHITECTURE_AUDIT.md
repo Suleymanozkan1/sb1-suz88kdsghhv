@@ -23,9 +23,11 @@ Proje dosyaları değiştirilmedi.
 | ARCH-08 | Bakım borcu: dev fonksiyon, ölü kod ve kolonlar, üretim paketinde demo kodu | DÜŞÜK |
 | ARCH-09 | Katmanlama tutarsız: sayfalar ve rotalar doğrudan Prisma sorgusu yapıyor | DÜŞÜK |
 | ARCH-10 | Merkezi, tipli yapılandırma yok; belgeler koddan kopmuş | DÜŞÜK |
-| ARCH-11 | Sözlük dosyaları teslim turlarına göre ayrılmış; 215 anahtar sessizce farklı çeviriyle eziliyor | DÜŞÜK |
+| ARCH-11 | Sözlük dosyaları teslim turlarına göre ayrılmış; 188 anahtarda 215 üzerine yazma sessizce farklı çeviri seçiyor | DÜŞÜK (UX-01 ile birleşti) |
 
 ### ARCH-01 · YÜKSEK · Dışa aktarmalar ve yüklemeler Vercel'in 4,5 MB fonksiyon yükü sınırını aşıyor
+
+> **Çapraz inceleme:** varsayılan tek aylık dışa aktarma demo ölçeğinde sığıyor (Eylül: TSV 1,25 MB, XLSM 0,84 MB). İki üç aydan uzun ve büyük otel dışa aktarmaları sığmıyor.
 - **Kanıt:**
   - Vercel belgesi (vercel.com/docs/functions/limitations): istek veya yanıt gövdesi en fazla 4,5 MB; aşılırsa 413 `FUNCTION_PAYLOAD_TOO_LARGE`.
   - Dosyalar fonksiyondan tek parça tampon olarak dönüyor:
@@ -71,6 +73,8 @@ Proje dosyaları değiştirilmedi.
 - **Ayrıca bkz.** SECURITY_AUDIT SEC-06.
 
 ### ARCH-03 · YÜKSEK · Her Vercel dağıtımı canlı veritabanını migrate ediyor ve yeniden yazıyor
+
+> **Çapraz inceleme:** NV-12 bu bulguyla birleştirildi. `recipes-refreeze` yalnızca eski maliyet modelindeki görüntülere dokunuyor, her dağıtımda tüm reçeteleri yeniden maliyetlendirmiyor. Asıl risk, önizleme derlemelerinin canlı veritabanını migrate etmesi. Preview canlı Neon'a bağlıysa KRİTİK.
 - **Kanıt:**
   - `vercel-build`, `next build`'den önce `prisma migrate deploy` ve `recipes-refreeze` çalıştırıyor.
   - `docs/VERCEL.md` §2, Neon veritabanının "tüm ortamlara (Production, Preview, Development)" bağlanmasını söylüyor.
@@ -173,8 +177,10 @@ Proje dosyaları değiştirilmedi.
   - Üretimde `memory` taşıyıcısı reddedilmeli.
 
 ### ARCH-11 · DÜŞÜK · Sözlük düzeni
+
+> **Çapraz inceleme:** UX-01 ile birleştirildi. Gerçek sayı 188 anahtarda 215 üzerine yazma; yaklaşık 132'si anlamsal çelişki.
 - 28 sözlük dosyası teslim turlarına göre ayrılmış (`r2a`…`r3f`, `seca`…`secd`, `denetim`).
-- 215 anahtar çelişkili; son yüklenen kazanıyor. Ayrıntı için UI_UX_AUDIT UX-01'e bakın.
+- 188 anahtarda 215 çelişkili üzerine yazma var; son yüklenen kazanıyor. Ayrıntı için UI_UX_AUDIT UX-01'e bakın.
 - Sunucu mesajları, tüm şablonlara karşı düzenli ifade eşleşmesiyle çevriliyor.
 - **Öneri:** sözlükler alanlarına göre birleştirilmeli; çelişkili tekrarlarda CI başarısız olmalı; sunucu hataları için kararlı mesaj kodları kullanılmalı.
 
@@ -185,9 +191,9 @@ Proje dosyaları değiştirilmedi.
 | DB-01 | Eşzamanlı yazmalar kilitlenme, numara çakışması ve dönem oluşturma yarışıyla başarısız oluyor | ORTA |
 | DB-02 | Sık kullanılan alt tablo ve yabancı anahtar sorgularında indeks eksik; FIFO tabloları tüm kiracılar boyunca taranıyor | ORTA |
 | DB-03 | Açılış bakiyeleri her raporda tüm defter geçmişinden yeniden hesaplanıyor | ORTA |
-| DB-04 | Kiracı tutarlılık tetikleyicileri tüm otel referanslarını kapsamıyor; belge kapsamı abartıyor | ORTA |
+| DB-04 | Kiracı tutarlılık tetikleyicileri tüm otel referanslarını kapsamıyor; belge kapsamı abartıyor | DÜŞÜK (çapraz inceleme) |
 | DB-05 | Yedekleme ve geri yükleme boşlukları | ORTA |
-| DB-06 | Faturalama migrasyonu mevcut her kiracı için 30 günlük geri sayım başlatıyor | ORTA |
+| DB-06 | Faturalama migrasyonu mevcut her kiracı için 30 günlük geri sayım başlatıyor | YÜKSEK (çapraz inceleme) |
 | DB-07 | Operasyonel tablolarda saklama süresi ve temizlik yok | DÜŞÜK |
 | DB-08 | Migrasyon uygulamalarında riskler | DÜŞÜK |
 | DB-09 | Silme davranışı tutarsız; defter satırları silinmiş kaynak belgeleri gösteriyor | DÜŞÜK |
@@ -239,7 +245,9 @@ Proje dosyaları değiştirilmedi.
 - **Öneri:** Dönem kapanışında depo × ürün kapanış bakiyeleri saklanmalı; açılış, son kapalı dönem + fark olarak hesaplanmalı.
 - **Zorluk:** Orta.
 
-### DB-04 · ORTA · Kiracı tutarlılık tetikleyicileri her referansı kapsamıyor (testle doğrulandı)
+### DB-04 · DÜŞÜK · Kiracı tutarlılık tetikleyicileri her referansı kapsamıyor (testle doğrulandı)
+
+> Çapraz incelemede ORTA'dan DÜŞÜK'e indirildi. Tek yazma yolu oteli zaten kontrol ediyor; ek savunma katmanı ve belge düzeltmesi.
 - **Kanıt:**
   - `docs/MULTI_TENANCY.md` "otel kapsamlı her yabancı anahtarda" tetikleyici olduğunu söylüyor. Gerçekte 40 tablo kapsanıyor.
   - Kapsam dışı kalanlar:
@@ -281,7 +289,9 @@ Proje dosyaları değiştirilmedi.
   - PITR saklama süresi belgelenmeli.
 - **Zorluk:** Küçük–orta.
 
-### DB-06 · ORTA · Faturalama migrasyonu mevcut her kiracı için 30 günlük geri sayım başlatıyor
+### DB-06 · YÜKSEK · Faturalama migrasyonu mevcut her kiracı için 30 günlük geri sayım başlatıyor
+
+> Çapraz incelemede ORTA'dan YÜKSEK'e çıkarıldı. Son gün yaklaşık 23 Kasım 2026. Kapatma anahtarı `BILLING_ENFORCEMENT=off` zaten var (`plans.ts:73`). Canlıda platform şirketi ve ödeme tarihi olmayan müşteri varsa KRİTİK.
 - **Kanıt:**
   - `20261023090000_billing`, `Organization.trialEndsAt` alanını `now() + 30 gün` varsayılanıyla ekliyor; paket varsayılanı BASIC.
   - Deneme süresi bitip `paidThrough` yoksa durum SÜRESİ DOLDU oluyor ve kiracı salt okunura düşüyor.
@@ -339,7 +349,9 @@ Proje dosyaları değiştirilmedi.
 
 Hesaplamalar kuruşuna kadar tutarlı (QA_AUDIT bölüm 2). Bulgular aritmetik değil, kontrol tasarımı, abonelik modeli ve eksik özelliklerle ilgili.
 
-### BIZ-01 · YÜKSEK · Reçete onayı atlanabiliyor: reçeteyi düzenlemek onu anında onaylıyor
+### BIZ-01 · ORTA · Reçete onayı atlanabiliyor: reçeteyi düzenlemek onu anında onaylıyor
+
+> Çapraz incelemede YÜKSEK'ten ORTA'ya indirildi. Kod bunu bilerek yapıyor (`recipes.ts:307-312`); bu bir ürün kararı. Onay zorunlu sayılırsa yeniden YÜKSEK.
 - **Kanıt:** `src/server/services/recipes.ts` `editRecipe` (s.314), yalnızca `recipe:manage` yetkisiyle `freezeAndApprove` çağırıyor (`PUT /api/recipes/[id]`). `approveVersion` ise `recipe:approve` istiyor. İki yolda da "oluşturan ≠ onaylayan" kontrolü yok. Şef, kahvaltı şefi ve pastane şefinde `recipe:manage` var, `recipe:approve` yok.
 - **Doğrulama:** `chef@test.local` olarak `PUT /api/recipes/{id}` ile malzeme miktarları düşürülür. Yeni sürüm ONAYLANDI olarak oluşur, `approvedById` şefin kendisi olur ve onay talebi açılmaz.
 - **Etki:** Reçete, teorik maliyetin standardıdır. Mutfak, kendisinin ölçüldüğü standardı değiştirebiliyor. Bu durumda sapma ve "açıklanamayan" tutarları kontrol aracı olmaktan çıkıyor; `recipe:approve` yetkisinin ve reçete sayfasındaki onay düğmesinin anlamı kalmıyor.
@@ -349,6 +361,8 @@ Hesaplamalar kuruşuna kadar tutarlı (QA_AUDIT bölüm 2). Bulgular aritmetik d
 - **Zorluk:** Orta. Kod yorumu bunun bilinçli bir ürün kararı olduğunu gösteriyor; **ürün sahibinin kararı gerekiyor.**
 
 ### BIZ-02 · YÜKSEK · Satın alma siparişi ve bütçede görev ayrılığı yok; rol şablonları bağdaşmayan görevleri birleştiriyor
+
+> **Çapraz inceleme:** rol şablonları kod içinde sabit (`permissions.ts:84-111`), rol düzenleme servisi yok. Müşteri görev ayrılığını kendisi kuramıyor.
 - **Kanıt (onay akışı):** `purchasing.ts approvePurchaseOrder` (s.89) ve `planning.ts approveBudget` (s.102), siparişi veya bütçeyi oluşturanla onaylayanı karşılaştırmıyor. Buna karşılık genel onaylar (`approvals.ts decideApproval`) "kendi talebinizi onaylayamazsınız" kontrolünü doğru yapıyor.
 - **Kanıt (rol şablonları, `permissions.ts`):**
   - `purchasing_manager`: tedarikçi tanımlama, ürün tanımlama, sipariş, sipariş onayı, fiyat görme ve mal kabul aynı rolde. Tek kişi tedarikçi açıp sipariş verebilir, onaylayabilir ve mal kabul yapabilir.
@@ -407,6 +421,8 @@ Hesaplamalar kuruşuna kadar tutarlı (QA_AUDIT bölüm 2). Bulgular aritmetik d
 - **Zorluk:** Küçük–orta.
 
 ### BIZ-07 · ORTA · Deneme süresi bitince üst paket modüllerindeki veriye erişim kalkıyor; "hiçbir şey kaybolmaz" sözü tutulmuyor
+
+> **Çapraz inceleme:** toplanmış modül verisi `/api/export/[section]` üzerinden CSV olarak alınabiliyor. Kapanan, ekranlar ve kayıt düzeyindeki ayrıntı. Yan etki: BASIC kiracılar STANDARD raporlarını CSV ile alabiliyor.
 - **Kanıt:**
   - Varsayılan paket BASIC; deneme süresi PREMIUM veriyor.
   - `FEATURE_ROUTES` (`src/lib/features.ts`) okuma (GET) ve dışa aktarma rotalarını da paketle kapatıyor. `billing.test.ts` testi, deneme bitince kahvaltı okumasının PLAN_REQUIRED döndüğünü kendisi doğruluyor.

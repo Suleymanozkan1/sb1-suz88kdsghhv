@@ -25,14 +25,14 @@ Dikkat isteyen konular çoğunlukla yeni ticari katmanda (PR #22) ve oturum açm
 |---|---|---|---|
 | SEC-01 | İlk SaaS müşterisi "kurulum sahibi" demo kontrollerine erişebiliyor | YÜKSEK | Kod okuma |
 | SEC-06 | Bağımlılıklarda kritik güvenlik açıkları (next 15.5.27) | YÜKSEK | Sürümler doğrulandı, istismar edilebilirlik doğrulanmadı |
-| BIZ-01/02/03 | Görev ayrılığı ve onay kontrolleri (iş mantığı, ARCHITECTURE_AUDIT bölüm 3) | YÜKSEK | Kod okuma |
+| BIZ-01/02/03 | Görev ayrılığı ve onay kontrolleri (iş mantığı, ARCHITECTURE_AUDIT bölüm 3) | YÜKSEK (BIZ-01: ORTA) | Kod okuma |
 | SEC-02 | Süresi dolan veya düşürülen abonelik, güvenlik amaçlı erişim kaldırmayı engelliyor | ORTA | Testle doğrulandı |
 | SEC-03 | Dağıtım (allocation) modülü başka departmanların maaş havuzlarını gösteriyor | ORTA | Canlı doğrulandı |
 | SEC-04 | MFA yok, kullanıcı kendi şifresini değiştiremiyor/sıfırlayamıyor | ORTA | Kod okuma |
 | SEC-05 | Yerel kurulum/Docker: düz HTTP ve taklit edilebilir IP hız sınırları | ORTA | Canlı doğrulandı |
 | BE-01 | Faturalanan otel sayısını kiracı belirleyebiliyor | ORTA | Kod okuma |
 | BE-02 | Ağır uç noktalar sınırsız ve sunucuyu kilitliyor | ORTA | Ölçümle doğrulandı |
-| NV-12 | Vercel önizleme derlemeleri canlı veritabanını migrate edebilir | ORTA | Kod okuma |
+| NV-12 | Vercel önizleme derlemeleri canlı veritabanını migrate edebilir | YÜKSEK (ARCH-03 ile birleşti) | Kod okuma |
 | SEC-07 | Bozuk `Origin` başlığı anonim uç noktalarda 500 hatasına yol açıyor | DÜŞÜK | Canlı doğrulandı |
 | SEC-08 | Hata günlüklerinde ve harici webhook'ta olası kişisel veri | DÜŞÜK | Varsayım |
 | SEC-09 | Şirket geneli ayarlar otel düzeyi yetkiyle değişiyor; video adresleri | DÜŞÜK | Kod okuma |
@@ -41,6 +41,8 @@ Dikkat isteyen konular çoğunlukla yeni ticari katmanda (PR #22) ve oturum açm
 | BE-05 | Docker imajı root olarak çalışıyor ve tüm derleme aşamasını taşıyor | DÜŞÜK | Kod okuma |
 
 ### SEC-01 · YÜKSEK · İlk SaaS müşterisi "kurulum sahibi" demo kontrollerine erişebiliyor: başka kiracıların demosunu silme ve süresiz ücretsiz Premium
+
+> **Çapraz inceleme:** test veritabanında yeniden üretildi. Başka kiracıların demosunu silme senaryosu, canlı veritabanında demo şirketi olmasını gerektiriyor; `docs/VERCEL.md:57` buna karşı. Gerçek etki süresiz ücretsiz Premium. YÜKSEK kalıyor.
 - **Kanıt:**
   - `src/server/setup/index.ts` `assertInstallationOwner`: veritabanında demo ve platform dışında tam olarak bir şirket varsa, o şirketin `admin:users` yetkili yöneticisini "kurulum sahibi" sayıyor. Kurulumun kendi sunucusunda mı olduğu, yoksa faturalamanın açık olduğu bir SaaS mı olduğu kontrol edilmiyor.
   - `DELETE /api/setup/demo` → `purgeDemoOrganizations` tüm demo şirketlerini şifre sormadan siliyor.
@@ -59,6 +61,8 @@ Dikkat isteyen konular çoğunlukla yeni ticari katmanda (PR #22) ve oturum açm
 - **Zorluk:** Küçük.
 
 ### SEC-06 · YÜKSEK · Bağımlılıklarda kritik güvenlik açıkları
+
+> **Çapraz inceleme:** ARCH-02 ile birleştirildi.
 - **Kanıt (`npm audit`, salt okunur):** 3 kritik, 7 yüksek, 6 orta.
   - **next 15.5.27:**
     - GHSA-2464-fhr4-w9xw: SVG ile görsel optimizasyon API'sinde kimlik doğrulamasız uzaktan kod çalıştırma (kritik)
@@ -90,6 +94,8 @@ Dikkat isteyen konular çoğunlukla yeni ticari katmanda (PR #22) ve oturum açm
 - **Zorluk:** Küçük.
 
 ### SEC-03 · ORTA · Dağıtım (allocation) modülü başka departmanların maaş havuzlarını gösteriyor
+
+> **Çapraz inceleme:** canlı demoda yeniden üretildi. `rooms_division` rolü de F&B havuzlarını görüyor. Sızan, kişi maaşları değil departman toplamları.
 - **Kanıt:** `src/server/services/allocation.ts` içindeki `listRules`, `previewAllocation`, `previewPeriodAllocation` ve `listRuns` yalnızca `opex:view` yetkisine bakıyor, departman kapsamına bakmıyor.
 - **Canlı deneme (yalnızca Yiyecek-İçecek departmanlarına yetkili `fbm@test.local`):**
   - `/api/opex/reports/housekeeping` → **403**. Önceki 8 numaralı bulgunun düzeltmesi çalışıyor.
@@ -161,7 +167,9 @@ Dikkat isteyen konular çoğunlukla yeni ticari katmanda (PR #22) ve oturum açm
 - **Öneri:** Sayfa dışa aktarmalarına ve yönetim paketine kullanıcı başı hız sınırı konmalı; büyük PDF'ler XLSM işleri gibi kuyruğa alınmalı.
 - **Zorluk:** Küçük.
 
-### NV-12 · ORTA · Vercel önizleme derlemeleri canlı veritabanını migrate edebilir
+### NV-12 · YÜKSEK · Vercel önizleme derlemeleri canlı veritabanını migrate edebilir
+
+> Çapraz incelemede ARCH-03 ile birleştirildi ve YÜKSEK'e çıkarıldı.
 - **Kanıt:**
   - `vercel-build` her derlemede `prisma migrate deploy` ve `recipes-refreeze` çalıştırıyor.
   - `scripts/check-build-env.mjs`, tek veritabanının Production, Preview ve Development ortamlarının hepsine bağlanmasını öneriyor.

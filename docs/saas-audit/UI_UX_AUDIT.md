@@ -30,7 +30,7 @@ axe'ın göremediği gerçek erişilebilirlik sorunları var:
 **Mobil (390 px):** şirket yöneticisinin 41 sayfasından 8'i yatay kayıyor. Gösterge paneli her rolde bunlardan biri. Sebep, ortak bileşenlerdeki iki düzen hatası.
 
 **Türkçe dil kalitesi:**
-- 218 sözlük anahtarı farklı dosyalarda çelişen çevirilere sahip; hangisinin geçerli olacağını yükleme sırası belirliyor.
+- 188 sözlük anahtarı (çapraz inceleme sayımı; ilk sayım 218) farklı dosyalarda çelişen çevirilere sahip; hangisinin geçerli olacağını yükleme sırası belirliyor.
 - Tarayıcı sekme başlıkları her sayfada İngilizce.
 - Bazı İngilizce veya iç kod metinleri ekrana sızıyor.
 
@@ -131,7 +131,9 @@ axe'ın göremediği gerçek erişilebilirlik sorunları var:
 - Bir kez görüldü, iki yeniden yüklemede tekrarlanmadı.
 - Olası neden (varsayım): saate veya dile bağlı bir metin sunucuda ve tarayıcıda farklı üretiliyor.
 
-### UX-01 · ORTA · 218 çeviri anahtarı çelişkili; son yüklenen dosya sessizce kazanıyor
+### UX-01 · DÜŞÜK · 188 çeviri anahtarı çelişkili; son yüklenen dosya sessizce kazanıyor
+
+> Çapraz incelemede ORTA'dan DÜŞÜK'e indirildi ve ARCH-11 ile birleştirildi. Yeniden sayım: 3.160 anahtar; 188 anahtarda 215 üzerine yazma; 56'sı yalnızca harf büyüklüğünde ayrışıyor.
 - **Kanıt:** `src/i18n/tr/index.ts` 28 dosyayı birleştiriyor; yaklaşık 3.600 anahtarın 218'i farklı dosyalarda farklı Türkçe değere sahip. Örnekler:
 
   | İngilizce anahtar | Çelişen çeviriler |
@@ -235,6 +237,8 @@ axe'ın göremediği gerçek erişilebilirlik sorunları var:
   - Videolar CDN'den sunulabilir.
 
 ### UX-09 · BİLGİ · Gösterge panelindeki sapma rengi yanıltıcı olabilir
+
+> **Çapraz inceleme:** BIZ-15 ile birleştirildi.
 - "Sapma −₺173.472" (gerçekleşen maliyet teoriğin yaklaşık %36 altında) yeşil, yani "iyi" olarak gösteriliyor.
 - Açıklama listesinde pozitif tutarlar negatif yüzdelerle eşleşiyor.
 - **Varsayım:** Büyük negatif sapma genellikle başarıyı değil, eksik sayım veya eksik mal kabulü işaret eder.

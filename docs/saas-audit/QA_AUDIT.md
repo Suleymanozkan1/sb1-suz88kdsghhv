@@ -80,6 +80,8 @@ Hepsi `retries: 0`, `workers: 1` ile çalışıyor. **Uçtan uca testler CI'da �
 - **Öneri:** Testlerin genel kurulum adımında veritabanını boşaltmak (ya da her çalıştırmada ayrı şema kullanmak); faturalama önbelleğini test ortamında sıfırlamak. Zorluk: küçük–orta.
 
 ### QA-03 · ORTA · Tarihe bağlı testler ve kalıcı e2e veritabanı: 30 gün sonra patlayacak bir saatli bomba
+
+> **Çapraz inceleme:** kök neden DB-06 ile aynı.
 - **Kanıt:**
   - Entegrasyon testlerinde 283 sabit 2026 tarihi var; servisler ise `Date.now()` kullanıyor. Örnekler: gelecek tarih koruması, 30 günlük deneme süresi, gecikme mantığı.
   - Sahte saat (`vi.useFakeTimers`) hiç kullanılmıyor.
@@ -103,6 +105,8 @@ Hepsi `retries: 0`, `workers: 1` ile çalışıyor. **Uçtan uca testler CI'da �
 - **Öneri:** "Yavaş" olarak etiketlenip gece çalıştırılmalı ya da daha küçük bir profille test edilmeli.
 
 ### QA-06 · BİLGİ · Uçtan uca testler ve kapsam eşiği CI'da yok
+
+> **Çapraz inceleme:** TOOL-01 ile birleştirildi.
 - **Kanıt:** `.github/workflows/ci.yml` yalnızca tip kontrolü, lint, VBA eşitlik kontrolü, birim ve entegrasyon testlerini çalıştırıyor.
 - Ayrıntı için TOOLKIT_INVENTORY TOOL-01'e bakın.
 
@@ -140,7 +144,7 @@ Hepsi `retries: 0`, `workers: 1` ile çalışıyor. **Uçtan uca testler CI'da �
   - fatura kesme kilidinin eşzamanlılığı
   - platform konsolu arayüzü
 - Ağırlığa göre mal kabul maliyeti dağıtımı (servis düzeyinde)
-- Rota bazında sistematik yetki testi: 191 rota işleyicisi var; 49 yetki adından 35'i yalnızca roller üzerinden dolaylı test ediliyor
+- Rota bazında sistematik yetki testi: 198 rota işleyicisi var; 49 yetki adından 35'i yalnızca roller üzerinden dolaylı test ediliyor
 - Dışa aktarma toplamı = sayfa toplamı (bu denetimde elle doğrulandı, testi yok)
 - Gerçek SMTP ile e-posta gönderimi (testler bellek içi gönderici kullanıyor)
 
