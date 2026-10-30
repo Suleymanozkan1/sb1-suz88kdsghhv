@@ -22,10 +22,12 @@ export interface TenantSub {
   isDemo: boolean;
   active: boolean;
   activeHotels: number;
+  /** hotels the next payment notice bills: the most active since the previous notice (null: not billed) */
+  billableHotels: number | null;
   trialEndsAt: string | null;
   paidThrough: string | null;
   access: { state: keyof typeof STATE_TONE; daysLeft: number | null } | null;
-  invoices: Array<{ id: string; number: string; plan: Plan; total: string; currency: string; status: keyof typeof INVOICE_TONE; dueDate: string; periodStart: string; periodEnd: string; paidAt: string | null }>;
+  invoices: Array<{ id: string; number: string; plan: Plan; hotelCount: number; total: string; currency: string; status: keyof typeof INVOICE_TONE; dueDate: string; periodStart: string; periodEnd: string; paidAt: string | null }>;
   requests: Array<{ id: string; plan: Plan; note: string | null; createdAt: string }>;
 }
 
@@ -67,6 +69,7 @@ export function BillingConsole({ prices, settings, tenants }: { prices: Record<P
             {tenants.map((x) => (
               <tr key={x.id} className={x.active ? "" : "text-ink-500"}>
                 <Td className="font-medium">{x.name}{x.isDemo && <span className="ml-1"><Badge>{t("demo")}</Badge></span>}<div className="text-xs font-normal text-ink-500">{t("{n} active hotels", { n: x.activeHotels })}</div>
+                  {x.billableHotels !== null && <div className={`text-xs font-normal ${x.billableHotels > x.activeHotels ? "text-amber-700" : "text-ink-500"}`}>{t("Next notice bills {n} hotels (most active since the last notice)", { n: x.billableHotels })}</div>}
                   {x.requests.map((r) => (
                     <div key={r.id} className="mt-1 flex flex-wrap items-center gap-1 text-xs">
                       <Badge tone="blue">{t("Requests {plan}", { plan: t(PLAN_LABEL[r.plan]) })}</Badge>
@@ -84,6 +87,7 @@ export function BillingConsole({ prices, settings, tenants }: { prices: Record<P
                     <div key={i.id} className="flex flex-wrap items-center gap-1 py-0.5">
                       <span className="font-mono">{i.number}</span>
                       <span className="tabular-nums">{money(i.total, i.currency)}</span>
+                      <span className="text-ink-500">{t("{n} hotels billed", { n: i.hotelCount })}</span>
                       <Badge tone={INVOICE_TONE[i.status]}>{t(i.status === "OPEN" ? "Awaiting payment" : i.status === "PAID" ? "Paid" : "Voided")}</Badge>
                       {i.status === "OPEN" && (
                         <>
