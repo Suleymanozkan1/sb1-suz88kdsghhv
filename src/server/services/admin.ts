@@ -15,7 +15,8 @@ import { audit } from "./audit";
 
 export const CATEGORY_GROUPS = ["FOOD", "BEVERAGE", "PACKAGING", "HOUSEKEEPING", "ENGINEERING", "LINEN"] as const;
 const code = z.string().trim().min(1).max(20).regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Use capitals, digits, - or _");
-const password = z.string().min(10, "At least 10 characters").max(200);
+/** The password rule of every account (admin-created, invited, own change and reset). */
+export const password = z.string().min(10, "At least 10 characters").max(200);
 /** number typed in a form: accepts a decimal comma ("8,5") */
 const num = () => z.preprocess((v) => (typeof v === "string" ? v.trim().replace(",", ".") : v), z.coerce.number());
 

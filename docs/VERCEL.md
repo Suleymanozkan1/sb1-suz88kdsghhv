@@ -19,7 +19,9 @@ Any other PostgreSQL 15+ also works (Supabase, AWS RDS, Azure, your own server).
 |---|---|
 | `DATABASE_URL` | Set by the Neon integration (pooled). With PgBouncer add `?pgbouncer=true&connection_limit=1`. |
 | `DATABASE_URL_UNPOOLED` | Set by the Neon integration (direct; used for migrations at build time) |
-| `PUBLIC_BASE_URL` | Optional: `https://<your-domain>`, written into the Excel workbook's CONTROL sheet |
+| `PUBLIC_BASE_URL` | Optional: `https://<your-domain>`, written into the Excel workbook's CONTROL sheet and used for password reset links (without it the production domain Vercel reports is used) |
+| `SMTP_URL`, `MAIL_FROM` | Optional: outgoing mail. Needed for supplier order e-mails and for "Forgot your password?" on the sign-in page (hidden without it; administrators can still reset a user's password) |
+| `SESSION_SECRET` | Recommended: a long random value. Signs password reset links (they stay single-use and unforgeable without it, because they are also bound to the stored password hash) |
 
 Do **not** set `ALLOW_DEMO_DATA` in production.
 

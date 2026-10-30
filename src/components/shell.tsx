@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, Lock, LogOut, Menu, X } from "lucide-react";
+import { Building2, KeyRound, Lock, LogOut, Menu, X } from "lucide-react";
 import { cn } from "./ui";
 import { navItems, NAV_GROUPS } from "./nav";
 import { ApiError, call } from "@/lib/client";
@@ -105,6 +105,9 @@ export function Shell({ user, hotels, hotelId, permissions, navFlags = [], pendi
             <option value="tr" className="text-ink-900">TR</option>
             <option value="en" className="text-ink-900">EN</option>
           </select>
+          <Link href="/account/password" className="rounded-md p-1.5 text-ink-300 hover:bg-white/10 hover:text-white" aria-label={t("Change password")} title={t("Change password")}>
+            <KeyRound className="h-4 w-4" />
+          </Link>
           <button onClick={() => void signOut()} disabled={busy} className="rounded-md p-1.5 text-ink-300 hover:bg-white/10 hover:text-white" aria-label={t("Sign out")} title={t("Sign out")}>
             <LogOut className="h-4 w-4" />
           </button>

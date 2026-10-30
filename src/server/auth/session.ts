@@ -55,13 +55,18 @@ export async function login(email: string, password: string, ip: string): Promis
   await rateLimit(`email:${e}`, LOGIN_LIMIT_PER_EMAIL_TOTAL);
   const user = await prisma.user.findUnique({ where: { email: e }, include: { organization: { select: { active: true } } } });
   const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
-  if (!user || !ok || !user.active || !user.organization.active) throw new DomainError("UNAUTHENTICATED", "Invalid email or password");
+  if (!user || !ok || !user.active || !user.organization.active) {
+    // every failure is recorded with its address (an unknown e-mail too: the same write keeps the timing equal);
+    // the attempted address itself is not stored
+    await prisma.auditLog.create({ data: { userId: user?.id ?? null, action: "LOGIN_FAILED", entityType: "User", entityId: user?.id ?? null, source: "AUTH", after: { ip, reason: !user ? "unknown" : ok ? "inactive" : "password" } } });
+    throw new DomainError("UNAUTHENTICATED", "Invalid email or password");
+  }
   await resetRateLimit(`email-ip:${e}|${ip}`);
   await resetRateLimit(`email:${e}`);
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);
   await prisma.session.create({ data: { id: sessionId(token), userId: user.id, expiresAt } });
-  await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entityType: "User", entityId: user.id, source: "AUTH" } });
+  await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entityType: "User", entityId: user.id, source: "AUTH", after: { ip } } });
   return { token, expiresAt };
 }
 
