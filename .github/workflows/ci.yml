@@ -68,7 +68,8 @@ jobs:
         run: node scripts/ci/audit-gate.mjs
 
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.56 ships browsers for Ubuntu 24.04, not for the newer ubuntu-latest image
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:
@@ -81,7 +82,7 @@ jobs:
           PGTZ: Europe/Istanbul
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U hotelcost"
+          --health-cmd "pg_isready -U hotelcost -d hotelcost_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
