@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { costReview, reviewRange, type CostReview } from "@/server/services/calendar";
 import { LEVEL_LABEL } from "@/server/services/insights";
 import { prisma } from "@/server/db";
@@ -52,6 +52,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "report:view", hotelId);
   const cur = hotel.baseCurrency;
   const range = reviewRange(sp);
   const all = REVIEW_SECTIONS.find((s) => s === sp.all) ?? null;

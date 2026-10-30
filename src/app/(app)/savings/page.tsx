@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { listActions, opportunities } from "@/server/services/savings";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -17,6 +17,7 @@ export default async function SavingsPage({ searchParams }: { searchParams: Prom
   const t = await getT();
   const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "budget:view", hotelId);
   const cur = hotel.baseCurrency;
   const [opps, acts] = await Promise.all([guarded(() => opportunities(prisma, actor, hotelId, { from: range.from, to: range.to })), guarded(() => listActions(prisma, actor, hotelId))]);
   if (!opps.ok) return <Alert>{opps.error}</Alert>;

@@ -1,5 +1,5 @@
 import { FileDown } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { calendarMonth, canCompleteTask, parseMonth } from "@/server/services/calendar";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -29,6 +29,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "report:view", hotelId);
   const now = new Date();
   const m = parseMonth(sp.month) ?? { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
   const monthStr = `${m.year}-${String(m.month).padStart(2, "0")}`;

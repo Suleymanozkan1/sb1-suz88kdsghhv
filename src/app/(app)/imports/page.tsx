@@ -1,8 +1,9 @@
-import { pageContext } from "@/server/page";
+import { pageContext, requirePageAccess } from "@/server/page";
+import { IMPORTS_PAGE_PERMISSIONS } from "@/components/nav";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
 import { IMPORT_KINDS, IMPORT_PERMISSION } from "@/server/services/imports";
-import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
+import { Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Importer, type ImportKindKey } from "./importer";
@@ -16,6 +17,8 @@ export const metadata = { title: "Imports" };
 export default async function ImportsPage() {
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  // any import kind or the automation; the menu shows Imports with the same list
+  requirePageAccess(actor, IMPORTS_PAGE_PERMISSIONS, hotelId);
   const allowed: ImportKindKey[] = [
     ...(can(actor, "opex:manage") ? (["expenses"] as const) : []),
     ...(can(actor, "pms:import") ? (["occupancy", "reservations"] as const) : []),
@@ -24,7 +27,6 @@ export default async function ImportsPage() {
     ...(can(actor, "inventory:adjust") ? (["opening-stock"] as const) : []),
   ];
   const auto = can(actor, "sales:import") ? await integrationOverview(prisma, actor, hotelId) : null;
-  if (!allowed.length && !auto) return <Alert>{t("You have no import permission.")}</Alert>;
   const kinds = IMPORT_KINDS.filter((k) => can(actor, IMPORT_PERMISSION[k]));
   const batches = await prisma.importBatch.findMany({ where: { hotelId, kind: { in: [...kinds] } }, orderBy: { createdAt: "desc" }, take: 50 });
   const users = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(batches.map((b) => b.createdById))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));

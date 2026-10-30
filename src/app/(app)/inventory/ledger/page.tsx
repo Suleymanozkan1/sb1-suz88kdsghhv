@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { explodeSalesRows, ledgerEntries, summarizeSalesRows, type DetailLine } from "@/server/services/inventory";
 import { LEDGER_TYPES, ledgerRange, parseLedgerQuery, sourceText } from "@/server/table-export/reports/ledger";
 import { can, canDepartment } from "@/server/auth/actor";
@@ -21,6 +21,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const t = await getT();
   const page = Math.max(1, Number(sp.page ?? 1));
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "inventory:view", hotelId);
   // the summary merges a day's sales rows, so it is merged over the whole selection (as the export does, up to
   // SUMMARY_MAX movements) and paged afterwards; otherwise a day split across two pages would show as two partial rows
   const summary = f.view !== "detail";

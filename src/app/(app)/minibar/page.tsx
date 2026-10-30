@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { minibarReport, roomGrid } from "@/server/services/minibar";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -15,6 +15,7 @@ export default async function MinibarPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "minibar:view", hotelId);
   const rep = await guarded(() => minibarReport(prisma, actor, hotelId, { from: range.from, to: range.to }));
   const grid = await guarded(() => roomGrid(prisma, actor, hotelId));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;

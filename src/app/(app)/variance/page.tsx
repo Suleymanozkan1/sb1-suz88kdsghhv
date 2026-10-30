@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import Link from "next/link";
 import { causeLabel, theoreticalVsActual } from "@/server/services/variance";
 import { can, departmentScope } from "@/server/auth/actor";
@@ -15,6 +15,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const tr = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "variance:view", hotelId);
   const range = monthRange(sp);
   const departments = await prisma.department.findMany({ where: { hotelId, ...(actor.departmentIds === "ALL" ? {} : { id: { in: [...actor.departmentIds] } }), ...departmentScope(actor, "id") }, orderBy: { name: "asc" } });
   const res = await guarded(() => theoreticalVsActual(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || null, categoryGroup: sp.group || null }));

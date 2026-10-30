@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { budgetReport, listBudgets, targetReport, TARGET_METRICS } from "@/server/services/planning";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -21,6 +21,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   const year = Number(sp.year ?? now.getUTCFullYear());
   const month = Math.min(12, Math.max(1, Number(sp.month ?? now.getUTCMonth() + 1)));
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "budget:view", hotelId);
   const cur = hotel.baseCurrency;
   const rep = await guarded(() => budgetReport(prisma, actor, hotelId, { year, month }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;

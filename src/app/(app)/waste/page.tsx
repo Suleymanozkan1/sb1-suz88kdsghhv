@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { listWaste, WASTE_TYPES } from "@/server/services/waste";
 import { can, departmentScope } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -20,6 +20,7 @@ export default async function WastePage({ searchParams }: { searchParams: Promis
   const range = monthRange(sp);
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "waste:view", hotelId);
   const res = await guarded(() => listWaste(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || undefined, productId: sp.productId || undefined }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const rows = res.data;

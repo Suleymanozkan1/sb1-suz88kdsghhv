@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { housekeepingReport, laundryReport, laborReport, energyReport, engineeringReport, type OpexLine } from "@/server/services/operations";
 import { listExpenses, OPEX_CATEGORIES, ASSET_KINDS, UTILITIES } from "@/server/services/opex";
 import { can } from "@/server/auth/actor";
@@ -54,6 +54,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const range = monthRange(sp);
   const tab: Tab = (TABS.find((x) => x[0] === sp.tab)?.[0] ?? "expenses") as Tab;
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "opex:view", hotelId);
   const cur = hotel.baseCurrency;
   const r = { from: range.from, to: range.to };
   const canManage = can(actor, "opex:manage");

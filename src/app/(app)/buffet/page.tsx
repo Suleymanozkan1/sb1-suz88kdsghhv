@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { buffetRange } from "@/server/table-export/reports/buffet";
 import { periodReport } from "@/server/services/buffet";
 import { can } from "@/server/auth/actor";
@@ -22,6 +22,7 @@ export default async function BreakfastPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const range = buffetRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "buffet:view", hotelId);
   const res = await guarded(() => periodReport(prisma, actor, hotelId, { from: range.from, to: range.to }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const r = res.data;

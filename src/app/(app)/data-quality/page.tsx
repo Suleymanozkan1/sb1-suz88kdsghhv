@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { dataQuality, dqText } from "@/server/services/data-quality";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th, cn } from "@/components/ui";
@@ -18,6 +18,7 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  requirePageAccess(actor, "dashboard:view", hotelId);
   const res = await guarded(() => dataQuality(prisma, actor, hotelId));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const { score, checks } = res.data;

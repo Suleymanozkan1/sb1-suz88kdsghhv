@@ -1,4 +1,4 @@
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { listReports } from "@/server/services/reports";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -14,6 +14,7 @@ const LABEL: Record<string, string> = { FULL_COST_EXPORT: "Full cost export (Exc
 export default async function ReportsPage() {
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "report:view", hotelId);
   const res = await guarded(() => listReports(prisma, actor, hotelId));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const now = new Date();

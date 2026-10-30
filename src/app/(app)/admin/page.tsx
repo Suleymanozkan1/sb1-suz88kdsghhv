@@ -1,6 +1,7 @@
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { prisma } from "@/server/db";
 import { can } from "@/server/auth/actor";
+import { ROLE_TEMPLATES } from "@/server/auth/permissions";
 import { adminOverview, CATEGORY_GROUPS, trainingVideosOf } from "@/server/services/admin";
 import { listInvites } from "@/server/services/tenancy";
 import { Alert, PageHeader } from "@/components/ui";
@@ -11,6 +12,7 @@ export const metadata = { title: "Administration" };
 
 export default async function AdminPage() {
   const { actor, hotelId } = await pageContext();
+  requirePageAccess(actor, "admin:users", hotelId);
   const t = await getT();
   const res = await guarded(() => Promise.all([adminOverview(prisma, actor, hotelId), listInvites(prisma, actor, hotelId)]));
   if (!res.ok) return <Alert>{res.error}</Alert>;
@@ -31,7 +33,7 @@ export default async function AdminPage() {
         hotel={{ name: o.hotel.name, totalRooms: o.hotel.totalRooms, baseCurrency: o.hotel.baseCurrency, timezone: o.hotel.timezone, priceAlertPct: o.hotel.priceAlertPct.toString(), wasteApprovalValue: o.hotel.wasteApprovalValue.toString(), adjustmentApprovalValue: o.hotel.adjustmentApprovalValue.toString(), marginTargetPct: o.hotel.marginTargetPct.toString(), businessDayCutoff: o.hotel.businessDayCutoff, autoDeductSales: o.hotel.autoDeductSales ? 1 : 0 }}
         hotels={orgHotels}
         currentHotelId={hotelId}
-        roles={o.roles}
+        roles={o.roles.map((r) => ({ ...r, description: ROLE_TEMPLATES.find((x) => x.key === r.key)?.description }))}
         users={o.users.map((u) => ({ id: u.id, email: u.email, name: u.name, active: u.active, roleKey: u.role.key, roleName: u.role.name, allDepartments: u.role.allDepartments, departmentIds: u.deptAccess.map((d) => d.departmentId), hotelIds: u.hotelAccess.map((h) => h.hotelId) }))}
         invites={invites.map((i) => ({ ...i, createdAt: i.createdAt.toISOString(), expiresAt: i.expiresAt.toISOString(), acceptedAt: i.acceptedAt?.toISOString() ?? null, revokedAt: i.revokedAt?.toISOString() ?? null }))}
         departments={o.departments.map((d) => ({ id: d.id, code: d.code, name: d.name, isOutlet: d.isOutlet, active: d.active, parentId: d.parentId, sqm: d.sqm?.toString() ?? null, headcount: d.headcount }))}

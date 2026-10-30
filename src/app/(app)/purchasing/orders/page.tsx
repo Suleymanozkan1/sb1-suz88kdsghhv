@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { orderRecommendations } from "@/server/services/inventory";
 import { autoOrderOverview } from "@/server/services/auto-order";
 import { can } from "@/server/auth/actor";
@@ -33,6 +33,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "recommendations";
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  requirePageAccess(actor, "purchase:view", hotelId);
   // trial: every feature is open (full package); the plan badges say so instead of looking locked
   const trial = (await hotelAccess(prisma, hotelId)).access?.state === "TRIAL" || trialAllFeatures();
   const link = (v: Tab, label: string, badge?: React.ReactNode) => (
