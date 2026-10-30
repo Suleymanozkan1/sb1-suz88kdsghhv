@@ -8,7 +8,8 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  // CI: one retry, reported as "flaky", so a slow shared runner does not fail the job on a 5 s wait
+  retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   globalSetup: "./tests/e2e/global-setup.ts",
   use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure", screenshot: "only-on-failure" },

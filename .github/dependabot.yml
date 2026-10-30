@@ -1,0 +1,23 @@
+# Weekly dependency updates: minor and patch releases grouped into one pull request per ecosystem, majors one by one
+# (they need a migration, e.g. zod 4 and prisma 7). Security updates are opened as soon as an advisory appears.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Istanbul
+    groups:
+      github-actions:
+        patterns: ["*"]
