@@ -82,7 +82,7 @@
     "globals": "^17.13.0",
     "pg": "^8.23.1",
     "postcss": "^8.5.28",
-    "prisma": "^6.19.3",
+    "prisma": "^7.10.1",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.23.15",
     "typescript": "5.9",
