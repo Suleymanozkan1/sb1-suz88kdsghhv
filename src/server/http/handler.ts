@@ -151,7 +151,8 @@ export function errorResponse(e: unknown, locale: Locale = "en", ctx: { requestI
 }
 
 /** Mutations must come from our own origin (CSRF defence in depth on top of SameSite cookies). */
-function sameOrigin(req: NextRequest): boolean {
+/** CSRF: the Origin must be this host; without one, a browser-marked cross-site request is refused. */
+export function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return req.headers.get("sec-fetch-site") !== "cross-site";
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");

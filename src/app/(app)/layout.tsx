@@ -19,12 +19,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!actor) redirect("/login");
   const hotelId = await currentHotelId();
   if (!hotelId) redirect(actor.permissions.has("platform:admin") ? "/platform" : "/no-access");
-  const [hotels, pending, approvals, org, access, scope] = await Promise.all([
+  // count approvers (Admin → warehouses) open /approvals even when their role has no dashboard
+  const approvals = await canOpenApprovals(prisma, actor, hotelId);
+  const [hotels, pending, org, access, scope] = await Promise.all([
     prisma.hotel.findMany({ where: { id: { in: [...actor.hotelIds] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     // only the requests this user can decide: a chef is not shown the manager's queue
-    decidableApprovalCount(prisma, actor, hotelId),
-    // count approvers (Admin → warehouses) open /approvals even when their role has no dashboard
-    canOpenApprovals(prisma, actor, hotelId),
+    decidableApprovalCount(prisma, actor, hotelId, approvals),
     prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { trainingVideos: true } }),
     organizationAccess(prisma, actor.organizationId),
     departmentNavFlags(prisma, actor, hotelId),

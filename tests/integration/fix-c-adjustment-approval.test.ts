@@ -151,3 +151,38 @@ describe("manual adjustments above the approval value (BIZ-03)", () => {
     }
   });
 });
+
+describe("adjustment requests are checked like a posting before they wait (review findings)", () => {
+  let lamb = "";
+  const lambOut = (kg: number, extra: Record<string, unknown> = {}) =>
+    postUserMovement(prisma, fb, h.hotel.id, { type: "ADJUSTMENT_OUT", warehouseId: h.wh.restStore.id, productId: lamb, departmentId: h.depts.restaurant.id, quantity: kg, unit: "kg", reason: "counted short", txDate: day("2026-09-06"), ...extra });
+  const requests = () => prisma.approval.count({ where: { hotelId: h.hotel.id, action: "MANUAL_ADJUSTMENT" } });
+
+  beforeAll(async () => {
+    lamb = (await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "LAMB", name: "Lamb", costingMethod: "WEIGHTED_AVERAGE" })).id;
+    // 10 kg at 400 = 4 000
+    await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.restStore.id, productId: lamb, type: "OPENING", quantity: 10, unitCost: 400, txDate: day("2026-09-01"), sourceType: "MANUAL" });
+  });
+
+  it("more than the store holds is refused at once, not queued for an approval that could never post", async () => {
+    const before = await requests();
+    await expect(lambOut(25)).rejects.toMatchObject({ code: "INSUFFICIENT_STOCK" });
+    expect(await requests()).toBe(before);
+  });
+
+  it("a date the posting would refuse (future) is refused at once", async () => {
+    const before = await requests();
+    await expect(lambOut(5, { txDate: new Date(Date.now() + 5 * 24 * 3600 * 1000) })).rejects.toThrow(/future/);
+    expect(await requests()).toBe(before);
+  });
+
+  it("a retry after the request was decided says so instead of 'waiting for approval'", async () => {
+    const r = await lambOut(5, { idempotencyKey: "lamb-retry" }); // 2 000 ≥ 1 000
+    expect(r.status).toBe("PENDING_APPROVAL");
+    if (r.status !== "PENDING_APPROVAL") return;
+    // the same retry while it still waits: the same request
+    expect(await lambOut(5, { idempotencyKey: "lamb-retry" })).toMatchObject({ status: "PENDING_APPROVAL", approvalId: r.approvalId });
+    await decideApproval(prisma, cc, h.hotel.id, { approvalId: r.approvalId, decision: "REJECT", note: "recount first" });
+    await expect(lambOut(5, { idempotencyKey: "lamb-retry" })).rejects.toThrow(/already decided/);
+  });
+});

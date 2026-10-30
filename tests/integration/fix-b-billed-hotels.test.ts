@@ -47,6 +47,21 @@ describe("peakActive (walks the audit trail back from today)", () => {
     // b suspended, then reopened, then d added: a, b, d all active at the end
     expect(peakActive(hotels.map((h) => (h.id === "b" ? { ...h, active: true } : h)), [...events, { entityId: "b", action: "HOTEL_ACTIVATE", createdAt: T(25) }], from)).toBe(3);
   });
+
+  it("a repeated suspend of a hotel already suspended changed nothing (review finding)", () => {
+    const hotels = [
+      { id: "a", organizationId: "o", active: true, createdAt: T(0) },
+      { id: "b", organizationId: "o", active: false, createdAt: T(0) },
+    ];
+    // b suspended at 15, suspended again at 20: it was off from 15 on, so the peak is 2 (a and b before 15), never 3
+    const events = [
+      { entityId: "b", action: "HOTEL_SUSPEND", createdAt: T(15) },
+      { entityId: "b", action: "HOTEL_SUSPEND", createdAt: T(20) },
+    ];
+    expect(peakActive(hotels, events, from)).toBe(2);
+    // a repeated activate of an active hotel: still one hotel, before and after
+    expect(peakActive([{ id: "x", organizationId: "o", active: true, createdAt: T(0) }], [{ entityId: "x", action: "HOTEL_ACTIVATE", createdAt: T(12) }, { entityId: "x", action: "HOTEL_ACTIVATE", createdAt: T(18) }], from)).toBe(1);
+  });
 });
 
 describe("payment notices bill the peak", () => {

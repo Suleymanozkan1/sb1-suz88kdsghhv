@@ -16,6 +16,7 @@ import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment, requirePermission } from "../auth/actor";
 import { postMovement, previewIssueCost, previewReceiptCost, transferStock } from "./ledger";
 import { audit } from "./audit";
+import { assertPostable } from "./period";
 import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 import { toConversions } from "./products";
 import { openPoQuantities } from "./purchasing";
@@ -72,6 +73,13 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
       const value = inbound ? (unitCostPerStock ? conv.quantity.times(unitCostPerStock) : await previewReceiptCost(tx, hotelId, wh.id, product.id, conv.quantity)) : await previewIssueCost(tx, hotelId, wh.id, product.id, conv.quantity);
       // no known cost: nothing to compare, the posting below refuses it (MISSING_COST)
       if (value && wasteRequiresApproval({ value, stockQty: conv.quantity }, { valueThreshold: hotel.adjustmentApprovalValue.toString() })) {
+        // a request the approver could never post is refused now, as the posting would be: closed period, future date, missing stock
+        await assertPostable(tx, actor, hotelId, input.txDate);
+        if (!inbound) {
+          const bal = await tx.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: wh.id, productId: product.id } }, select: { quantity: true } });
+          const available = D(bal?.quantity.toString() ?? 0);
+          if (conv.quantity.gt(available)) throw new DomainError("INSUFFICIENT_STOCK", `Insufficient stock for ${product.name}: available ${available.toString()} ${product.stockUnit}, requested ${conv.quantity.toString()}`, { productId: product.id, available: available.toString(), requested: conv.quantity.toString() });
+        }
         const movement: AdjustmentMovement = { type: input.type, warehouseId: wh.id, productId: product.id, departmentId: input.departmentId ?? null, quantity: toStorage(conv.quantity).toString(), unitCost: unitCostPerStock ? unitCostPerStock.toString() : null, txDate: input.txDate.toISOString(), reason: input.reason!, requestKey };
         return requestAdjustmentApproval(tx, actor, hotelId, { movement, value, product: product.name, warehouse: wh.name, quantity: input.quantity, unit: input.unit, departmentId: input.departmentId ?? wh.departmentId });
       }
@@ -98,7 +106,11 @@ async function requestAdjustmentApproval(tx: Tx, actor: Actor, hotelId: string, 
   // the same request sent twice (a retried click) waits once
   if (r.movement.requestKey) {
     const same = await tx.approval.findFirst({ where: { hotelId, action: "MANUAL_ADJUSTMENT", requestedById: actor.userId, payload: { path: ["movement", "requestKey"], equals: r.movement.requestKey } } });
-    if (same) return { status: "PENDING_APPROVAL", approvalId: same.id, estimatedValue: String((same.payload as { estimatedValue?: string } | null)?.estimatedValue ?? "") };
+    if (same) {
+      // decided meanwhile: a retry must not report a rejected or already posted adjustment as still waiting
+      if (same.status !== "PENDING") throw new DomainError("CONFLICT", "This adjustment request was already decided");
+      return { status: "PENDING_APPROVAL", approvalId: same.id, estimatedValue: String((same.payload as { estimatedValue?: string } | null)?.estimatedValue ?? "") };
+    }
   }
   const estimatedValue = toStorage(r.value).toString();
   const id = randomUUID();

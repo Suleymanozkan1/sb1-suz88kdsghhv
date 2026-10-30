@@ -11,6 +11,7 @@ import { currentActor } from "@/server/auth/session";
 import { prisma } from "@/server/db";
 import { accessHas, FEATURES, FEATURE_LABEL, organizationAccess, type Feature } from "@/server/plans";
 import { featureExport } from "@/lib/feature-exports";
+import { exportMaxMonths } from "@/server/export-limits";
 import { Button, Input, Label, PageHeader, Select } from "./ui";
 import { getT } from "@/i18n/server";
 
@@ -43,7 +44,7 @@ export async function FeatureGate({ feature, children }: { feature: Feature; chi
               <input type="hidden" name="format" value="csv" />
               <div className="grid gap-2 sm:grid-cols-3">
                 <div><Label htmlFor="fg-table">{t("Report")}</Label><Select id="fg-table" name="table">{csv.tables.map(([key, title]) => <option key={key} value={key}>{t(title)}</option>)}</Select></div>
-                <div><Label htmlFor="fg-from">{t("From")}</Label><Input id="fg-from" name="from" type="date" defaultValue={ymd(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 3, 1)))} required /></div>
+                <div><Label htmlFor="fg-from">{t("From")}</Label><Input id="fg-from" name="from" type="date" defaultValue={ymd(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (exportMaxMonths() ?? 4) + 1, 1)))} required /></div>
                 <div><Label htmlFor="fg-to">{t("To")}</Label><Input id="fg-to" name="to" type="date" defaultValue={ymd(today)} required /></div>
               </div>
               <Button type="submit" size="sm" variant="secondary">{t("Download CSV")}</Button>

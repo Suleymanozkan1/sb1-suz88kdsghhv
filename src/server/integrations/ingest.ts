@@ -136,7 +136,11 @@ async function ingestChecks(db: Db, actor: Actor, hotelId: string, p: Extract<In
   // one import (one transaction) per outlet of the business day: a big hotel's day no longer holds every outlet's stock
   // rows locked in one long transaction, and one outlet's problem does not reject the others' sales
   const byOutlet = new Map<string, Row[]>();
-  for (const r of fresh) byOutlet.set(r.departmentId, [...(byOutlet.get(r.departmentId) ?? []), r]);
+  for (const r of fresh) {
+    const list = byOutlet.get(r.departmentId);
+    if (list) list.push(r);
+    else byOutlet.set(r.departmentId, [r]);
+  }
   const bad = new Set<number>();
   const costCache = new Map<string, Map<string, Decimal>>();
   for (const part of byOutlet.values()) {

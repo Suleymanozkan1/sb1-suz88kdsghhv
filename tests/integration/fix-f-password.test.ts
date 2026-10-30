@@ -253,6 +253,12 @@ describe("forgotten password by e-mail", () => {
     const res = await resetPOST(post("/api/auth/password-reset", { email: "x@test.local" }, { origin: "not a url" }));
     expect(res.status).toBe(403);
   });
+
+  it("without an Origin header, a browser-marked cross-site request is refused, as api() does", async () => {
+    const req = post("/api/auth/password-reset", { email: "x@test.local" }, { "sec-fetch-site": "cross-site" });
+    req.headers.delete("origin");
+    expect((await resetPOST(req)).status).toBe(403);
+  });
 });
 
 describe("login audit", () => {

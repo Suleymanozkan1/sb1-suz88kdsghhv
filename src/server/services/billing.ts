@@ -123,8 +123,15 @@ const HOTEL_STATE_ACTIONS = ["HOTEL_SUSPEND", "HOTEL_ACTIVATE"];
  */
 export function peakActive(hotels: HotelLife[], events: HotelEvent[], from: Date): number {
   const active = new Map(hotels.map((h) => [h.id, h.active]));
+  // a repeated suspend (or activate) of a hotel already in that state changed nothing: only the first one counts
+  const last = new Map<string, string>();
+  const changes = [...events].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).filter((e) => {
+    if (!e.entityId || last.get(e.entityId) === e.action) return false;
+    last.set(e.entityId, e.action);
+    return true;
+  });
   const steps = [
-    ...events.filter((e) => e.entityId && active.has(e.entityId) && e.createdAt >= from).map((e) => ({ at: e.createdAt.getTime(), id: e.entityId!, before: e.action === "HOTEL_SUSPEND" })),
+    ...changes.filter((e) => e.entityId && active.has(e.entityId) && e.createdAt >= from).map((e) => ({ at: e.createdAt.getTime(), id: e.entityId!, before: e.action === "HOTEL_SUSPEND" })),
     ...hotels.filter((h) => h.createdAt >= from).map((h) => ({ at: h.createdAt.getTime(), id: h.id, before: false })),
   ].sort((a, b) => b.at - a.at);
   let now = [...active.values()].filter(Boolean).length;
