@@ -2,7 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError } from "zod";
 import { DomainError } from "@/domain/errors";
-import { prisma } from "../db";
+import { isTransientTxError, prisma } from "../db";
 import { readJson, requestIdOf } from "../http/handler";
 import type { Actor } from "../auth/actor";
 import { accessHas, hotelAccess } from "../plans";
@@ -34,6 +34,8 @@ export function botApi(fn: (c: { hotelId: string; actor: Actor; body: () => Prom
       if (e instanceof DomainError) return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: STATUS[e.code] ?? 400 });
       const status = (e as { status?: number }).status;
       if (status === 413) return NextResponse.json({ error: { code: "TOO_LARGE", message: "Payload too large" } }, { status });
+      // the bot sends the delivery again later: a deadlock that outlived the retries is "busy", not a crash
+      if (isTransientTxError(e)) return NextResponse.json({ error: { code: "BUSY", message: "Busy: retry later", requestId } }, { status: 503, headers: { "retry-after": "5" } });
       log.error("integrations unhandled error", { requestId, path: req.nextUrl.pathname, hotelId: who.hotelId, ...errorFields(e) });
       return NextResponse.json({ error: { code: "INTERNAL", message: "Unexpected error", requestId } }, { status: 500 });
     }

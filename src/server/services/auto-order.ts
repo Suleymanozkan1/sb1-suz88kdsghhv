@@ -13,6 +13,7 @@ import { defaultConverter } from "@/domain/uom";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
+import { nextNumber } from "../numbering";
 import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
 import { hotelAccess, hotelPlan, planHas, trialAllFeatures } from "../plans";
@@ -280,9 +281,7 @@ export async function addSupplier(db: Db, actor: Actor, hotelId: string, raw: un
   const input = supplierEdit.parse(raw);
   return inTx(db, async (tx) => {
     if (await tx.supplier.findFirst({ where: { hotelId, name: { equals: input.name, mode: "insensitive" } } })) throw new DomainError("DUPLICATE", `Supplier ${input.name} exists`);
-    const used = await tx.supplier.findMany({ where: { hotelId, code: { startsWith: "SUP-" } }, select: { code: true } });
-    const n = used.reduce((m, s) => Math.max(m, Number(/^SUP-(\d+)$/.exec(s.code)?.[1] ?? 0)), 0) + 1;
-    const s = await tx.supplier.create({ data: { hotelId, code: `SUP-${String(n).padStart(3, "0")}`, ...input } });
+    const s = await tx.supplier.create({ data: { hotelId, code: await nextNumber(tx, hotelId, "SUPPLIER"), ...input } });
     await audit(tx, actor, { hotelId, action: "SUPPLIER_CREATE", entityType: "Supplier", entityId: s.id, after: s });
     return s;
   });

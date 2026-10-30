@@ -9,6 +9,7 @@ import { defaultConverter, type ProductConversion } from "@/domain/uom";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
+import { nextNumber } from "../numbering";
 import { assertHotelRefs } from "../auth/scope";
 import { currentUnitCosts, fifoNextCosts } from "./ledger";
 import { decimalText } from "@/lib/format";
@@ -77,12 +78,8 @@ export async function createProduct(db: Db, actor: Actor, hotelId: string, raw: 
   });
 }
 
-/** Next free automatic stock code: STK-00001… */
-export async function nextSku(db: Db, hotelId: string): Promise<string> {
-  const used = await db.product.findMany({ where: { hotelId, sku: { startsWith: "STK-" } }, select: { sku: true } });
-  const max = used.reduce((m, p) => Math.max(m, Number(/^STK-(\d+)$/.exec(p.sku)?.[1] ?? 0)), 0);
-  return `STK-${String(max + 1).padStart(5, "0")}`;
-}
+/** Next free automatic stock code: STK-00001… (locked per hotel until the transaction ends) */
+export const nextSku = (db: Db, hotelId: string): Promise<string> => nextNumber(db, hotelId, "SKU");
 
 export async function updateProduct(db: Db, actor: Actor, hotelId: string, productId: string, raw: unknown) {
   authorize(actor, "product:manage", { hotelId });

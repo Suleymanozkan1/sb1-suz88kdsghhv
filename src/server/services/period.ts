@@ -22,11 +22,10 @@ export async function periodFor(db: Db, hotelId: string, date: Date): Promise<Co
   const existing = await db.costPeriod.findFirst({ where: { hotelId, startDate: { lte: day }, endDate: { gte: day } } });
   if (existing) return existing;
   const b = monthBounds(date);
-  return db.costPeriod.upsert({
-    where: { hotelId_code: { hotelId, code: b.code } },
-    create: { hotelId, code: b.code, startDate: b.start, endDate: b.end },
-    update: {},
-  });
+  // INSERT … ON CONFLICT DO NOTHING: the first postings of a new month arriving at once all get the same period
+  // (an upsert here is read-then-insert, and the slower one failed on the unique index)
+  await db.costPeriod.createMany({ data: [{ hotelId, code: b.code, startDate: b.start, endDate: b.end }], skipDuplicates: true });
+  return db.costPeriod.findUniqueOrThrow({ where: { hotelId_code: { hotelId, code: b.code } } });
 }
 
 const POSTABLE: PeriodStatus[] = ["OPEN", "REOPENED"];

@@ -10,7 +10,10 @@ import { DomainError } from "@/domain/errors";
 import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
-import { postMovement, previewIssueCost } from "./ledger";
+import { lockBalances, postMovement, previewIssueCost } from "./ledger";
+import { assertPostable } from "./period";
+import { nextNumber } from "../numbering";
+import { Prisma, type CostPeriod } from "@prisma/client";
 import { assertHotelRefs, requireWarehouseScope, warehouseScope } from "../auth/scope";
 import { decimalText } from "@/lib/format";
 
@@ -25,12 +28,11 @@ export async function startCount(db: Db, actor: Actor, hotelId: string, input: {
     if (input.productIds) await assertHotelRefs(tx, hotelId, { productIds: input.productIds });
     const balances = await tx.stockBalance.findMany({ where: { warehouseId: wh.id, ...(input.productIds ? { productId: { in: input.productIds } } : {}) } });
     const productIds = input.productIds ?? balances.map((b) => b.productId);
-    const n = await tx.stockCount.count({ where: { hotelId } });
     const count = await tx.stockCount.create({
       data: {
         hotelId,
         warehouseId: wh.id,
-        number: `CNT-${String(n + 1).padStart(6, "0")}`,
+        number: await nextNumber(tx, hotelId, "CNT"),
         countDate: input.countDate,
         countedById: actor.userId,
         note: input.note ?? null,
@@ -214,14 +216,35 @@ export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: 
   const c = await tx.stockCount.findFirst({ where: { id: countId, hotelId, deletedAt: null }, include: { lines: true } });
   if (!c) throw new DomainError("NOT_FOUND", "Count not found");
   if (c.status === "POSTED") throw new DomainError("CONFLICT", "Count already posted");
+  const productIds = [...new Set(c.lines.map((l) => l.productId))];
+  // the store's balances are locked first (fixed order), so the quantities read once below stay what each line would
+  // have read just before its own posting: a 1 000-line count is a handful of reads instead of two per line
+  await lockBalances(tx, hotelId, productIds.map((productId) => ({ warehouseId: c.warehouseId, productId })));
+  const [afterRows, balRows] = await Promise.all([
+    tx.stockTransaction.groupBy({ by: ["productId"], where: { warehouseId: c.warehouseId, productId: { in: productIds }, txDate: { gt: c.countDate } }, _sum: { quantity: true } }),
+    tx.stockBalance.findMany({ where: { warehouseId: c.warehouseId, productId: { in: productIds } }, select: { productId: true, quantity: true } }),
+  ]);
+  const afterOf = new Map(afterRows.map((r) => [r.productId, D(r._sum.quantity?.toString() ?? 0)]));
+  const balOf = new Map(balRows.map((r) => [r.productId, D(r.quantity.toString())]));
+  const done = new Set<string>();
+  let period: CostPeriod | undefined;
+  const lineWrites: Array<{ id: string; systemQty: string; varianceQty: string; unitCost: string; varianceValue: string }> = [];
   let posted: Decimal = ZERO;
   for (const l of c.lines) {
     // movements dated after the count must not be double counted: physical@countDate vs ledger@countDate
-    const after = await tx.stockTransaction.aggregate({ where: { warehouseId: c.warehouseId, productId: l.productId, txDate: { gt: c.countDate } }, _sum: { quantity: true } });
-    const bal = await tx.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: c.warehouseId, productId: l.productId } } });
-    const systemAtCount = D(bal?.quantity.toString() ?? 0).minus(D(after._sum.quantity?.toString() ?? 0));
+    let systemAtCount: Decimal;
+    if (done.has(l.productId)) {
+      // a second line of the same product sees what the first one posted
+      const after = await tx.stockTransaction.aggregate({ where: { warehouseId: c.warehouseId, productId: l.productId, txDate: { gt: c.countDate } }, _sum: { quantity: true } });
+      const bal = await tx.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: c.warehouseId, productId: l.productId } } });
+      systemAtCount = D(bal?.quantity.toString() ?? 0).minus(D(after._sum.quantity?.toString() ?? 0));
+    } else {
+      systemAtCount = (balOf.get(l.productId) ?? ZERO).minus(afterOf.get(l.productId) ?? ZERO);
+    }
     const variance = D(l.countedQty.toString()).minus(systemAtCount);
     if (variance.isZero()) continue;
+    // every movement of the count has the count's date: the period is checked once (its lock is held until commit)
+    period ??= await assertPostable(tx, actor, hotelId, c.countDate);
     const stx = await postMovement(tx, actor, {
       hotelId,
       warehouseId: c.warehouseId,
@@ -234,13 +257,18 @@ export async function postCount(tx: Tx, actor: Actor, hotelId: string, countId: 
       reason: l.reason ?? `Count ${c.number}`,
       idempotencyKey: `count:${c.id}:${l.productId}`,
       allowNegative: false,
+      postable: period,
     });
-    await tx.stockCountLine.update({ where: { id: l.id }, data: { systemQty: toStorage(systemAtCount).toString(), varianceQty: toStorage(variance).toString(), unitCost: stx.unitCost, varianceValue: stx.totalCost } });
+    done.add(l.productId);
+    lineWrites.push({ id: l.id, systemQty: toStorage(systemAtCount).toString(), varianceQty: toStorage(variance).toString(), unitCost: stx.unitCost.toString(), varianceValue: stx.totalCost.toString() });
     posted = posted.plus(D(stx.totalCost.toString()));
   }
-  for (const l of c.lines) {
-    await tx.stockBalance.updateMany({ where: { warehouseId: c.warehouseId, productId: l.productId }, data: { lastCountAt: c.countDate } });
+  for (let i = 0; i < lineWrites.length; i += 1000) {
+    const rows = lineWrites.slice(i, i + 1000).map((w) => Prisma.sql`(${w.id}, ${w.systemQty}::numeric, ${w.varianceQty}::numeric, ${w.unitCost}::numeric, ${w.varianceValue}::numeric)`);
+    await tx.$executeRaw`UPDATE "StockCountLine" AS l SET "systemQty" = v.sq, "varianceQty" = v.vq, "unitCost" = v.uc, "varianceValue" = v.vv
+      FROM (VALUES ${Prisma.join(rows)}) AS v(id, sq, vq, uc, vv) WHERE l."id" = v.id AND l."countId" = ${c.id}`;
   }
+  if (productIds.length) await tx.stockBalance.updateMany({ where: { warehouseId: c.warehouseId, productId: { in: productIds } }, data: { lastCountAt: c.countDate } });
   await tx.stockCount.update({ where: { id: c.id }, data: { status: "POSTED", postedAt: new Date(), approvedById: opts.approved ? actor.userId : null, rejectionNote: null } });
   await audit(tx, actor, { hotelId, action: "COUNT_POST", entityType: "StockCount", entityId: c.id, after: { postedValue: posted.toString(), approved: opts.approved } });
   return posted;
