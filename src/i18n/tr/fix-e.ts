@@ -12,4 +12,6 @@ export const fixE: Record<string, string> = {
   "Rooms, housekeeping and laundry: room cost, operating costs, minibar, stock and waste of their departments.": "Odalar, kat hizmetleri ve çamaşırhane: kendi departmanlarının oda maliyeti, işletme giderleri, minibar, stok ve firesi.",
   "Sees every module of all departments, changes nothing.": "Tüm departmanların bütün modüllerini görür, hiçbir şeyi değiştirmez.",
   "Stores: goods receipts, transfers, issues, counts and minibar refills.": "Depolar: mal kabul, transfer, çıkış, sayım ve minibar dolumu.",
+  // /forbidden for hotel-wide pages (forecast, what-if, cost allocation)
+  "hotel-wide figures: needs a role with access to all departments": "otel geneli rakamlar: tüm departmanlara erişimi olan bir rol gerekir",
 };

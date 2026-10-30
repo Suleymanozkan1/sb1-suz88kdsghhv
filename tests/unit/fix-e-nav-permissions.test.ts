@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { canOpenHref, IMPORTS_PAGE_PERMISSIONS, NAV, navItems } from "@/components/nav";
+import { ALL_DEPARTMENTS, canOpenHref, IMPORTS_PAGE_PERMISSIONS, NAV, navFlags, navItems } from "@/components/nav";
 import { ROLE_TEMPLATES, type Permission } from "@/server/auth/permissions";
 
 const APP = path.join("src", "app", "(app)");
@@ -72,19 +72,37 @@ describe("menu entries follow the permission their page requires", () => {
 
   it.each(ROLE_TEMPLATES.map((t) => [t.key, t] as const))("%s: every visible menu entry opens", (_key, t) => {
     const has = new Set<string>(t.permissions);
-    for (const n of navItems(t.permissions)) {
+    for (const n of navItems(t.permissions, t.allDepartments ? [ALL_DEPARTMENTS] : [])) {
       if (n.href === "/") { expect(has.has("dashboard:view")).toBe(true); continue; }
       // canOpenApprovals: dashboard viewers and approvers (count approvers come in through the "approvals" flag)
       if (n.href === "/approvals") { expect(has.has("dashboard:view") || has.has("approval:decide")).toBe(true); continue; }
       const src = read(pageFile(n.href));
       for (const p of pageGuards(src)) expect(has.has(p), `${t.key} sees ${n.href} without ${p}`).toBe(true);
       if (typeof n.perm !== "string") expect(n.perm.some((p) => has.has(p)), `${t.key} sees ${n.href}`).toBe(true);
+      // a hotel-wide page refuses department-scoped roles
+      if (src.includes("requireAllDepartmentsPage(actor)")) expect(t.allDepartments, `${t.key} sees ${n.href}`).toBe(true);
     }
   });
 });
 
 describe("role menus (UX-03)", () => {
-  const menu = (key: string) => navItems(ROLE_TEMPLATES.find((t) => t.key === key)!.permissions).map((n) => n.href);
+  const menu = (key: string) => {
+    const t = ROLE_TEMPLATES.find((x) => x.key === key)!;
+    return navItems(t.permissions, navFlags({ departmentIds: t.allDepartments ? "ALL" : [] }, false)).map((n) => n.href);
+  };
+
+  it("hotel-wide pages (forecast and what-if, cost allocation) are shown to all-department roles only, as their pages require", () => {
+    for (const n of NAV) expect(read(pageFile(n.href)).includes("requireAllDepartmentsPage(actor)"), n.href).toBe(!!n.hotelWide);
+    expect(NAV.filter((n) => n.hotelWide).map((n) => n.href).sort()).toEqual(["/allocation", "/forecast"]);
+    for (const key of ["fb_manager", "rooms_division"]) {
+      expect(menu(key), key).not.toContain("/allocation");
+      expect(menu(key), key).not.toContain("/forecast");
+      expect(menu(key), key).toContain("/budget");
+    }
+    for (const key of ["cost_controller", "accounting_manager", "admin"]) expect(menu(key), key).toEqual(expect.arrayContaining(["/allocation", "/forecast"]));
+    // the same role with all departments (a department-scoped role row edited to all departments) sees them
+    expect(navItems(ROLE_TEMPLATES.find((t) => t.key === "fb_manager")!.permissions, [ALL_DEPARTMENTS]).map((n) => n.href)).toContain("/allocation");
+  });
 
   it("chefs and pastry chefs no longer see Imports (they may import nothing)", () => {
     for (const key of ["chef", "breakfast_chef", "pastry_chef"]) expect(menu(key), key).not.toContain("/imports");

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded, requirePageAccess } from "@/server/page";
+import { pageContext, guarded, requirePageAccess, requireAllDepartmentsPage } from "@/server/page";
 import { listRules, listRuns, previewPeriodAllocation } from "@/server/services/allocation";
 import { OPEX_CATEGORIES } from "@/server/services/opex";
 import { DRIVER_LABEL } from "@/domain/allocation";
@@ -26,6 +26,8 @@ export default async function AllocationPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const { actor, hotelId, hotel } = await pageContext();
   requirePageAccess(actor, "opex:view", hotelId);
+  // hotel-wide figures: the menu shows this page to all-department roles only (nav.ts hotelWide)
+  requireAllDepartmentsPage(actor);
   const cur = hotel.baseCurrency;
   const rules = await guarded(() => listRules(prisma, actor, hotelId));
   if (!rules.ok) return <Alert>{rules.error}</Alert>;

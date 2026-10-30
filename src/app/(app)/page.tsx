@@ -13,7 +13,7 @@ import { money, pct, qty } from "@/lib/format";
 import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
-import { homeHref } from "@/components/nav";
+import { homeHref, navFlags } from "@/components/nav";
 import { shareOfVariance, varianceBar, varianceTone } from "@/lib/variance-display";
 import { Title } from "@/components/title";
 import { gettingStarted } from "@/server/services/onboarding";
@@ -29,7 +29,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const t = await getT();
   // roles without the dashboard (e.g. warehouse user) start on the first page their menu offers
   if (!actor.permissions.has("dashboard:view")) {
-    const home = homeHref(actor.permissions, (await canOpenApprovals(prisma, actor, hotelId)) ? ["approvals"] : []);
+    const home = homeHref(actor.permissions, navFlags(actor, await canOpenApprovals(prisma, actor, hotelId)));
     if (home && home !== "/") redirect(home);
     return <Empty title={t("Nothing to show for your role on this page")}>{t("Ask your company administrator if you need access.")}</Empty>;
   }
