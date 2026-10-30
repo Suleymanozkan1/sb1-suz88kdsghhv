@@ -1,8 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
-import { login } from "./helpers";
+import { PASSWORD } from "./helpers";
 
 // the audit measured on a 390 px wide phone (Pixel 7 default is 412)
 test.use({ viewport: { width: 390, height: 844 } });
+
+// the shared login() waits for the sidebar, which a phone only shows behind "Open menu"
+async function login(page: Page, user: string) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(`${user}@grandanatolia.test`);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
+}
 
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 

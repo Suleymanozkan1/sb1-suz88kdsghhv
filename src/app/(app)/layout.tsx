@@ -5,6 +5,7 @@ import { Shell } from "@/components/shell";
 import { navFlags } from "@/components/nav";
 import { canOpenApprovals } from "@/server/services/approvals";
 import { decidableApprovalCount } from "@/server/approval-badge";
+import { departmentNavFlags } from "@/server/nav-scope";
 import { trainingVideosOf } from "@/server/services/admin";
 import { TrainingVideosProvider } from "@/components/page-help";
 import { effectiveVideos } from "@/lib/training-videos";
@@ -18,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!actor) redirect("/login");
   const hotelId = await currentHotelId();
   if (!hotelId) redirect(actor.permissions.has("platform:admin") ? "/platform" : "/no-access");
-  const [hotels, pending, approvals, org, access] = await Promise.all([
+  const [hotels, pending, approvals, org, access, scope] = await Promise.all([
     prisma.hotel.findMany({ where: { id: { in: [...actor.hotelIds] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     // only the requests this user can decide: a chef is not shown the manager's queue
     decidableApprovalCount(prisma, actor, hotelId),
@@ -26,11 +27,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     canOpenApprovals(prisma, actor, hotelId),
     prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { trainingVideos: true } }),
     organizationAccess(prisma, actor.organizationId),
+    departmentNavFlags(prisma, actor, hotelId),
   ]);
   // modules outside the package: shown with a lock in the menu (their pages explain, see FeatureGate)
   const locked = (Object.keys(FEATURES) as Feature[]).filter((f) => !accessHas(access, f));
   return (
-    <Shell user={{ name: actor.name, role: actor.roleName }} hotels={hotels} hotelId={hotelId} permissions={[...actor.permissions]} navFlags={navFlags(actor, approvals)} pendingApprovals={pending} locked={locked}>
+    <Shell user={{ name: actor.name, role: actor.roleName }} hotels={hotels} hotelId={hotelId} permissions={[...actor.permissions]} navFlags={navFlags(actor, approvals, scope)} pendingApprovals={pending} locked={locked}>
       {access.access && <SubscriptionBanner state={access.access.state} daysLeft={access.access.daysLeft} admin={actor.permissions.has("admin:users")} />}
       <TrainingVideosProvider videos={effectiveVideos(trainingVideosOf(org?.trainingVideos))}>{children}</TrainingVideosProvider>
     </Shell>

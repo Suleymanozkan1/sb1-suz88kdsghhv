@@ -24,6 +24,9 @@ export const NAV_GROUPS: Array<{ key: NavGroup; label: string }> = [
   { key: "admin", label: "Company" },
 ];
 
+/** Menu flag of department-scoped users whose departments include the Minibar department (its page refuses everyone else). */
+export const MINIBAR_DEPARTMENT = "minibar-department";
+
 type NavItem = {
   href: string;
   label: string;
@@ -37,6 +40,8 @@ type NavItem = {
   alsoNeeds?: readonly Permission[];
   /** hotel-wide figures only: the page (and its services) refuse department-scoped roles (ALL_DEPARTMENTS flag) */
   hotelWide?: true;
+  /** a department-scoped role sees the entry only with this server-computed flag (its department is in the role's scope) */
+  scopeFlag?: string;
   group: NavGroup;
   flag?: string;
   /** module that belongs to a package (src/server/plans.ts) */
@@ -65,7 +70,7 @@ export const NAV: NavItem[] = [
   { href: "/sales", label: "Sales Import", icon: Upload, perm: "sales:import", group: "kitchen" },
   { href: "/waste", label: "Waste", icon: Trash2, perm: "waste:view", group: "kitchen" },
   { href: "/buffet", label: "Breakfast", icon: UtensilsCrossed, perm: "buffet:view", group: "kitchen", feature: "buffet" },
-  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view", group: "kitchen", feature: "minibar" },
+  { href: "/minibar", label: "Minibar", icon: Wine, perm: "minibar:view", scopeFlag: MINIBAR_DEPARTMENT, group: "kitchen", feature: "minibar" },
   // free consumption: on-house (owners, GM …) and hospitality (feedback r3 §8)
   { href: "/comps", label: "On-house & Hospitality", icon: Gift, perm: "comp:view", group: "kitchen", feature: "comps" },
   // sales mix and margin by dish: a cost analysis, not for roles without variance rights (breakfast chef)
@@ -93,8 +98,8 @@ export const NAV: NavItem[] = [
 export const ALL_DEPARTMENTS = "all-departments";
 
 /** The menu flags the server computes for an actor: department scope and the approvals list (count approvers). */
-export function navFlags(actor: { departmentIds: "ALL" | readonly string[] }, approvals: boolean): string[] {
-  return [...(actor.departmentIds === "ALL" ? [ALL_DEPARTMENTS] : []), ...(approvals ? ["approvals"] : [])];
+export function navFlags(actor: { departmentIds: "ALL" | readonly string[] }, approvals: boolean, scope: readonly string[] = []): string[] {
+  return [...(actor.departmentIds === "ALL" ? [ALL_DEPARTMENTS] : []), ...(approvals ? ["approvals"] : []), ...scope];
 }
 
 const anyOf = (p: Permission | readonly Permission[]): readonly Permission[] => (typeof p === "string" ? [p] : p);
@@ -109,7 +114,7 @@ export function pageAllowed(n: Pick<NavItem, "perm" | "alsoNeeds">, permissions:
 export function navItems(permissions: Iterable<string>, flags: Iterable<string> = []) {
   const has = new Set(permissions);
   const flag = new Set(flags);
-  return NAV.filter((n) => (pageAllowed(n, has) || (n.flag !== undefined && flag.has(n.flag))) && (!n.hotelWide || flag.has(ALL_DEPARTMENTS)));
+  return NAV.filter((n) => (pageAllowed(n, has) || (n.flag !== undefined && flag.has(n.flag))) && (!n.hotelWide || flag.has(ALL_DEPARTMENTS)) && (!n.scopeFlag || flag.has(ALL_DEPARTMENTS) || flag.has(n.scopeFlag)));
 }
 
 /** A link to a menu page (e.g. a getting-started step) is shown only when the page would open; other links are not checked here. */

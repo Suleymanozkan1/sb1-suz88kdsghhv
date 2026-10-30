@@ -3,16 +3,18 @@ import { pageContext } from "@/server/page";
 import { Alert, PageHeader } from "@/components/ui";
 import { getT } from "@/i18n/server";
 import { ALL_DEPARTMENTS, homeHref, navFlags } from "@/components/nav";
+import { departmentNavFlags } from "@/server/nav-scope";
+import { prisma } from "@/server/db";
 import { pageTitle } from "@/i18n/metadata";
 
 export const generateMetadata = pageTitle("No permission");
 
 export default async function Forbidden({ searchParams }: { searchParams: Promise<{ need?: string }> }) {
-  const { actor } = await pageContext();
+  const { actor, hotelId } = await pageContext();
   const { need } = await searchParams;
   const t = await getT();
   // "/" itself is off-limits without dashboard:view: send the user to the first page their role opens
-  const home = homeHref(actor.permissions, navFlags(actor, false));
+  const home = homeHref(actor.permissions, navFlags(actor, false, await departmentNavFlags(prisma, actor, hotelId)));
   return (
     <div className="space-y-4">
       <PageHeader title={t("No permission")} />
