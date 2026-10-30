@@ -14,6 +14,7 @@ import type { Actor } from "@/server/auth/actor";
 
 let h: Awaited<ReturnType<typeof makeHotel>>;
 let cc: Actor;
+let acc: Actor;
 let rest = "";
 let chicken = "";
 let budgetId = "";
@@ -22,6 +23,7 @@ const SEP = { from: new Date("2026-09-01T00:00:00Z"), to: new Date("2026-10-01T0
 beforeAll(async () => {
   h = await makeHotel("PLAN");
   cc = await h.actor("cost_controller");
+  acc = await h.actor("accounting_manager"); // approves the budgets the cost controller prepares
   rest = h.depts.restaurant.id;
   const p = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "CHK", name: "Chicken Breast" });
   chicken = p.id;
@@ -65,7 +67,7 @@ describe("budget (spec 192–194)", () => {
   });
 
   it("approval freezes the budget (DB trigger); a revision is a new draft; approving it supersedes", async () => {
-    await approveBudget(prisma, cc, h.hotel.id, budgetId);
+    await approveBudget(prisma, acc, h.hotel.id, budgetId);
     await expect(setBudgetLines(prisma, cc, h.hotel.id, budgetId, [])).rejects.toThrow(/Approved budgets/);
     const line = await prisma.budgetLine.findFirstOrThrow({ where: { budgetId } });
     await expect(prisma.budgetLine.update({ where: { id: line.id }, data: { amount: "1" } })).rejects.toThrow(/BUDGET_FROZEN/);
@@ -75,7 +77,7 @@ describe("budget (spec 192–194)", () => {
     expect(lines[0]!.amount.toString()).toBe("52500");
     // a budget file replaces all lines of the draft
     await importBudgetCsv(prisma, cc, h.hotel.id, rev.id, [{ month: "9", department: "REST", category: "food", amount: "10500" }, { month: "9", department: "REST", category: "LABOR", amount: "52500" }, { month: "10", department: "REST", category: "food", amount: "10500" }, { month: "10", department: "", category: "ENERGY", amount: "2000" }]);
-    await approveBudget(prisma, cc, h.hotel.id, rev.id);
+    await approveBudget(prisma, acc, h.hotel.id, rev.id);
     expect((await prisma.budget.findUniqueOrThrow({ where: { id: budgetId } })).status).toBe("SUPERSEDED");
     const chef = await h.actor("chef", [rest]);
     await expect(createBudget(prisma, chef, h.hotel.id, { year: 2026, name: "x" })).rejects.toThrow(/budget:manage/);

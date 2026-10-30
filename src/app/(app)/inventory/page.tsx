@@ -27,7 +27,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const inv = res.data;
   // a single product: from the cost review's critical-stock rows
   const rows = inv.rows.filter((r) => (!level || r.level === level) && (!sp.productId || r.productId === sp.productId));
-  const [warehouses, departments] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } })]);
+  const [warehouses, departments, thresholds] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }), prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { adjustmentApprovalValue: true } })]);
   const cur = hotel.baseCurrency;
   // status cards filter the list; clicking the active one clears the filter
   const href = (l?: string) => `?${new URLSearchParams(Object.entries({ group: sp.group, from: range.fromStr, to: range.toStr, level: l }).filter((e): e is [string, string] => !!e[1]))}`;
@@ -51,7 +51,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       </div>
       {can(actor, "inventory:post") && (
         <Card title={t("Record stock movement")} className="mt-4">
-          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
+          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} approvalValue={money(thresholds.adjustmentApprovalValue.toString(), cur, 0)} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
         </Card>
       )}
       <Card className="mt-4" padded={false} title={`${t("Stock by product")}${level ? ` · ${t(LEVEL_LABEL[level]!)}` : ""} (${rows.length})`} actions={sp.productId && rows[0] ? <ProductChip name={rows[0].name} clear={href(level)} /> : undefined}>

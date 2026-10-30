@@ -12,6 +12,7 @@ import { priceChange } from "@/domain/purchasing";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
+import { assertNotOwnRecord } from "./segregation";
 import { postMovement } from "./ledger";
 import { raiseAlert } from "./alerts";
 import { toConversions } from "./products";
@@ -92,6 +93,7 @@ export async function approvePurchaseOrder(db: Db, actor: Actor, hotelId: string
     const po = await tx.purchaseOrder.findFirst({ where: { id: poId, hotelId } });
     if (!po) throw new DomainError("NOT_FOUND", "Purchase order not found");
     if (po.status !== "DRAFT") throw new DomainError("VALIDATION", `PO is ${po.status}`);
+    await assertNotOwnRecord(tx, actor, hotelId, po.createdById);
     const updated = await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "APPROVED", approvedById: actor.userId } });
     await audit(tx, actor, { hotelId, action: "PO_APPROVE", entityType: "PurchaseOrder", entityId: po.id, before: { status: po.status }, after: { status: updated.status } });
     return updated;

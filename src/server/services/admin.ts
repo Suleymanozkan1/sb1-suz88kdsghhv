@@ -192,6 +192,8 @@ const hotelSettings = z.object({
   businessDayCutoff: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM").optional(),
   /** sold dishes' recipe ingredients leave the stock automatically (default on) */
   autoDeductSales: z.boolean().optional(),
+  /** the creator of a purchase order, budget or recipe version may approve it (small hotels with one manager) */
+  allowSelfApproval: z.boolean().optional(),
 });
 
 export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: unknown) {
@@ -203,9 +205,11 @@ export async function updateHotel(db: Db, actor: Actor, hotelId: string, input: 
     await tx.currency.upsert({ where: { code: p.baseCurrency }, create: { code: p.baseCurrency, organizationId: actor.organizationId, name: p.baseCurrency }, update: {} });
     const h = await tx.hotel.update({
       where: { id: hotelId },
-      data: { name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone, priceAlertPct: toStorage(p.priceAlertPct), wasteApprovalValue: toStorage(p.wasteApprovalValue), adjustmentApprovalValue: toStorage(p.adjustmentApprovalValue), marginTargetPct: toStorage(p.marginTargetPct), ...(p.businessDayCutoff ? { businessDayCutoff: p.businessDayCutoff } : {}), ...(p.autoDeductSales !== undefined ? { autoDeductSales: p.autoDeductSales } : {}) },
+      data: { name: p.name, totalRooms: p.totalRooms, baseCurrency: p.baseCurrency, timezone: p.timezone, priceAlertPct: toStorage(p.priceAlertPct), wasteApprovalValue: toStorage(p.wasteApprovalValue), adjustmentApprovalValue: toStorage(p.adjustmentApprovalValue), marginTargetPct: toStorage(p.marginTargetPct), ...(p.businessDayCutoff ? { businessDayCutoff: p.businessDayCutoff } : {}), ...(p.autoDeductSales !== undefined ? { autoDeductSales: p.autoDeductSales } : {}), ...(p.allowSelfApproval !== undefined ? { allowSelfApproval: p.allowSelfApproval } : {}) },
     });
     await audit(tx, actor, { hotelId, action: "HOTEL_SETTINGS", entityType: "Hotel", entityId: hotelId, before, after: h });
+    // an internal control switched on or off gets its own, easy to find audit row
+    if (h.allowSelfApproval !== before.allowSelfApproval) await audit(tx, actor, { hotelId, action: h.allowSelfApproval ? "SELF_APPROVAL_ALLOWED" : "SELF_APPROVAL_BLOCKED", entityType: "Hotel", entityId: hotelId, before: { allowSelfApproval: before.allowSelfApproval }, after: { allowSelfApproval: h.allowSelfApproval } });
     return h;
   });
 }

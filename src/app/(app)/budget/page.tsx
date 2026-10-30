@@ -2,6 +2,7 @@ import Link from "next/link";
 import { pageContext, guarded } from "@/server/page";
 import { budgetReport, listBudgets, targetReport, TARGET_METRICS } from "@/server/services/planning";
 import { can } from "@/server/auth/actor";
+import { selfApprovalAllowed } from "@/server/services/segregation";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { money, pct } from "@/lib/format";
@@ -26,7 +27,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const from = new Date(Date.UTC(year, month - 1, 1));
   const to = new Date(Date.UTC(year, month, 1));
-  const [budgets, targets] = await Promise.all([listBudgets(prisma, actor, hotelId), targetReport(prisma, actor, hotelId, from, to < now ? to : now)]);
+  const [budgets, targets, selfOk] = await Promise.all([listBudgets(prisma, actor, hotelId), targetReport(prisma, actor, hotelId, from, to < now ? to : now), selfApprovalAllowed(prisma, hotelId)]);
   const r = rep.data;
   const manage = can(actor, "budget:manage");
   const fmt = (unit: string, v: { times(n: number): unknown; toString(): string } | null) => (v === null ? "—" : unit === "pct" ? pct(f100(v), 2) : money(v, cur));
@@ -89,7 +90,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
         <Table>
           <thead><tr><Th>{tr("Year")}</Th><Th>{tr("Name")}</Th><Th>{tr("Status")}</Th><Th align="right">{tr("Lines")}</Th><Th align="right">{tr("Total cost")}</Th><Th /></tr></thead>
           <tbody className="divide-y divide-ink-100">
-            {budgets.map((b) => <tr key={b.id}><Td>{b.year}</Td><Td className="font-medium">{b.name}</Td><Td><Badge tone={b.status === "APPROVED" ? "green" : b.status === "DRAFT" ? "amber" : "gray"}>{tr(b.status)}</Badge></Td><Td align="right">{b._count.lines}</Td><Td align="right">{money(b.totalCost, cur, 0)}</Td><Td>{manage && <BudgetActions id={b.id} status={b.status} canApprove={can(actor, "budget:approve")} />}</Td></tr>)}
+            {budgets.map((b) => <tr key={b.id}><Td>{b.year}</Td><Td className="font-medium">{b.name}</Td><Td><Badge tone={b.status === "APPROVED" ? "green" : b.status === "DRAFT" ? "amber" : "gray"}>{tr(b.status)}</Badge></Td><Td align="right">{b._count.lines}</Td><Td align="right">{money(b.totalCost, cur, 0)}</Td><Td>{manage && <BudgetActions id={b.id} status={b.status} canApprove={can(actor, "budget:approve") && (selfOk || b.createdById !== actor.userId)} />}</Td></tr>)}
           </tbody>
         </Table>
         {manage && (

@@ -28,7 +28,7 @@ export default async function ApprovalsPage() {
   const users = new Map((await prisma.user.findMany({ where: { id: { in: [...pending, ...history].flatMap((a) => [a.requestedById, a.decidedById ?? ""]) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   return (
     <>
-      <PageHeader title={t("Approvals")} subtitle={t("Delete requests, high-value waste, stock counts. You can never approve your own request.")} exportKey="approvals" />
+      <PageHeader title={t("Approvals")} subtitle={t("Delete requests, high-value waste and adjustments, stock counts. You can never approve your own request.")} exportKey="approvals" />
       <Card title={t("Pending ({n})", { n: pending.length })} padded={false}>
         {pending.length === 0 ? <div className="p-4"><Empty title={t("Nothing waiting")} /></div> : (
           <Table>

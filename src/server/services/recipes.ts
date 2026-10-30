@@ -9,6 +9,7 @@ import { COST_MODEL, assertTreesWithinLimits, costRecipe, serializeCost, validat
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
+import { assertNotOwnRecord } from "./segregation";
 import { productCostTable, toConversions } from "./products";
 import { raiseAlert } from "./alerts";
 import { decimalText, localDay } from "@/lib/format";
@@ -258,7 +259,12 @@ export async function updateDraft(db: Db, actor: Actor, hotelId: string, version
  */
 export async function approveVersion(db: Db, actor: Actor, hotelId: string, versionId: string, opts: { effectiveFrom?: Date } = {}) {
   authorize(actor, "recipe:approve", { hotelId });
-  return inTx(db, (tx) => freezeAndApprove(tx, actor, hotelId, versionId, opts));
+  return inTx(db, async (tx) => {
+    // the explicit approval is a second pair of eyes: not its author's (editRecipe's immediate approval is a product choice)
+    const v = await tx.recipeVersion.findFirst({ where: { id: versionId, recipe: { hotelId, deletedAt: null } }, select: { createdById: true } });
+    await assertNotOwnRecord(tx, actor, hotelId, v?.createdById);
+    return freezeAndApprove(tx, actor, hotelId, versionId, opts);
+  });
 }
 
 /** Validate, cost, freeze and make a version the effective one (the caller has checked the permission). */

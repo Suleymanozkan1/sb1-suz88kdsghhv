@@ -51,7 +51,7 @@ test("order e-mail template: edited with a live preview, reset to the default (t
   await expect(preview).not.toContainText(tag);
 });
 
-test("recipe flow: create with live server-side cost, approve, view cost explosion (spec §279)", async ({ page }) => {
+test("recipe flow: create with live server-side cost, approve, view cost explosion (spec §279)", async ({ page, browser }) => {
   await login(page, "fb");
   await page.goto("/recipes/new");
   const code = `E2E${uniq()}`;
@@ -65,11 +65,18 @@ test("recipe flow: create with live server-side cost, approve, view cost explosi
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("E2E Chicken Bowl");
   await expect(page.getByText("Draft", { exact: true }).first()).toBeVisible();
-  // F&B manager has recipe:approve
-  await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByRole("cell", { name: "In force" })).toBeVisible();
-  await expect(page.getByText("Cost explosion")).toBeVisible();
-  await expect(page.getByRole("cell", { name: /Chicken Breast/ })).toBeVisible();
+  // the F&B manager has recipe:approve, but not for their own draft: a second person approves (segregation of duties)
+  await expect(page.getByText("Another person approves")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  const ctlCtx = await browser.newContext();
+  const ctl = await ctlCtx.newPage();
+  await login(ctl, "controller");
+  await ctl.goto(page.url());
+  await ctl.getByRole("button", { name: "Approve" }).click();
+  await expect(ctl.getByRole("cell", { name: "In force" })).toBeVisible();
+  await expect(ctl.getByText("Cost explosion")).toBeVisible();
+  await expect(ctl.getByRole("cell", { name: /Chicken Breast/ })).toBeVisible();
+  await ctlCtx.close();
 });
 
 test("waste flow: small waste posts at cost and reduces stock (spec §283)", async ({ page }) => {

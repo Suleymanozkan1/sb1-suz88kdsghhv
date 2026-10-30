@@ -9,6 +9,7 @@ import { audit } from "./audit";
 import { reverseMovement } from "./ledger";
 import { postWasteRecord } from "./waste";
 import { postCount } from "./counts";
+import { postApprovedAdjustment } from "./inventory";
 
 /** Approvals of stock counts (every count is sent for approval; see counts.submitCount). */
 const isCountApproval = (a: { action: string }) => a.action === "STOCK_ADJUSTMENT";
@@ -37,12 +38,15 @@ function mayDecide(actor: Actor, a: { action: string; entityId: string }, rules:
 /** The department an approval acts on (null = hotel-level), so department-scoped users stay in their scope. */
 async function approvalDepartments(db: Db | Tx, hotelId: string, items: Array<{ action: string; entityId: string }>): Promise<Map<string, string | null>> {
   const ids = (a: string) => items.filter((i) => i.action === a).map((i) => i.entityId);
-  const [stx, waste, counts] = await Promise.all([
+  const [stx, waste, counts, adjustments] = await Promise.all([
     db.stockTransaction.findMany({ where: { hotelId, id: { in: ids("STOCK_DELETE") } }, select: { id: true, departmentId: true } }),
     db.wasteRecord.findMany({ where: { hotelId, id: { in: ids("WASTE") } }, select: { id: true, departmentId: true } }),
     db.stockCount.findMany({ where: { hotelId, id: { in: ids("STOCK_ADJUSTMENT") } }, select: { id: true, warehouse: { select: { departmentId: true } } } }),
+    // a manual adjustment request is its own entity: its department (chosen, else the store's) travels in the payload
+    db.approval.findMany({ where: { hotelId, action: "MANUAL_ADJUSTMENT", entityId: { in: ids("MANUAL_ADJUSTMENT") } }, select: { entityId: true, payload: true } }),
   ]);
-  return new Map<string, string | null>([...stx.map((x) => [x.id, x.departmentId] as const), ...waste.map((x) => [x.id, x.departmentId] as const), ...counts.map((x) => [x.id, x.warehouse.departmentId] as const)]);
+  const adjustmentDept = (p: unknown) => (p as { movement?: { departmentScope?: string | null } } | null)?.movement?.departmentScope ?? null;
+  return new Map<string, string | null>([...stx.map((x) => [x.id, x.departmentId] as const), ...waste.map((x) => [x.id, x.departmentId] as const), ...counts.map((x) => [x.id, x.warehouse.departmentId] as const), ...adjustments.map((x) => [x.entityId, adjustmentDept(x.payload)] as const)]);
 }
 
 /** A posted stock entry cannot be deleted: the attempt becomes a DELETE REQUEST (spec §183–§184). */
@@ -131,6 +135,11 @@ export async function decideApproval(db: Db, actor: Actor, hotelId: string, inpu
           case "WASTE": {
             const w = await postWasteRecord(tx, actor, a.entityId, actor.userId);
             resultRef = w.stockTxId;
+            break;
+          }
+          case "MANUAL_ADJUSTMENT": {
+            const stx = await postApprovedAdjustment(tx, actor, a);
+            resultRef = stx.id;
             break;
           }
           case "STOCK_ADJUSTMENT": {

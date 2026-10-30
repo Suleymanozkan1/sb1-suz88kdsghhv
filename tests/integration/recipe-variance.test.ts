@@ -57,7 +57,7 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
       version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, lines: [{ productId: P.oil, quantity: 800, unit: "ml" }, { productId: P.egg, quantity: 4, unit: "pc" }] },
     });
     mayoId = mayo.id;
-    await approveVersion(prisma, fb, h.hotel.id, mayo.versions[0]!.id, { effectiveFrom: day("2026-08-01") });
+    await approveVersion(prisma, cc, h.hotel.id, mayo.versions[0]!.id, { effectiveFrom: day("2026-08-01") });
 
     const burger = await createRecipe(prisma, fb, h.hotel.id, {
       code: "BURGER",
@@ -81,7 +81,7 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
     });
     burgerId = burger.id;
     burgerV1 = burger.versions[0]!.id;
-    const approved = await approveVersion(prisma, fb, h.hotel.id, burgerV1, { effectiveFrom: day("2026-08-01") });
+    const approved = await approveVersion(prisma, cc, h.hotel.id, burgerV1, { effectiveFrom: day("2026-08-01") });
     // the recipe quantity is the raw quantity used (product yield 90 % and line waste 2 % are ignored):
     // beef 1.5×600 = 900 + bun 80 + mayo 0.3×112=33.6 + ketchup 18 = 1031.6 food; packaging is not part of recipe cost
     expect(approved.ingredientCost?.toString()).toBe("1031.6");
@@ -97,9 +97,9 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
 
   it("blocks approval of incomplete recipes (spec §29)", async () => {
     const bad = await createRecipe(prisma, fb, h.hotel.id, { code: "BAD", name: "Bad", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { batchYieldQty: 1, yieldUnit: "portion", portions: 1, lines: [{ productId: P.beef, quantity: 0, unit: "kg" }] } });
-    await expect(approveVersion(prisma, fb, h.hotel.id, bad.versions[0]!.id)).rejects.toThrow(/Zero quantity/);
+    await expect(approveVersion(prisma, cc, h.hotel.id, bad.versions[0]!.id)).rejects.toThrow(/Zero quantity/);
     const empty = await createRecipe(prisma, fb, h.hotel.id, { code: "EMPTY", name: "Empty", type: "RESTAURANT", departmentId: h.depts.restaurant.id, version: { batchYieldQty: 1, yieldUnit: "portion", portions: 1, lines: [] } });
-    await expect(approveVersion(prisma, fb, h.hotel.id, empty.versions[0]!.id)).rejects.toThrow(/no ingredients/);
+    await expect(approveVersion(prisma, cc, h.hotel.id, empty.versions[0]!.id)).rejects.toThrow(/no ingredients/);
   });
 
   it("imports sales with preview, duplicate protection and frozen theoretical cost", async () => {
@@ -123,7 +123,7 @@ describe("recipe E2E (spec §279, scenario §328)", () => {
       batchYieldQty: 10, yieldUnit: "portion", portions: 10, sellingPrice: 450, packagingCost: 20, reason: "Smaller patty",
       lines: [{ productId: P.beef, quantity: 1.2, unit: "kg", wastePct: 2 }, { productId: P.bun, quantity: 10, unit: "pc" }, { subRecipeId: mayoId, quantity: 300, unit: "g" }, { productId: P.ketchup, quantity: 200, unit: "g" }],
     });
-    await approveVersion(prisma, fb, h.hotel.id, v2.id, { effectiveFrom: day("2026-09-15") });
+    await approveVersion(prisma, cc, h.hotel.id, v2.id, { effectiveFrom: day("2026-09-15") });
     const old = await prisma.saleLine.findFirstOrThrow({ where: { hotelId: h.hotel.id, externalId: "POS-1" } });
     expect(old.recipeVersionId).toBe(burgerV1);
     expect(old.theoreticalUnitCost?.toString()).toBe("103.16");

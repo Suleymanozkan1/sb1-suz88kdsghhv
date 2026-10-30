@@ -165,7 +165,7 @@ test("stock count (company admin): an unposted count can be deleted, after confi
   await expect(page.getByRole("heading", { name: new RegExp(`${number} ·`) })).toHaveCount(0);
 });
 
-test("recipe (F&B manager): create with live cost, approve, cost explosion", async ({ page }) => {
+test("recipe (F&B manager): create with live cost, controller approves, cost explosion", async ({ page, browser }) => {
   await signIn(page, "fbm@test.local");
   await page.goto("/recipes/new");
   const code = `DEMO${uniq()}`;
@@ -178,9 +178,16 @@ test("recipe (F&B manager): create with live cost, approve, cost explosion", asy
   await expect(page.getByText("Cost per portion")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Demo Wings Plate");
-  await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByRole("cell", { name: "APPROVED" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: /Chicken Wings/ }).first()).toBeVisible();
+  // the author does not approve their own draft (segregation of duties): the cost controller does
+  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  const ctx = await browser.newContext();
+  const ctl = await ctx.newPage();
+  await signIn(ctl, "controller@test.local");
+  await ctl.goto(page.url());
+  await ctl.getByRole("button", { name: "Approve" }).click();
+  await expect(ctl.getByRole("cell", { name: "APPROVED" })).toBeVisible();
+  await expect(ctl.getByRole("cell", { name: /Chicken Wings/ }).first()).toBeVisible();
+  await ctx.close();
 });
 
 test("POS sales import (controller): preview and commit two lines", async ({ page }) => {

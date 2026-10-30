@@ -316,7 +316,7 @@ export function AdminConsole(p: Props) {
 
       {tab === "Hotel settings" && (
         <Card title={t("Hotel settings (thresholds drive alerts and approvals)")}>
-          <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/hotel", { ...Object.fromEntries(["name", "totalRooms", "baseCurrency", "timezone", "priceAlertPct", "wasteApprovalValue", "adjustmentApprovalValue", "marginTargetPct", "businessDayCutoff"].map((k) => [k, val(f, k)])), autoDeductSales: f.get("autoDeductSales") === "on" }), "Settings saved"); }}>
+          <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/hotel", { ...Object.fromEntries(["name", "totalRooms", "baseCurrency", "timezone", "priceAlertPct", "wasteApprovalValue", "adjustmentApprovalValue", "marginTargetPct", "businessDayCutoff"].map((k) => [k, val(f, k)])), autoDeductSales: f.get("autoDeductSales") === "on", allowSelfApproval: f.get("allowSelfApproval") === "on" }), "Settings saved"); }}>
             <div><Label htmlFor="s-name">{t("Hotel name")}</Label><Input id="s-name" name="name" defaultValue={String(p.hotel.name)} required /></div>
             <div><Label htmlFor="s-rooms">{t("Rooms")}</Label><Input id="s-rooms" name="totalRooms" type="number" min={0} defaultValue={String(p.hotel.totalRooms)} /></div>
             <div><Label htmlFor="s-cur">{t("Base currency")}</Label><Input id="s-cur" name="baseCurrency" maxLength={3} defaultValue={String(p.hotel.baseCurrency)} /></div>
@@ -327,6 +327,10 @@ export function AdminConsole(p: Props) {
             <div><Label htmlFor="s-mt">{t("Margin target %")}</Label><Input id="s-mt" name="marginTargetPct" inputMode="decimal" defaultValue={String(p.hotel.marginTargetPct)} /></div>
             <div><Label htmlFor="s-bd" hint={t("night audit")}>{t("Business day ends at")}</Label><Input id="s-bd" name="businessDayCutoff" type="time" defaultValue={String(p.hotel.businessDayCutoff ?? "03:30")} /></div>
             <label className="flex items-center gap-2 text-sm text-ink-700 md:col-span-3"><input type="checkbox" name="autoDeductSales" defaultChecked={Number(p.hotel.autoDeductSales ?? 1) === 1} />{t("Deduct sold dishes' recipe ingredients from stock automatically (Micros sales)")}</label>
+            <div className="md:col-span-4">
+              <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" name="allowSelfApproval" defaultChecked={Number(p.hotel.allowSelfApproval ?? 0) === 1} aria-describedby="s-self-help" />{t("Allow the creator to approve their own purchase orders, budgets and recipe versions")}</label>
+              <p id="s-self-help" className="mt-1 text-xs text-ink-500">{t("Meant for small hotels with a single manager. When off, a second person has to approve. Every change of this setting is recorded in the audit trail.")}</p>
+            </div>
             <div className="md:col-span-4"><Button type="submit">{t("Save settings")}</Button></div>
           </form>
         </Card>

@@ -4,8 +4,8 @@ import { date, money, parseNum, qty } from "@/lib/format";
 import type { T } from "@/i18n/core";
 import type { ReportDef } from "../types";
 
-/** Approval payload keys (see requestStockDelete, waste and counts) → column-style labels. */
-const LABELS: Record<string, string> = { product: "Product", type: "Type", quantity: "Quantity", unit: "Unit", totalCost: "Total cost", txDate: "Date", estimatedValue: "Estimated value", varianceValue: "Variance value" };
+/** Approval payload keys (see requestStockDelete, waste, counts and manual adjustments) → column-style labels. */
+const LABELS: Record<string, string> = { product: "Product", warehouse: "Warehouse", type: "Type", quantity: "Quantity", unit: "Unit", totalCost: "Total cost", txDate: "Date", estimatedValue: "Estimated value", varianceValue: "Variance value" };
 const MONEY = new Set(["totalCost", "estimatedValue", "varianceValue"]);
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
 
@@ -13,7 +13,8 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
 export function approvalDetails(payload: unknown, t: T, currency: string, name: (s: string) => string = (s) => s): string {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
   return Object.entries(payload as Record<string, unknown>)
-    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    // `movement` is what a manual adjustment request posts on approval, not something to read
+    .filter(([k, v]) => k !== "movement" && v !== null && v !== undefined && v !== "")
     .map(([k, v]) => {
       const s = String(v);
       const n = parseNum(s);
