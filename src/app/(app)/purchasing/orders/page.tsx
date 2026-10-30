@@ -41,7 +41,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const head = (subtitle: string, plan?: keyof typeof PLAN_LABEL) => (
     <>
       <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} canExport={tab !== "auto" /* the auto tab shows them next to its filters */} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={trial || plan === "PREMIUM" ? "green" : "gray"}>{trial ? t("Full package (trial)") : t(PLAN_LABEL[plan])}</Badge>} />
-      <div className="mb-4 flex gap-1 border-b border-ink-200">
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-ink-200">
         {link("recommendations", t("Order recommendations"))}
         {link("auto", t("Automatic ordering"), <Badge tone={trial ? "green" : "blue"}>{trial ? t("Premium · open (trial)") : t("Premium")}</Badge>)}
         {link("suppliers", t("Suppliers"))}
