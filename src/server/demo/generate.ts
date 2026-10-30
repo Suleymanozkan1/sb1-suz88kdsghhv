@@ -706,7 +706,11 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
     priceJumps.set(p.id, [{ from: when, pct: jumpPcts[i % jumpPcts.length]! }]);
   }
   scenario(ctx, "S01_SUPPLIER_PRICE_INCREASE", "Supplier price increases of 3/5/10/15/20/30 %", "NORMAL", "Price-change alerts at ≥ 10 %; recipe cost impact; purchase price variance", "Product", jumpProducts.map((p) => p.id));
-  const deadStock = pickN(rnd, ctx.products.filter((p) => ["SEAFOOD", "PASTRY", "BAR", "SPARE"].includes(p.cat.code)), 4);
+  // dead stock is stock nobody uses: never an ingredient of a dish on sale or of the breakfast buffet (its sales would
+  // otherwise show a theoretical usage with no consumption at all, a large variance nobody could explain)
+  const onMenu = new Set(recipes.flatMap((r) => r.versions.flatMap((v) => v.req.map(([pid]) => pid))));
+  const onBuffet = new Set([...BREAKFAST_BUFFET.map((b) => b.name), ...BREAKFAST_DISH.lines.map(([name]) => name)]);
+  const deadStock = pickN(rnd, ctx.products.filter((p) => ["SEAFOOD", "PASTRY", "BAR", "SPARE"].includes(p.cat.code) && !onMenu.has(p.id) && !onBuffet.has(p.name)), 4);
   const lastMonthStart = new Date(Date.UTC(ctx.end.getUTCFullYear(), ctx.end.getUTCMonth() - 1, 1));
   const lastMonthEnd = new Date(Date.UTC(ctx.end.getUTCFullYear(), ctx.end.getUTCMonth(), 1));
   const inLastMonth = (d: Date) => d >= lastMonthStart && d < lastMonthEnd;
@@ -758,14 +762,17 @@ async function simulate(ctx: Ctx, recipes: RecipeInfo[], pms: Pms): Promise<SimR
       const v = versionAt(s.r, d);
       if (!v) continue;
       const store = STORE_OF_OUTLET[s.r.outlet] ?? "KITCH";
-      const sm = m.get(store) ?? new Map<string, Decimal>();
+      // one map per store and outlet, summed over every sale of the day (it used to be read under the store alone and
+      // written under store|outlet, so each sale replaced the previous ones: only the last dish of an outlet was used)
+      const key = `${store}|${s.r.outlet}`;
+      const sm = m.get(key) ?? new Map<string, Decimal>();
       for (const [pid, q] of v.req) {
         if (deadStock.some((x) => x.id === pid)) continue;
         let f = OVERUSE_SKUS.has(pid) ? 1.04 + rnd() * 0.06 : 1 + rnd() * 0.02;
         if (overPortion && s.r.outlet === "REST" && inLastMonth(d) && pm.get(pid)?.cat.code && ["MEAT", "CHICKEN", "FISH"].includes(pm.get(pid)!.cat.code)) f *= 1.25;
         sm.set(pid, (sm.get(pid) ?? ZERO).plus(q.div(v.portions).times(s.qty).times(f)));
       }
-      m.set(`${store}|${s.r.outlet}`, sm);
+      m.set(key, sm);
     }
     return m;
   });
