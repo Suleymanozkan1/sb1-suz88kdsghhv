@@ -49,6 +49,40 @@ export function accessState(s: SubscriptionDates, now: Date = new Date(), graceD
   return { state: "EXPIRED", readOnly: true, daysLeft: null, graceEndsAt: null };
 }
 
+export const RENEWAL_WARNING_DAYS = 7;
+
+export interface RenewalWarning {
+  /** ENDING: the trial or paid period ends within the warning window; ENDED: it is over (grace or read-only) */
+  kind: "ENDING" | "ENDED";
+  state: AccessState;
+  /** end of the trial or of the paid period */
+  endsAt: Date | null;
+  /** first moment the tenant is read-only (null: already read-only) */
+  readOnlyFrom: Date | null;
+}
+
+/**
+ * Operator warning (DB-06): a tenant whose trial or paid period ends within `withinDays`, or has already ended.
+ * null when nothing needs attention.
+ */
+export function renewalWarning(s: SubscriptionDates, now: Date = new Date(), withinDays = RENEWAL_WARNING_DAYS): RenewalWarning | null {
+  const a = accessState(s, now);
+  const soon = (d: Date) => d.getTime() - now.getTime() <= withinDays * DAY;
+  switch (a.state) {
+    case "TRIAL":
+      // no paid period: read-only the moment the trial ends
+      return s.trialEndsAt && soon(s.trialEndsAt) ? { kind: "ENDING", state: a.state, endsAt: s.trialEndsAt, readOnlyFrom: s.trialEndsAt } : null;
+    case "ACTIVE":
+      return s.paidThrough && soon(s.paidThrough) ? { kind: "ENDING", state: a.state, endsAt: s.paidThrough, readOnlyFrom: new Date(s.paidThrough.getTime() + GRACE_DAYS * DAY) } : null;
+    case "PAST_DUE":
+      return { kind: "ENDED", state: a.state, endsAt: s.paidThrough, readOnlyFrom: a.graceEndsAt };
+    case "EXPIRED": {
+      const ends = [s.trialEndsAt, s.paidThrough].filter((d): d is Date => d !== null).sort((x, y) => y.getTime() - x.getTime());
+      return { kind: "ENDED", state: a.state, endsAt: ends[0] ?? null, readOnlyFrom: null };
+    }
+  }
+}
+
 /** Features follow the plan, except during the trial when the full package is open. */
 export function featurePlan(stored: Plan, access: Access): Plan {
   return access.state === "TRIAL" ? "PREMIUM" : stored;

@@ -134,6 +134,8 @@ enum ApprovalAction {
   STOCK_DELETE
   STOCK_ADJUSTMENT
   WASTE
+  /// a manual stock adjustment (in or out) worth at least the hotel's adjustmentApprovalValue, posted when approved
+  MANUAL_ADJUSTMENT
   COST_OVERRIDE
   RECIPE_APPROVAL
   PERIOD_REOPEN
@@ -381,6 +383,9 @@ model Hotel {
   wasteApprovalValue      Decimal      @default(1000) @db.Decimal(20, 6)
   adjustmentApprovalValue Decimal      @default(1000) @db.Decimal(20, 6)
   marginTargetPct         Decimal      @default(65) @db.Decimal(20, 6)
+  /// segregation of duties: when false (default) the creator of a purchase order, budget or recipe version cannot approve it.
+  /// Meant to be switched on only by small hotels with a single manager.
+  allowSelfApproval       Boolean      @default(false)
   /// sales deduct their recipe ingredients from stock (one CONSUMPTION per day, outlet and ingredient)
   autoDeductSales         Boolean      @default(true)
   /// the hotel day ends at night audit, not at midnight: "HH:MM" (local time); data before it belongs to the previous day

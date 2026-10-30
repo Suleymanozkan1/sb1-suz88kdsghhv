@@ -10,8 +10,9 @@ import { date as fmtDate, dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { currentBusinessDay } from "@/domain/business-day";
 import { CountForm, OpenDay } from "./count-form";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Breakfast count" };
+export const generateMetadata = pageTitle("Breakfast count");
 
 const isDay = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
 

@@ -111,6 +111,52 @@ export async function saveBillingSettings(db: Db, actor: Actor, input: unknown) 
   return p;
 }
 
+// ── billed hotels: the peak, not the count on the day the notice is issued ──
+
+type HotelLife = { id: string; organizationId: string; active: boolean; createdAt: Date };
+type HotelEvent = { entityId: string | null; action: string; createdAt: Date };
+const HOTEL_STATE_ACTIONS = ["HOTEL_SUSPEND", "HOTEL_ACTIVATE"];
+
+/**
+ * Most hotels active at any moment since `from`. Starts from today's state and walks back through the audit trail:
+ * before a suspension the hotel was active, before an activation it was not, before its creation it did not exist.
+ */
+export function peakActive(hotels: HotelLife[], events: HotelEvent[], from: Date): number {
+  const active = new Map(hotels.map((h) => [h.id, h.active]));
+  // a repeated suspend (or activate) of a hotel already in that state changed nothing: only the first one counts
+  const last = new Map<string, string>();
+  const changes = [...events].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).filter((e) => {
+    if (!e.entityId || last.get(e.entityId) === e.action) return false;
+    last.set(e.entityId, e.action);
+    return true;
+  });
+  const steps = [
+    ...changes.filter((e) => e.entityId && active.has(e.entityId) && e.createdAt >= from).map((e) => ({ at: e.createdAt.getTime(), id: e.entityId!, before: e.action === "HOTEL_SUSPEND" })),
+    ...hotels.filter((h) => h.createdAt >= from).map((h) => ({ at: h.createdAt.getTime(), id: h.id, before: false })),
+  ].sort((a, b) => b.at - a.at);
+  let now = [...active.values()].filter(Boolean).length;
+  let peak = now;
+  for (const s of steps) {
+    if (active.get(s.id) !== s.before) now += s.before ? 1 : -1;
+    active.set(s.id, s.before);
+    peak = Math.max(peak, now);
+  }
+  return peak;
+}
+
+/** Hotels and their suspend / activate history for the given tenants since `from`. */
+async function hotelHistory(db: Db, organizationIds: string[], from: Date) {
+  const hotels = await db.hotel.findMany({ where: { organizationId: { in: organizationIds } }, select: { id: true, organizationId: true, active: true, createdAt: true } });
+  const events = hotels.length ? await db.auditLog.findMany({ where: { entityType: "Hotel", entityId: { in: hotels.map((h) => h.id) }, action: { in: HOTEL_STATE_ACTIONS }, createdAt: { gte: from } }, select: { entityId: true, action: true, createdAt: true } }) : [];
+  return { hotels, events };
+}
+
+/**
+ * The window a new notice bills hotels for: since the previous notice was issued (or since the tenant started). Every
+ * moment falls in some notice's window, so suspending hotels before a notice and reopening them after is billed next time.
+ */
+const billingWindowStart = (orgCreatedAt: Date, invoices: Array<{ status: string; createdAt: Date }>) => invoices.filter((i) => i.status !== "VOID").reduce<Date>((d, i) => (i.createdAt > d ? i.createdAt : d), orgCreatedAt);
+
 /** Tenant list with the subscription state (metadata only, never costs or stock — spec 11). */
 export async function tenantSubscriptions(db: Db, actor: Actor) {
   requirePermission(actor, "platform:admin");
@@ -127,19 +173,28 @@ export async function tenantSubscriptions(db: Db, actor: Actor) {
       paidThrough: true,
       billingName: true,
       billingEmail: true,
+      createdAt: true,
       _count: { select: { hotels: { where: { active: true } } } },
-      billingInvoices: { orderBy: { createdAt: "desc" }, take: 12, select: { id: true, number: true, plan: true, total: true, currency: true, status: true, dueDate: true, periodStart: true, periodEnd: true, paidAt: true, createdAt: true } },
+      billingInvoices: { orderBy: { createdAt: "desc" }, take: 12, select: { id: true, number: true, plan: true, hotelCount: true, total: true, currency: true, status: true, dueDate: true, periodStart: true, periodEnd: true, paidAt: true, createdAt: true } },
       planRequests: { where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, select: { id: true, plan: true, note: true, createdAt: true } },
     },
   });
   const now = new Date();
-  return orgs.map((o) => ({ ...o, activeHotels: o._count.hotels, access: o.isDemo ? null : accessState({ trialEndsAt: o.trialEndsAt, paidThrough: o.paidThrough }, now) }));
+  // what the next notice would bill, next to today's count (two queries for all tenants)
+  const since = new Map(orgs.map((o) => [o.id, billingWindowStart(o.createdAt, o.billingInvoices)]));
+  const { hotels, events } = await hotelHistory(db, orgs.filter((o) => !o.isDemo).map((o) => o.id), new Date(Math.min(now.getTime(), ...[...since.values()].map((d) => d.getTime()))));
+  return orgs.map((o) => ({
+    ...o,
+    activeHotels: o._count.hotels,
+    billableHotels: o.isDemo ? null : Math.max(1, peakActive(hotels.filter((h) => h.organizationId === o.id), events, since.get(o.id)!)),
+    access: o.isDemo ? null : accessState({ trialEndsAt: o.trialEndsAt, paidThrough: o.paidThrough }, now),
+  }));
 }
 
 const invoiceInput = z.object({
   months: z.coerce.number().int().min(1).max(36),
   plan: z.enum(PLANS as [Plan, ...Plan[]]).optional(),
-  /** defaults to the tenant's active hotels */
+  /** defaults to the most hotels the tenant had active since the previous notice */
   hotelCount: z.coerce.number().int().min(1).max(10_000).optional(),
   note: z.string().trim().max(500).optional(),
 });
@@ -147,10 +202,13 @@ const invoiceInput = z.object({
 export async function createBillingInvoice(db: Db, actor: Actor, organizationId: string, input: unknown) {
   requirePermission(actor, "platform:admin");
   const p = invoiceInput.parse(input);
-  const org = await db.organization.findFirst({ where: { id: organizationId, isPlatform: false }, select: { id: true, plan: true, isDemo: true, paidThrough: true, _count: { select: { hotels: { where: { active: true } } } } } });
+  const org = await db.organization.findFirst({ where: { id: organizationId, isPlatform: false }, select: { id: true, plan: true, isDemo: true, paidThrough: true, createdAt: true, billingInvoices: { select: { status: true, createdAt: true } } } });
   if (!org) throw new DomainError("NOT_FOUND", "Tenant not found");
   const plan = p.plan ?? org.plan;
-  const hotels = p.hotelCount ?? Math.max(1, org._count.hotels);
+  // the peak since the previous notice, not today's count: hotels suspended just before a notice are still billed
+  const from = billingWindowStart(org.createdAt, org.billingInvoices);
+  const history = await hotelHistory(db, [org.id], from);
+  const hotels = p.hotelCount ?? Math.max(1, peakActive(history.hotels, history.events, from));
   const [prices, settings] = await Promise.all([planPrices(db), billingSettings(db)]);
   const amounts = invoiceAmounts(prices[plan].monthlyPerHotel, hotels, p.months, settings.taxRate);
   const now = new Date();

@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { menuEngineeringReport } from "@/server/services/planning";
 import { MENU_ACTION, type MenuClass } from "@/domain/planning";
 import { departmentScope } from "@/server/auth/actor";
@@ -8,8 +8,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Menu Engineering" };
+export const generateMetadata = pageTitle("Menu Engineering");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 const TONE: Record<MenuClass, "green" | "amber" | "blue" | "red"> = { STAR: "green", PLOWHORSE: "amber", PUZZLE: "blue", DOG: "red" };
@@ -20,6 +21,9 @@ export default async function MenuEngineeringPage({ searchParams }: { searchPara
   const t = await getT();
   const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "recipe:view", hotelId);
+  // sales mix and margin by dish: a cost analysis (menu entry: nav.ts)
+  requirePageAccess(actor, "variance:view", hotelId);
   const cur = hotel.baseCurrency;
   const rep = await guarded(() => menuEngineeringReport(prisma, actor, hotelId, { from: range.from, to: range.to, departmentId: sp.departmentId || null }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;

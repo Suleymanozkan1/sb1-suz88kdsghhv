@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { roomCostReport } from "@/server/services/operations";
 import { prisma } from "@/server/db";
 import { ROOM_COMPONENTS, ROOM_COMPONENT_LABEL } from "@/domain/rooms";
@@ -8,8 +8,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Room Cost" };
+export const generateMetadata = pageTitle("Room Cost");
 
 const LABEL = ROOM_COMPONENT_LABEL;
 /** Server texts with numbers in them: translate the fixed part, keep the numbers. */
@@ -35,6 +36,7 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "rooms:view", hotelId);
   const rep = await guarded(() => roomCostReport(prisma, actor, hotelId, { from: range.from, to: range.to }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const r = rep.data;

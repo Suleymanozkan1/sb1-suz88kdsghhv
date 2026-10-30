@@ -1,4 +1,4 @@
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { listActions, opportunities } from "@/server/services/savings";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -7,8 +7,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { date, money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { CreateAction, UpdateAction } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Savings" };
+export const generateMetadata = pageTitle("Cost Savings");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 
@@ -17,6 +18,7 @@ export default async function SavingsPage({ searchParams }: { searchParams: Prom
   const t = await getT();
   const range = monthRange(sp);
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "budget:view", hotelId);
   const cur = hotel.baseCurrency;
   const [opps, acts] = await Promise.all([guarded(() => opportunities(prisma, actor, hotelId, { from: range.from, to: range.to })), guarded(() => listActions(prisma, actor, hotelId))]);
   if (!opps.ok) return <Alert>{opps.error}</Alert>;
@@ -50,7 +52,7 @@ export default async function SavingsPage({ searchParams }: { searchParams: Prom
             </tbody>
           </Table>
         )}
-        <p className="border-t border-ink-100 p-3 text-xs text-ink-500">{t("Default assumptions (override via the API): waste avoidable {waste} %, unexplained usage recoverable {unexplained} %, carrying cost {carrying} %/year, energy {energy} %, OTA → direct {ota} %, labor efficiency {labor} % (a configured LABOR_COST_PCT target replaces it).", { waste: (A.wasteReduction * 100).toFixed(0), unexplained: (A.unexplainedCapture * 100).toFixed(0), carrying: (A.carryingCostAnnual * 100).toFixed(0), energy: (A.energyReduction * 100).toFixed(0), ota: (A.otaShiftToDirect * 100).toFixed(0), labor: (A.laborEfficiency * 100).toFixed(0) })}</p>
+        <p className="border-t border-ink-100 p-3 text-xs text-ink-500">{t("Default assumptions: waste avoidable {waste} %, unexplained usage recoverable {unexplained} %, carrying cost {carrying} %/year, energy {energy} %, OTA → direct {ota} %, labor efficiency {labor} % (a labor cost % target, when set, replaces it).", { waste: (A.wasteReduction * 100).toFixed(0), unexplained: (A.unexplainedCapture * 100).toFixed(0), carrying: (A.carryingCostAnnual * 100).toFixed(0), energy: (A.energyReduction * 100).toFixed(0), ota: (A.otaShiftToDirect * 100).toFixed(0), labor: (A.laborEfficiency * 100).toFixed(0) })}</p>
       </Card>
       <Card title={t("Saving actions")} className="mt-4" padded={false}>
         {a.items.length === 0 ? <div className="p-4"><Empty title={t("No actions yet")} /></div> : (

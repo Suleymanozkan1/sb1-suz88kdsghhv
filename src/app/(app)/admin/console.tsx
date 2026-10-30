@@ -8,7 +8,7 @@ import { BUILT_IN_VIDEOS } from "@/lib/training-videos";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
 
-interface Role { id: string; key: string; name: string; allDepartments: boolean }
+interface Role { id: string; key: string; name: string; allDepartments: boolean; /** what the role is for (role template), English key */ description?: string }
 interface User { id: string; email: string; name: string; active: boolean; roleKey: string; roleName: string; allDepartments: boolean; departmentIds: string[]; hotelIds: string[] }
 interface Invite { id: string; email: string; name: string | null; roleKey: string; createdAt: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null }
 interface Dept { id: string; code: string; name: string; isOutlet: boolean; active: boolean; parentId: string | null; sqm: string | null; headcount: number | null }
@@ -101,7 +101,7 @@ export function AdminConsole(p: Props) {
               <div><Label htmlFor="u-name">{t("Name")}</Label><Input id="u-name" name="name" required /></div>
               <div><Label htmlFor="u-email">{t("E-mail")}</Label><Input id="u-email" name="email" type="email" required /></div>
               <div><Label htmlFor="u-pw" hint={t("min 10")}>{t("Initial password")}</Label><Input id="u-pw" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
-              <div><Label htmlFor="u-role">{t("Role")}</Label><Select id="u-role" name="roleKey" value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
+              <div><Label htmlFor="u-role">{t("Role")}</Label><Select id="u-role" name="roleKey" value={roleKey} aria-describedby={roleOf(roleKey)?.description ? "u-role-desc" : undefined} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{roleOf(roleKey)?.description && <p id="u-role-desc" className="mt-1 text-xs text-ink-500">{t(roleOf(roleKey)!.description!)}</p>}</div>
               {hotelPicker("hotel", [p.currentHotelId])}
               {!roleOf(roleKey)?.allDepartments && deptPicker("dept")}
               <div className="md:col-span-4"><Button type="submit">{t("Create user")}</Button></div>
@@ -160,7 +160,7 @@ export function AdminConsole(p: Props) {
             }}>
               <div><Label htmlFor="v-name">{t("Name (optional)")}</Label><Input id="v-name" name="name" /></div>
               <div><Label htmlFor="v-email">{t("E-mail")}</Label><Input id="v-email" name="email" type="email" required /></div>
-              <div><Label htmlFor="v-role">{t("Role")}</Label><Select id="v-role" name="roleKey" value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
+              <div><Label htmlFor="v-role">{t("Role")}</Label><Select id="v-role" name="roleKey" value={roleKey} aria-describedby={roleOf(roleKey)?.description ? "v-role-desc" : undefined} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{roleOf(roleKey)?.description && <p id="v-role-desc" className="mt-1 text-xs text-ink-500">{t(roleOf(roleKey)!.description!)}</p>}</div>
               {hotelPicker("hotel", [p.currentHotelId])}
               {!roleOf(roleKey)?.allDepartments && deptPicker("dept")}
               <div className="md:col-span-4"><Button type="submit">{t("Create invitation")}</Button></div>
@@ -316,7 +316,7 @@ export function AdminConsole(p: Props) {
 
       {tab === "Hotel settings" && (
         <Card title={t("Hotel settings (thresholds drive alerts and approvals)")}>
-          <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/hotel", { ...Object.fromEntries(["name", "totalRooms", "baseCurrency", "timezone", "priceAlertPct", "wasteApprovalValue", "adjustmentApprovalValue", "marginTargetPct", "businessDayCutoff"].map((k) => [k, val(f, k)])), autoDeductSales: f.get("autoDeductSales") === "on" }), "Settings saved"); }}>
+          <form className="grid gap-3 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => call("PUT", "/api/admin/hotel", { ...Object.fromEntries(["name", "totalRooms", "baseCurrency", "timezone", "priceAlertPct", "wasteApprovalValue", "adjustmentApprovalValue", "marginTargetPct", "businessDayCutoff"].map((k) => [k, val(f, k)])), autoDeductSales: f.get("autoDeductSales") === "on", allowSelfApproval: f.get("allowSelfApproval") === "on" }), "Settings saved"); }}>
             <div><Label htmlFor="s-name">{t("Hotel name")}</Label><Input id="s-name" name="name" defaultValue={String(p.hotel.name)} required /></div>
             <div><Label htmlFor="s-rooms">{t("Rooms")}</Label><Input id="s-rooms" name="totalRooms" type="number" min={0} defaultValue={String(p.hotel.totalRooms)} /></div>
             <div><Label htmlFor="s-cur">{t("Base currency")}</Label><Input id="s-cur" name="baseCurrency" maxLength={3} defaultValue={String(p.hotel.baseCurrency)} /></div>
@@ -327,6 +327,10 @@ export function AdminConsole(p: Props) {
             <div><Label htmlFor="s-mt">{t("Margin target %")}</Label><Input id="s-mt" name="marginTargetPct" inputMode="decimal" defaultValue={String(p.hotel.marginTargetPct)} /></div>
             <div><Label htmlFor="s-bd" hint={t("night audit")}>{t("Business day ends at")}</Label><Input id="s-bd" name="businessDayCutoff" type="time" defaultValue={String(p.hotel.businessDayCutoff ?? "03:30")} /></div>
             <label className="flex items-center gap-2 text-sm text-ink-700 md:col-span-3"><input type="checkbox" name="autoDeductSales" defaultChecked={Number(p.hotel.autoDeductSales ?? 1) === 1} />{t("Deduct sold dishes' recipe ingredients from stock automatically (Micros sales)")}</label>
+            <div className="md:col-span-4">
+              <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" name="allowSelfApproval" defaultChecked={Number(p.hotel.allowSelfApproval ?? 0) === 1} aria-describedby="s-self-help" />{t("Allow the creator to approve their own purchase orders, budgets and recipe versions")}</label>
+              <p id="s-self-help" className="mt-1 text-xs text-ink-500">{t("Meant for small hotels with a single manager. When off, a second person has to approve. Every change of this setting is recorded in the audit trail.")}</p>
+            </div>
             <div className="md:col-span-4"><Button type="submit">{t("Save settings")}</Button></div>
           </form>
         </Card>

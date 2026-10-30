@@ -1,5 +1,5 @@
 import { FileDown } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { calendarMonth, canCompleteTask, parseMonth } from "@/server/services/calendar";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -9,8 +9,9 @@ import { date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { DoneButton, NewTask } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Control Calendar" };
+export const generateMetadata = pageTitle("Cost Control Calendar");
 
 const TONE = { DONE: "green", OVERDUE: "red", DUE_TODAY: "amber", UPCOMING: "gray" } as const;
 const STATUS_FILTERS = ["OVERDUE", "DONE", "OPEN"] as const;
@@ -29,6 +30,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "report:view", hotelId);
   const now = new Date();
   const m = parseMonth(sp.month) ?? { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
   const monthStr = `${m.year}-${String(m.month).padStart(2, "0")}`;

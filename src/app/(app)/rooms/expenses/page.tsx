@@ -8,8 +8,9 @@ import { FilterBar } from "@/components/filter-bar";
 import { localDay, money } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RoomCostItemsForm } from "./form";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Room cost expenses" };
+export const generateMetadata = pageTitle("Room cost expenses");
 
 const shift = (month: string, n: number) => {
   const [y, m] = month.split("-").map(Number) as [number, number];

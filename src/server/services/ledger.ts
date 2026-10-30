@@ -14,7 +14,7 @@
  *                     StockBalance.value    = Σ ledger.totalCost   (per warehouse × product).
  */
 import { randomUUID } from "node:crypto";
-import { Prisma, type StockTransaction, type StockTxType, type DataOrigin } from "@prisma/client";
+import { Prisma, type CostPeriod, type StockTransaction, type StockTxType, type DataOrigin } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage, type Numeric } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { fifoIssue, transferBatches, wacIssue, wacReceive, type Layer } from "@/domain/costing";
@@ -61,6 +61,11 @@ export interface MovementInput {
   reverseLayerOfTxId?: string;
   /** internal: transfer-in leg; its FIFO layers are the batches the out leg (this tx id) drew, with their dates and costs */
   layersFromTxId?: string;
+  /**
+   * internal: the period assertPostable already returned for this txDate, actor and hotel in this same transaction (a
+   * document posting many lines on one date checks it once; its FOR SHARE lock is held until commit either way)
+   */
+  postable?: CostPeriod;
 }
 
 interface BalanceRow {
@@ -79,6 +84,26 @@ async function lockBalance(tx: Tx, hotelId: string, warehouseId: string, product
   return { quantity: D(r.quantity.toString()), value: D(r.value.toString()), avgCost: D(r.avgCost.toString()) };
 }
 
+/**
+ * Row-locks the existing balances a multi-line posting will touch, all at once and in one fixed order (warehouse,
+ * product), before it posts line by line. postMovement locks each balance as it reaches it, i.e. in the order the
+ * lines arrive: two documents with the same products in a different order (a receipt and the bot's sales of the same
+ * day) then each held a row the other waited for, and Postgres aborted one with a deadlock. Positions without a
+ * balance row yet are created (and locked) by postMovement as before. Only meaningful inside a transaction.
+ */
+export async function lockBalances(tx: Db, hotelId: string, positions: Array<{ warehouseId: string; productId: string }>): Promise<void> {
+  const keys = [...new Map(positions.map((p) => [`${p.warehouseId}|${p.productId}`, p])).values()];
+  if (keys.length < 2) return;
+  // one statement per chunk; chunks follow the same sort as ORDER BY, so the overall order stays fixed
+  keys.sort((a, b) => (a.warehouseId < b.warehouseId ? -1 : a.warehouseId > b.warehouseId ? 1 : a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0));
+  for (let i = 0; i < keys.length; i += 2000) {
+    const chunk = keys.slice(i, i + 2000);
+    await tx.$queryRaw`SELECT 1 FROM "StockBalance" WHERE "hotelId" = ${hotelId}
+      AND ("warehouseId", "productId") IN (${Prisma.join(chunk.map((k) => Prisma.sql`(${k.warehouseId}, ${k.productId})`))})
+      ORDER BY "warehouseId" COLLATE "C", "productId" COLLATE "C" FOR UPDATE`;
+  }
+}
+
 /** Open FIFO layers of a position, oldest first, row-locked. */
 async function openLayers(tx: Tx, warehouseId: string, productId: string): Promise<Layer[]> {
   const layers = await tx.$queryRaw<Array<{ id: string; remainingQty: Prisma.Decimal; unitCost: Prisma.Decimal; receivedAt: Date }>>`
@@ -88,7 +113,7 @@ async function openLayers(tx: Tx, warehouseId: string, productId: string): Promi
   return layers.map((l) => ({ id: l.id, remainingQty: D(l.remainingQty.toString()), unitCost: D(l.unitCost.toString()), receivedAt: l.receivedAt }));
 }
 
-async function fallbackCost(tx: Tx, hotelId: string, productId: string): Promise<Decimal | null> {
+async function fallbackCost(tx: Db | Tx, hotelId: string, productId: string): Promise<Decimal | null> {
   const last = await tx.supplierPrice.findFirst({ where: { hotelId, productId }, orderBy: { priceDate: "desc" } });
   if (last) return D(last.unitPrice.toString());
   const p = await tx.product.findFirst({ where: { id: productId, hotelId }, select: { standardCost: true } });
@@ -121,7 +146,7 @@ export async function postMovement(db: Db, actor: Actor, input: MovementInput): 
     if (!product.isStockItem) throw new DomainError("VALIDATION", `${product.name} is not a stock item`);
     if (!product.active && input.type === "PURCHASE") throw new DomainError("VALIDATION", `${product.name} is inactive`);
 
-    const period = await assertPostable(tx, actor, input.hotelId, input.txDate);
+    const period = input.postable ?? (await assertPostable(tx, actor, input.hotelId, input.txDate));
     const pos = await lockBalance(tx, input.hotelId, input.warehouseId, input.productId);
     const fifo = product.costingMethod === "FIFO";
 
@@ -324,6 +349,8 @@ export async function transferStock(
   const q = D(input.quantity);
   if (q.lte(0)) throw new DomainError("VALIDATION", "Transfer quantity must be positive");
   return inTx(db, async (tx) => {
+    // both legs locked up front in a fixed order: opposite transfers between two stores must not deadlock
+    await lockBalances(tx, input.hotelId, [{ warehouseId: input.fromWarehouseId, productId: input.productId }, { warehouseId: input.toWarehouseId, productId: input.productId }]);
     const group = input.idempotencyKey ?? randomUUID();
     const out = await postMovement(tx, actor, {
       hotelId: input.hotelId,
@@ -511,6 +538,18 @@ export async function previewIssueCost(db: Db | Tx, hotelId: string, warehouseId
     return drawn.plus(qty.minus(available).times(latest));
   }
   return qty.times(pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost);
+}
+
+/**
+ * What receiving `qty` (stock unit, positive) into one store without a stated unit cost would be valued at if it
+ * were posted now — read-only, postMovement's inbound fallback: the store's average, then the last supplier price or
+ * the standard cost. Null when no cost is known (the posting itself would be refused).
+ */
+export async function previewReceiptCost(db: Db | Tx, hotelId: string, warehouseId: string, productId: string, qty: Decimal): Promise<Decimal | null> {
+  const bal = await db.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId, productId } } });
+  const pos = { quantity: D(bal?.quantity.toString() ?? 0), value: D(bal?.value.toString() ?? 0), avgCost: D(bal?.avgCost.toString() ?? 0) };
+  const c = pos.quantity.gt(0) ? pos.value.div(pos.quantity) : pos.avgCost.gt(0) ? pos.avgCost : await fallbackCost(db, hotelId, productId);
+  return c === null ? null : qty.times(c);
 }
 
 export { ZERO };

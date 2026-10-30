@@ -1,14 +1,16 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { budgetReport, listBudgets, targetReport, TARGET_METRICS } from "@/server/services/planning";
 import { can } from "@/server/auth/actor";
+import { selfApprovalAllowed } from "@/server/services/segregation";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/components/ui";
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { BudgetActions, BudgetLinesUpload, NewBudget, TargetForm } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Budget & Targets" };
+export const generateMetadata = pageTitle("Budget & Targets");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -21,12 +23,13 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   const year = Number(sp.year ?? now.getUTCFullYear());
   const month = Math.min(12, Math.max(1, Number(sp.month ?? now.getUTCMonth() + 1)));
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "budget:view", hotelId);
   const cur = hotel.baseCurrency;
   const rep = await guarded(() => budgetReport(prisma, actor, hotelId, { year, month }));
   if (!rep.ok) return <Alert>{rep.error}</Alert>;
   const from = new Date(Date.UTC(year, month - 1, 1));
   const to = new Date(Date.UTC(year, month, 1));
-  const [budgets, targets] = await Promise.all([listBudgets(prisma, actor, hotelId), targetReport(prisma, actor, hotelId, from, to < now ? to : now)]);
+  const [budgets, targets, selfOk] = await Promise.all([listBudgets(prisma, actor, hotelId), targetReport(prisma, actor, hotelId, from, to < now ? to : now), selfApprovalAllowed(prisma, hotelId)]);
   const r = rep.data;
   const manage = can(actor, "budget:manage");
   const fmt = (unit: string, v: { times(n: number): unknown; toString(): string } | null) => (v === null ? "—" : unit === "pct" ? pct(f100(v), 2) : money(v, cur));
@@ -64,7 +67,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
           {r.byDept.length === 0 ? <div className="p-4"><Empty title={tr("No cost in this month")} /></div> : (
             <Table>
               <thead><tr><Th>{tr("Department")}</Th><Th align="right">{tr("Budget")}</Th><Th align="right">{tr("Actual")}</Th><Th align="right">{tr("Variance")}</Th></tr></thead>
-              <tbody className="divide-y divide-ink-100">{r.byDept.map((d) => <tr key={d.department}><Td>{d.department}</Td><Td align="right">{money(d.budget, cur, 0)}</Td><Td align="right">{money(d.actual, cur, 0)}</Td><Td align="right" className={d.variance?.gt(0) ? "text-red-700" : ""}>{money(d.variance, cur, 0)}</Td></tr>)}</tbody>
+              <tbody className="divide-y divide-ink-100">{r.byDept.map((d) => <tr key={d.department}><Td>{d.department === "Hotel level" ? tr("Hotel level") : d.department}</Td><Td align="right">{money(d.budget, cur, 0)}</Td><Td align="right">{money(d.actual, cur, 0)}</Td><Td align="right" className={d.variance?.gt(0) ? "text-red-700" : ""}>{money(d.variance, cur, 0)}</Td></tr>)}</tbody>
             </Table>
           )}
         </Card>
@@ -89,7 +92,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
         <Table>
           <thead><tr><Th>{tr("Year")}</Th><Th>{tr("Name")}</Th><Th>{tr("Status")}</Th><Th align="right">{tr("Lines")}</Th><Th align="right">{tr("Total cost")}</Th><Th /></tr></thead>
           <tbody className="divide-y divide-ink-100">
-            {budgets.map((b) => <tr key={b.id}><Td>{b.year}</Td><Td className="font-medium">{b.name}</Td><Td><Badge tone={b.status === "APPROVED" ? "green" : b.status === "DRAFT" ? "amber" : "gray"}>{tr(b.status)}</Badge></Td><Td align="right">{b._count.lines}</Td><Td align="right">{money(b.totalCost, cur, 0)}</Td><Td>{manage && <BudgetActions id={b.id} status={b.status} canApprove={can(actor, "budget:approve")} />}</Td></tr>)}
+            {budgets.map((b) => <tr key={b.id}><Td>{b.year}</Td><Td className="font-medium">{b.name}</Td><Td><Badge tone={b.status === "APPROVED" ? "green" : b.status === "DRAFT" ? "amber" : "gray"}>{tr(b.status)}</Badge></Td><Td align="right">{b._count.lines}</Td><Td align="right">{money(b.totalCost, cur, 0)}</Td><Td>{manage && <BudgetActions id={b.id} status={b.status} canApprove={can(actor, "budget:approve") && (selfOk || b.createdById !== actor.userId)} />}</Td></tr>)}
           </tbody>
         </Table>
         {manage && (

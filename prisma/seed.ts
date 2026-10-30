@@ -342,7 +342,11 @@ async function main() {
     });
     if (res?.approvalId && i % 2 === 0) await decideApproval(prisma, admin, H, { approvalId: res.approvalId, decision: "APPROVE", note: "Verified with outlet manager" });
   }
-  for (const d of days.filter((_, i) => i % 7 === 2)) {
+  // the canteen's rice comes on its own delivery: the weekly orders only cover the recipes, and the seeded period
+  // (previous month + this month to yesterday) grows with the date, so 3 kg a week ran the store dry from ~8 weeks
+  const canteenDays = days.filter((_, i) => i % 7 === 2);
+  await postGoodsReceipt(prisma, actors.warehouse!, H, { supplierId: suppliers[3], warehouseId: wh.MAIN, receiptDate: at(days[0]!, 7), invoiceNo: `${supplierDefs[3]![0]}-CANTEEN`, freight: "0", items: [{ productId: pid["DRY-RICE"], quantity: String(canteenDays.length * 3), unit: "kg", unitPrice: "62.00" }] });
+  for (const d of canteenDays) {
     await postMovement(prisma, admin, { hotelId: H, warehouseId: wh.MAIN!, productId: pid["DRY-RICE"]!, type: "STAFF_MEAL", quantity: -3, txDate: at(d, 13), departmentId: dept.KITCH, sourceType: "MANUAL", reason: "Staff canteen" });
   }
   // Ödenmez / İkram: comp checks from Micros, welcome drinks from Opera, a manual entry (through the comps service)
@@ -674,7 +678,7 @@ async function main() {
   const budgetYear = firstMonthEnd.getUTCFullYear();
   const bud = await createBudget(prisma, actors.accounting!, H, { year: budgetYear, name: `Budget ${budgetYear}`, notes: "Seasonality-weighted, 3 % efficiency target on cost, +3 % revenue" });
   await setBudgetLines(prisma, actors.accounting!, H, bud.id, [...merged.values()].filter((l) => Number(l.amount) > 0));
-  await approveBudget(prisma, actors.accounting!, H, bud.id);
+  await approveBudget(prisma, admin, H, bud.id); // the cost controller approves what accounting prepared (creator ≠ approver)
   for (const [metric, target, warnAt] of [["FOOD_COST_PCT", "0.32", "0.30"], ["BEVERAGE_COST_PCT", "0.14", "0.12"], ["WASTE_PCT", "0.02", "0.015"], ["UNEXPLAINED_VARIANCE_PCT", "0.03", "0.02"], ["LABOR_COST_PCT", "0.30", "0.28"], ["ENERGY_PER_OCCUPIED_ROOM", "300", "280"], ["ROOM_COST_PER_NIGHT", "1750", "1650"], ["COST_PER_OCCUPIED_ROOM", "3000", "2850"], ["BUFFET_COST_PER_COVER", "120", "110"], ["MINIBAR_SHRINKAGE_PCT", "0.03", "0.02"]] as const) await createTarget(prisma, admin, H, { metric, target, warnAt });
   const sa1 = await createAction(prisma, admin, H, { driver: "WASTE", problem: "Buffet leftovers discarded at breakfast", rootCause: "Production not linked to forecast covers", action: "Produce in waves from the buffet forecast; refill smaller trays", ownerName: "Elif Şahin", targetSaving: "12000", dueDate: new Date(firstMonthEnd.getTime() + 20 * 86_400_000), departmentId: dept.BRKF });
   await updateAction(prisma, admin, H, sa1.id, { status: "IN_PROGRESS" });

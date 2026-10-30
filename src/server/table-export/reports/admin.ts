@@ -62,8 +62,9 @@ export const admin: ReportDef = {
         columns: [
           { key: "name", header: t("Hotel name") }, { key: "rooms", header: t("Rooms"), type: "int" }, { key: "cur", header: t("Base currency") }, { key: "tz", header: t("Timezone") },
           { key: "priceAlert", header: t("Price alert %"), type: "pct" }, { key: "waste", header: t("Waste approval above"), type: "money" }, { key: "adj", header: t("Adjustment approval above"), type: "money" }, { key: "margin", header: t("Margin target %"), type: "pct" },
+          { key: "selfApproval", header: t("Creator may approve own records") },
         ],
-        rows: [{ name: o.hotel.name, rooms: o.hotel.totalRooms, cur: o.hotel.baseCurrency, tz: o.hotel.timezone, priceAlert: o.hotel.priceAlertPct, waste: o.hotel.wasteApprovalValue, adj: o.hotel.adjustmentApprovalValue, margin: o.hotel.marginTargetPct }],
+        rows: [{ name: o.hotel.name, rooms: o.hotel.totalRooms, cur: o.hotel.baseCurrency, tz: o.hotel.timezone, priceAlert: o.hotel.priceAlertPct, waste: o.hotel.wasteApprovalValue, adj: o.hotel.adjustmentApprovalValue, margin: o.hotel.marginTargetPct, selfApproval: o.hotel.allowSelfApproval ? t("Yes") : t("No") }],
       },
     );
     return { title: t("Administration"), fileName: "yonetim", tables };

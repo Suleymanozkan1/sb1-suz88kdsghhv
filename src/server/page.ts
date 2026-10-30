@@ -7,6 +7,7 @@ import { prisma } from "./db";
 import { isDomainError } from "@/domain/errors";
 import { translateMessage } from "@/i18n/core";
 import { getLocale } from "@/i18n/server";
+import { ALL_DEPARTMENTS } from "@/components/nav";
 
 export async function pageContext(): Promise<{ actor: Actor; hotelId: string; hotel: { id: string; name: string; baseCurrency: string; timezone: string; businessDayCutoff: string } }> {
   const actor = await currentActor();
@@ -43,7 +44,14 @@ export function monthRange(sp: { from?: string; to?: string }) {
 /**
  * Page-level permission gate. A user who opens a page outside their role (typed URL, old bookmark) gets the
  * friendly "no permission" page instead of a server error. Services still authorize every call on their own.
+ * A list means any one of them. The menu (src/components/nav.ts) shows a page only with the same permission.
  */
-export function requirePageAccess(actor: Actor, perm: Permission, hotelId: string): void {
-  if (!actor.permissions.has(perm) || !actor.hotelIds.includes(hotelId)) redirect(`/forbidden?need=${encodeURIComponent(perm)}`);
+export function requirePageAccess(actor: Actor, perm: Permission | readonly Permission[], hotelId: string): void {
+  const any: readonly Permission[] = typeof perm === "string" ? [perm] : perm;
+  if (!any.some((p) => actor.permissions.has(p)) || !actor.hotelIds.includes(hotelId)) redirect(`/forbidden?need=${encodeURIComponent(any[0]!)}`);
+}
+
+/** Hotel-wide pages (forecast, what-if, cost allocation): department-scoped roles get the "no permission" page. */
+export function requireAllDepartmentsPage(actor: Actor): void {
+  if (actor.departmentIds !== "ALL") redirect(`/forbidden?need=${ALL_DEPARTMENTS}`);
 }

@@ -15,7 +15,7 @@ npx prisma migrate deploy                  # create schema (incl. ledger immutab
 npm run db:seed                            # realistic demo month for "Grand Anatolia Resort"
 npm run build && npm start                 # http://localhost:3000
 ```
-Demo users (password `HotelCost!2026`): `controller@`, `fb@`, `chef@`, `breakfast@`, `pastry@`, `purchasing@`, `accounting@`, `warehouse@`, `rooms@`, `admin@grandanatolia.test`.
+Demo users: `controller@`, `fb@`, `chef@`, `breakfast@`, `pastry@`, `purchasing@`, `accounting@`, `warehouse@`, `rooms@`, `admin@grandanatolia.test`. Their password is the development constant `PASSWORD` in `prisma/seed.ts`: for a local machine only, never for a database anyone else can reach.
 Docker: `docker compose up --build` (then run the seed inside the app container if you want demo data).
 
 ## Architecture
@@ -129,7 +129,8 @@ Packages are switched in one place, `src/server/plans.ts` (shared table in `src/
 - Every new organization gets a 30-day trial from a database default, whichever code path creates it; the migration gave every existing tenant the same 30 days.
 - Gates: the API wrapper maps route prefixes to features (one table, so a new route in a gated module cannot forget its check) and answers `403 PLAN_REQUIRED` / `402 PAYMENT_REQUIRED`; module folders carry a `layout.tsx` gate that explains the package instead of showing errors; the menu shows locked modules with a lock.
 - **Manual billing (bank transfer)**: the platform console (`/platform`) holds list prices (per active hotel / month, VAT excluded), bank details and VAT rate, issues **payment notices** (`HC-YYYY-NNNN`, proforma, not a tax invoice), marks them paid with the transfer reference (extends `paidThrough`, sets the plan) or voids them; extends trials; decides package requests. Amounts of an issued notice are fixed by a DB trigger. Company administrators see `/billing`: status, notices, transfer details, package comparison, invoice recipient, package request.
-- Billing applies only when a platform operator organization exists. A **self-hosted** installation (no operator) keeps every feature; `PLAN_OVERRIDE` fixes a plan for licensed installs, `TRIAL_ALL_FEATURES=1` opens everything for QA, `BILLING_ENFORCEMENT=off` disables enforcement.
+- Billing applies only when a platform operator organization exists. A **self-hosted** installation (no operator) keeps every feature; `PLAN_OVERRIDE` fixes a plan for licensed installs, `TRIAL_ALL_FEATURES=1` opens everything for QA, `BILLING_ENFORCEMENT=off` disables enforcement (the kill switch; pre-launch billing checklist in [`docs/VERCEL.md`](docs/VERCEL.md#billing)).
+- Creating the platform administrator switches billing on. Give a paying first customer its package and paid period at setup (`npm run setup:first-company -- … --plan=STANDARD --paid-through=YYYY-MM-DD`); otherwise it runs on the 30-day trial and turns read-only after it. The platform console lists every company whose trial or paid period ends within 7 days or has ended.
 - Product page: `/welcome` (set `PUBLIC_LANDING=1` so visitors without a session land there; `PUBLIC_CONTACT_EMAIL` for the demo button). It shows the real list prices and invents no customers or savings.
 - **Getting started**: the dashboard lists the steps to the first variance (products, supplier prices, opening stock, an approved recipe, sales, an approved count, the team), each checked from the hotel's data; it disappears when all are done.
 
@@ -142,7 +143,7 @@ npm run demo:verify      # counts, integrity, 3-way cost reconciliation, recipe 
 npm run demo:reset       # removes demo tenants only; refused in production
 ```
 
-Test users: `companyadmin@test.local`, `controller@test.local`, `chef@test.local`, … and `superadmin@test.local`; password `Demo!2026-QA` (dev/QA only).
+Test users: `companyadmin@test.local`, `controller@test.local`, `chef@test.local`, … and `superadmin@test.local`. Their password is `DEMO_PASSWORD` at generation time; without it a development default from `scripts/demo.ts` is used, which is fine locally but must never protect a demo anyone else can reach (see [`docs/VERCEL.md`](docs/VERCEL.md), "A demo / training deployment").
 
 Details: [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md).
 
@@ -152,8 +153,8 @@ Details: [`docs/DEMO_DATA.md`](docs/DEMO_DATA.md).
 
 The deploy uses:
 - Next.js on Vercel with a Neon PostgreSQL database;
-- migrations applied during the build;
-- the first company created with `npm run setup:first-company`.
+- migrations applied by **production** builds only (preview builds skip them; use a Neon branch per preview);
+- the first company created at `/setup` or with `npm run setup:first-company` (`--plan`, `--paid-through` for a paying customer).
 
 Step by step: [`docs/VERCEL.md`](docs/VERCEL.md).
 

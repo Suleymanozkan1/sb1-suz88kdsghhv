@@ -4,8 +4,9 @@ import { Badge, Card, PageHeader, Table, Td, Th } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { SalesImporter } from "./importer";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Sales Import" };
+export const generateMetadata = pageTitle("Sales Import");
 
 export default async function SalesPage() {
   const t = await getT();

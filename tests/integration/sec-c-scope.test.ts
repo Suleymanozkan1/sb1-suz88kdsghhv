@@ -30,7 +30,7 @@ const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.get
 const forbidden = { code: "FORBIDDEN" };
 
 beforeAll(async () => {
-  h = await makeHotel("SECC");
+  h = await makeHotel("SECC", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   wh = await h.actor("warehouse");
 });

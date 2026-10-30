@@ -12,8 +12,9 @@ import type { Permission } from "../auth/permissions";
 import { defaultLocale, LANG_COOKIE, normalizeLocale, translateMessage, type Locale } from "@/i18n/core";
 import { actorFromToken, isApiToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
 import { errorFields, log } from "../log";
-import { prisma } from "../db";
+import { isTransientTxError, prisma } from "../db";
 import { accessHas, FEATURES, featureForPath, organizationAccess, type Feature } from "../plans";
+import { accessRemoval } from "./access-removal";
 
 /** A caller-supplied request id is kept only if it looks like one (it is echoed into logs and a header). */
 export function requestIdOf(req: Request): string {
@@ -132,6 +133,11 @@ export function errorResponse(e: unknown, locale: Locale = "en", ctx: { requestI
     return NextResponse.json({ error: { code: e.code, message: tm(e.message), details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
   }
   if (e instanceof ZodError) return NextResponse.json({ error: { code: "VALIDATION", message: tm("Invalid input"), details: e.issues.map((i) => ({ ...i, message: tm(i.message) })) } }, { status: 422 });
+  // a deadlock / serialization failure that outlived inTx's retries: nothing was saved and trying again is the answer
+  if (isTransientTxError(e)) {
+    log.warn("api transaction conflict", { ...ctx, ...errorFields(e) });
+    return NextResponse.json({ error: { code: "BUSY", message: tm("The system is busy with other changes right now: nothing was saved, please try again"), ...(ctx.requestId ? { requestId: ctx.requestId } : {}) } }, { status: 503, headers: { "retry-after": "2" } });
+  }
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") return NextResponse.json({ error: { code: "DUPLICATE", message: tm("Duplicate record") } }, { status: 409 });
     if (e.code === "P2025") return NextResponse.json({ error: { code: "NOT_FOUND", message: tm("Not found") } }, { status: 404 });
@@ -145,7 +151,8 @@ export function errorResponse(e: unknown, locale: Locale = "en", ctx: { requestI
 }
 
 /** Mutations must come from our own origin (CSRF defence in depth on top of SameSite cookies). */
-function sameOrigin(req: NextRequest): boolean {
+/** CSRF: the Origin must be this host; without one, a browser-marked cross-site request is refused. */
+export function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return req.headers.get("sec-fetch-site") !== "cross-site";
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
@@ -195,7 +202,8 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permissio
 
 /**
  * Writes that stay possible on an expired (read-only) subscription: signing in/out and switching hotel, paying,
- * the platform console, and exporting one's own data — a tenant is never locked out of its numbers.
+ * the platform console, and exporting one's own data — a tenant is never locked out of its numbers. Writes that only
+ * remove access (src/server/http/access-removal.ts) also pass, on an expired subscription and below their module's plan.
  */
 const READ_ONLY_EXEMPT = ["/api/auth/", "/api/billing/", "/api/platform/", "/api/export/", "/api/table-export/", "/api/reports/"];
 
@@ -227,10 +235,16 @@ async function handle(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permiss
   const path = req.nextUrl.pathname;
   const feature = opts.feature ?? featureForPath(path);
   const exempt = READ_ONLY_EXEMPT.some((p) => path.startsWith(p));
+  let body = () => readJson(req, MAX_BODY);
   if (feature || (writing && !exempt)) {
     const access = await organizationAccess(prisma, actor.organizationId);
-    if (feature && !accessHas(access, feature)) throw new DomainError("PLAN_REQUIRED", `This feature is part of the ${FEATURES[feature]} plan`, { feature, plan: FEATURES[feature] });
-    if (writing && !exempt && access.readOnly) throw new DomainError("PAYMENT_REQUIRED", "The subscription has expired: data is read-only until payment");
+    const planBlocked = !!feature && !accessHas(access, feature);
+    const readOnlyBlocked = writing && !exempt && access.readOnly;
+    // removing access (a leaver, a leaked key) never waits for a payment or an upgrade
+    const removal = (planBlocked || readOnlyBlocked) && writing ? await accessRemoval(req.method, path, body) : null;
+    if (removal) body = removal.body;
+    else if (planBlocked) throw new DomainError("PLAN_REQUIRED", `This feature is part of the ${FEATURES[feature!]} plan`, { feature, plan: FEATURES[feature!] });
+    else if (readOnlyBlocked) throw new DomainError("PAYMENT_REQUIRED", "The subscription has expired: data is read-only until payment");
   }
   const params = (await rc?.params) ?? {};
   const result = await fn({
@@ -239,7 +253,7 @@ async function handle(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permiss
     req,
     params,
     query,
-    body: () => readJson(req, MAX_BODY),
+    body,
   });
   if (result instanceof Response) return result;
   return NextResponse.json(toJson(result));

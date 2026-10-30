@@ -8,8 +8,9 @@ import { sum } from "@/domain/money";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Supplier price increases / decreases" };
+export const generateMetadata = pageTitle("Supplier price increases / decreases");
 const PAGE = 50;
 
 /**

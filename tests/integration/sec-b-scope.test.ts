@@ -62,7 +62,7 @@ describe("sale-line ids, reprocessing and recipe matching across departments", (
   let bot: Actor;
   let beef: string;
   beforeAll(async () => {
-    h = await makeHotel("SECB-SALES");
+    h = await makeHotel("SECB-SALES", { allowSelfApproval: true });
     cc = await h.actor("cost_controller");
     fbPast = await h.actor("fb_manager", [h.depts.pastry.id]);
     const k = await createIntegrationKey(prisma, await h.actor("admin"), h.hotel.id, "bot");

@@ -11,6 +11,7 @@ import { costRecipe } from "@/domain/recipe-cost";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, can, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
+import { assertNotOwnRecord } from "./segregation";
 import { assertHotelRefs } from "../auth/scope";
 import { OPEX_CATEGORY_KEYS } from "./opex";
 import { departmentRevenue } from "./revenue";
@@ -106,6 +107,7 @@ export async function approveBudget(db: Db, actor: Actor, hotelId: string, budge
     if (!b) throw new DomainError("NOT_FOUND", "Budget not found");
     if (b.status !== "DRAFT") throw new DomainError("CONFLICT", "Only draft budgets can be approved");
     if (!b._count.lines) throw new DomainError("VALIDATION", "Budget has no lines");
+    await assertNotOwnRecord(tx, actor, hotelId, b.createdById);
     const prev = await tx.budget.findMany({ where: { hotelId, year: b.year, status: "APPROVED" } });
     for (const p of prev) await tx.budget.update({ where: { id: p.id }, data: { status: "SUPERSEDED" } });
     const after = await tx.budget.update({ where: { id: b.id }, data: { status: "APPROVED", approvedById: actor.userId, approvedAt: new Date() } });

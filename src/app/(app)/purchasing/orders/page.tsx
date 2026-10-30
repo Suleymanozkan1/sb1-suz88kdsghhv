@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { orderRecommendations } from "@/server/services/inventory";
 import { autoOrderOverview } from "@/server/services/auto-order";
 import { can } from "@/server/auth/actor";
@@ -12,8 +12,9 @@ import { AutoOrder } from "./auto-order";
 import { Suppliers } from "./suppliers";
 import { OrderEmailEditor } from "./order-email-editor";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Order Suggestions" };
+export const generateMetadata = pageTitle("Order Suggestions");
 
 const TABS = ["recommendations", "auto", "suppliers"] as const;
 type Tab = (typeof TABS)[number];
@@ -33,6 +34,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "recommendations";
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  requirePageAccess(actor, "purchase:view", hotelId);
   // trial: every feature is open (full package); the plan badges say so instead of looking locked
   const trial = (await hotelAccess(prisma, hotelId)).access?.state === "TRIAL" || trialAllFeatures();
   const link = (v: Tab, label: string, badge?: React.ReactNode) => (
@@ -41,7 +43,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const head = (subtitle: string, plan?: keyof typeof PLAN_LABEL) => (
     <>
       <PageHeader exportKey="orders" exportParams={{ tab: tab === "recommendations" ? undefined : tab }} canExport={tab !== "auto" /* the auto tab shows them next to its filters */} title={t("Order recommendations")} subtitle={subtitle} actions={plan && <Badge tone={trial || plan === "PREMIUM" ? "green" : "gray"}>{trial ? t("Full package (trial)") : t(PLAN_LABEL[plan])}</Badge>} />
-      <div className="mb-4 flex gap-1 border-b border-ink-200">
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-ink-200">
         {link("recommendations", t("Order recommendations"))}
         {link("auto", t("Automatic ordering"), <Badge tone={trial ? "green" : "blue"}>{trial ? t("Premium · open (trial)") : t("Premium")}</Badge>)}
         {link("suppliers", t("Suppliers"))}

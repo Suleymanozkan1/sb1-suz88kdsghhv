@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { notFound } from "next/navigation";
 import { pageContext, guarded } from "@/server/page";
+import { selfApprovalAllowed } from "@/server/services/segregation";
 import { recipeCost } from "@/server/services/recipes";
 import { can, canDepartment } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -55,7 +56,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
-  const recipe = await prisma.recipe.findFirst({ where: { id, hotelId, deletedAt: null }, include: { department: true, versions: { orderBy: { version: "desc" } } } });
+  const [recipe, selfOk] = await Promise.all([prisma.recipe.findFirst({ where: { id, hotelId, deletedAt: null }, include: { department: true, versions: { orderBy: { version: "desc" } } } }), selfApprovalAllowed(prisma, hotelId)]);
   if (!recipe) notFound();
   // not-found is decided on the error code: guarded() returns the translated message ("Reçete bulunamadı" in Turkish)
   const res = await guarded(() => recipeCost(prisma, actor, hotelId, id).catch((e: unknown) => (isDomainError(e) && e.code === "NOT_FOUND" ? notFound() : Promise.reject(e))));
@@ -108,7 +109,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ id: s
                 <Td className="whitespace-nowrap">{at(updatedAt(v))}</Td>
                 <Td align="right">{money(v.portionCost?.toString(), cur)}</Td>
                 <Td><span className="text-xs text-ink-500">{v.reason ? t(v.reason) : "—"}</span></Td>
-                <Td>{v.status === "DRAFT" && can(actor, "recipe:approve") && <ApproveButton versionId={v.id} />}</Td>
+                <Td>{v.status === "DRAFT" && can(actor, "recipe:approve") && (selfOk || v.createdById !== actor.userId ? <ApproveButton versionId={v.id} /> : <span className="text-xs text-ink-400">{t("Another person approves")}</span>)}</Td>
               </tr>
             );
           })}

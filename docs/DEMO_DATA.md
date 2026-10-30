@@ -17,7 +17,7 @@ The demo dataset exists to **test** business logic, accounting, inventory, cost,
 **Safety:**
 - Every command refuses to run when `HOTELCOST_ENV`/`APP_ENV` is `production`, or when `NODE_ENV=production` without `ALLOW_DEMO_DATA=1`.
 - The reset touches only organizations flagged `isDemo`.
-- Test-user passwords come from `DEMO_PASSWORD` (default `Demo!2026-QA`). They are dev/QA only and never shipped to production.
+- Test-user passwords come from `DEMO_PASSWORD`. Without it a development default from `scripts/demo.ts` is used: fine on your own machine, never for a demo anyone else can reach. Set your own `DEMO_PASSWORD` for every shared demo or training deployment. Test users are dev/QA only and never shipped to production.
 
 ## Companies and hotels
 

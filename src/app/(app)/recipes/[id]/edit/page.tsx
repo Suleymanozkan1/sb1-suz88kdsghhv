@@ -6,8 +6,9 @@ import { prisma } from "@/server/db";
 import { PageHeader } from "@/components/ui";
 import { getT } from "@/i18n/server";
 import { RecipeWizard, type Line } from "../../new/wizard";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Edit recipe" };
+export const generateMetadata = pageTitle("Edit recipe");
 
 const BATCH_TYPES = ["SEMI_FINISHED", "PRODUCTION"];
 

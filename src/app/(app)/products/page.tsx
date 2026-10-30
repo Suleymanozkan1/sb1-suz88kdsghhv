@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { searchProducts, countProducts, productCostTable } from "@/server/services/products";
 import { productPullStatus } from "@/server/integrations/ingest";
 import { can } from "@/server/auth/actor";
@@ -12,8 +12,9 @@ import { ProductForm } from "./product-form";
 import { PullProductsButton } from "./pull-products";
 import { CategoryAccountCodes } from "./category-codes";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Products" };
+export const generateMetadata = pageTitle("Products");
 
 const PAGE = 200;
 
@@ -21,6 +22,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const { q = "", page: pageParam } = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "product:view", hotelId);
   const res = await guarded(async () => {
     const total = await countProducts(prisma, actor, hotelId, q);
     const pages = Math.max(1, Math.ceil(total / PAGE));

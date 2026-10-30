@@ -35,7 +35,7 @@ export const budget: ReportDef = {
         {
           title: t("By department (cost)"),
           columns: [{ key: "department", header: t("Department") }, { key: "budget", header: t("Budget"), type: "money" }, { key: "actual", header: t("Actual"), type: "money" }, { key: "variance", header: t("Variance"), type: "money" }],
-          rows: r.byDept.map((d) => ({ department: d.department, budget: d.budget, actual: d.actual, variance: d.variance })),
+          rows: r.byDept.map((d) => ({ department: d.department === "Hotel level" ? t("Hotel level") : d.department, budget: d.budget, actual: d.actual, variance: d.variance })),
         },
         {
           title: t("Cost targets ({month} {year})", { month: t(MONTHS[month - 1]!), year }),

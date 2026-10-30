@@ -27,7 +27,7 @@ let cc: Actor;
 let beef = "";
 
 beforeAll(async () => {
-  h = await makeHotel("HARD");
+  h = await makeHotel("HARD", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   beef = (await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "BEEF", name: "Beef" })).id;
   await postMovement(prisma, cc, { hotelId: h.hotel.id, warehouseId: h.wh.main.id, productId: beef, type: "OPENING", quantity: 100, unitCost: 500, txDate: day("2026-09-01"), sourceType: "MANUAL" });

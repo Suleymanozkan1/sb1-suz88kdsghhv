@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { inventoryStatus, LEVEL_LABEL, STOCK_LEVELS, stockLevelParam } from "@/server/services/insights";
 import { can, departmentScope } from "@/server/auth/actor";
 import { warehouseScope } from "@/server/auth/scope";
@@ -13,13 +13,15 @@ import { MovementForm } from "./movement-form";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 import { ProductChip } from "@/components/product-chip";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Inventory" };
+export const generateMetadata = pageTitle("Inventory");
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ group?: string; level?: string; from?: string; to?: string; productId?: string }> }) {
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "inventory:view", hotelId);
   const range = monthRange(sp);
   const level = stockLevelParam(sp.level);
   const res = await guarded(() => inventoryStatus(prisma, actor, hotelId, { categoryGroup: sp.group || undefined, period: range }));
@@ -27,7 +29,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const inv = res.data;
   // a single product: from the cost review's critical-stock rows
   const rows = inv.rows.filter((r) => (!level || r.level === level) && (!sp.productId || r.productId === sp.productId));
-  const [warehouses, departments] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } })]);
+  const [warehouses, departments, thresholds] = await Promise.all([prisma.warehouse.findMany({ where: { hotelId, active: true, ...warehouseScope(actor) }, orderBy: { name: "asc" } }), prisma.department.findMany({ where: { hotelId, ...departmentScope(actor, "id") }, orderBy: { name: "asc" } }), prisma.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { adjustmentApprovalValue: true } })]);
   const cur = hotel.baseCurrency;
   // status cards filter the list; clicking the active one clears the filter
   const href = (l?: string) => `?${new URLSearchParams(Object.entries({ group: sp.group, from: range.fromStr, to: range.toStr, level: l }).filter((e): e is [string, string] => !!e[1]))}`;
@@ -51,7 +53,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       </div>
       {can(actor, "inventory:post") && (
         <Card title={t("Record stock movement")} className="mt-4">
-          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
+          <MovementForm warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))} departments={departments.map((d) => ({ id: d.id, name: d.name }))} canAdjust={can(actor, "inventory:adjust")} approvalValue={money(thresholds.adjustmentApprovalValue.toString(), cur, 0)} today={currentBusinessDay(hotel.timezone, hotel.businessDayCutoff)} />
         </Card>
       )}
       <Card className="mt-4" padded={false} title={`${t("Stock by product")}${level ? ` · ${t(LEVEL_LABEL[level]!)}` : ""} (${rows.length})`} actions={sp.productId && rows[0] ? <ProductChip name={rows[0].name} clear={href(level)} /> : undefined}>

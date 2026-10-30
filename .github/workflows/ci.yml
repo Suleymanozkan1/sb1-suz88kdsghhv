@@ -1,4 +1,5 @@
-# Every push and pull request: types, lint, unit tests and the integration tests against a real PostgreSQL.
+# Every push and pull request: types, lint, unit tests (with a coverage floor) and the integration tests against a
+# real PostgreSQL; the dependency audit; and the Playwright end-to-end suite against a production build.
 # The audit (10/2026) could not tell whether the 490+ tests passed: nothing ran them automatically.
 name: CI
 
@@ -10,6 +11,9 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -47,5 +51,63 @@ jobs:
         run: npx tsx scripts/gen-vba.ts && git diff --exit-code src/server/excel/vba-sources.generated.ts
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      - name: Unit tests with the src/server coverage floor (vitest.config.ts)
+        run: npm run test:coverage
       - run: npm run test:integration
+
+  audit:
+    # production dependencies only; accepted exceptions (with a reason and a review date) live in the script
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit --omit=dev --audit-level=high
+        run: node scripts/ci/audit-gate.mjs
+
+  e2e:
+    # Playwright 1.56 ships browsers for Ubuntu 24.04, not for the newer ubuntu-latest image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: hotelcost
+          POSTGRES_PASSWORD: hotelcost
+          POSTGRES_DB: hotelcost_e2e
+          TZ: Europe/Istanbul
+          PGTZ: Europe/Istanbul
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hotelcost -d hotelcost_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # tests/e2e/global-setup.ts migrates and seeds this database; playwright.config.ts starts `next start` on it
+      E2E_DATABASE_URL: postgresql://hotelcost:hotelcost@localhost:5432/hotelcost_e2e?schema=public
+      DATABASE_URL: postgresql://hotelcost:hotelcost@localhost:5432/hotelcost_e2e?schema=public
+      SESSION_SECRET: ci-only-session-secret-not-used-anywhere-else
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

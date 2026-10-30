@@ -11,8 +11,9 @@ import { date } from "@/lib/format";
 import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { CountEditor, DeleteCount, NewCount } from "./count-editor";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Stock Counts" };
+export const generateMetadata = pageTitle("Stock Counts");
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "DRAFT", SUBMITTED: "AWAITING APPROVAL", APPROVED: "APPROVED", POSTED: "POSTED" };
 

@@ -11,6 +11,7 @@ import { bootstrapInstallation } from "@/server/services/admin";
 import { demoStepId, demoSteps, runDemoStep } from "@/server/demo/generate";
 import { PROFILES } from "@/server/demo/profiles";
 import { purgeDemoOrganizations } from "@/server/demo/reset";
+import { billingEnabled } from "@/server/plans";
 
 export const SETUP_LOCK = 7_204_201; // pg advisory lock: one setup at a time
 const DEMO_STARTED = "DEMO_LOAD_STARTED";
@@ -63,9 +64,16 @@ export async function runSetup(db: PrismaClient, input: Record<string, unknown>,
   }, { timeout: 60_000 });
 }
 
-/** The installation owner: an administrator of the (single) real company. */
+export const DEMO_BILLED_MESSAGE = "Demo data is not available on a billed installation: load it on a separate demo deployment";
+
+/**
+ * The installation owner: an administrator of the (single) real company of a self-hosted installation. On a billed
+ * (SaaS) installation there is no such owner: every company is a paying tenant, and demo companies (always on the
+ * full package, see plans.ts) belong on a separate demo deployment.
+ */
 export async function assertInstallationOwner(db: PrismaClient, actor: Actor) {
   if (!actor.permissions.has("admin:users")) throw new DomainError("FORBIDDEN", "Missing permission: admin:users");
+  if (await billingEnabled(db)) throw new DomainError("FORBIDDEN", DEMO_BILLED_MESSAGE);
   const org = await db.organization.findUniqueOrThrow({ where: { id: actor.organizationId } });
   if (org.isDemo || org.isPlatform) throw new DomainError("FORBIDDEN", "Only the installation owner can manage demo data");
   if ((await db.organization.count({ where: { isDemo: false, isPlatform: false } })) !== 1) throw new DomainError("FORBIDDEN", "Demo data can only be added to a single-company installation");

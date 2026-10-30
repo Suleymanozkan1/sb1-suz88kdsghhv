@@ -153,6 +153,8 @@ export async function setHotelActive(db: Db, actor: Actor, currentHotelId: strin
   const reachable = h && (actor.hotelIds.includes(hotelId) || (!h.active && (await db.userHotelAccess.count({ where: { userId: actor.userId, hotelId } })) > 0));
   if (!h || !reachable) throw new DomainError("NOT_FOUND", "Hotel not found");
   if (!active && hotelId === currentHotelId) throw new DomainError("CONFLICT", "Switch to another hotel before suspending this one");
+  // nothing changes: no audit row either (billing reads these rows as real changes of state)
+  if (h.active === active) return h;
   return inTx(db, async (tx) => {
     const r = await tx.hotel.update({ where: { id: hotelId }, data: { active } });
     await audit(tx, actor, { hotelId, action: active ? "HOTEL_ACTIVATE" : "HOTEL_SUSPEND", entityType: "Hotel", entityId: hotelId });

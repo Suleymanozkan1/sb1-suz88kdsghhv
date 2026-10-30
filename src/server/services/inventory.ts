@@ -3,17 +3,20 @@
  * manual adjustments, transfers) with authorization, plus ledger queries.
  */
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
-import { D, ZERO, type Decimal } from "@/domain/money";
+import { randomUUID } from "node:crypto";
+import type { Prisma, StockTransaction } from "@prisma/client";
+import { D, ZERO, toStorage, type Decimal } from "@/domain/money";
+import { wasteRequiresApproval } from "@/domain/waste";
 import { businessDay } from "@/domain/business-day";
 import { checkNumber } from "@/domain/check-number";
 import { DomainError } from "@/domain/errors";
 import { defaultConverter } from "@/domain/uom";
 import { recommendOrder, expectedConsumption } from "@/domain/purchasing";
-import type { Db } from "../db";
+import { inTx, type Db, type Tx } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment, requirePermission } from "../auth/actor";
-import { postMovement, transferStock } from "./ledger";
+import { postMovement, previewIssueCost, previewReceiptCost, transferStock } from "./ledger";
 import { audit } from "./audit";
+import { assertPostable } from "./period";
 import { assertHotelRefs, requireWarehouseScope } from "../auth/scope";
 import { toConversions } from "./products";
 import { openPoQuantities } from "./purchasing";
@@ -34,7 +37,16 @@ export const movementInput = z.object({
   idempotencyKey: z.string().max(128).optional().nullable(),
 });
 
-export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown) {
+/** A posted movement, or (an adjustment at or above the hotel's approval value) the approval request it is waiting on. */
+export type UserMovementResult = (StockTransaction & { status: "POSTED"; approvalId: null }) | { status: "PENDING_APPROVAL"; approvalId: string; estimatedValue: string };
+
+/** What a manual adjustment approval carries to be posted later (stock unit, cost per stock unit). */
+type AdjustmentMovement = { type: "ADJUSTMENT_IN" | "ADJUSTMENT_OUT"; warehouseId: string; productId: string; departmentId: string | null; quantity: string; unitCost: string | null; txDate: string; reason: string; requestKey: string | null };
+
+/** Movements that are never held for approval (issues, staff meals, comps, opening balances) always come back posted. */
+export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: { type: "CONSUMPTION" | "STAFF_MEAL" | "COMPLIMENTARY" | "OPENING" } & Record<string, unknown>): Promise<StockTransaction & { status: "POSTED"; approvalId: null }>;
+export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown): Promise<UserMovementResult>;
+export async function postUserMovement(db: Db, actor: Actor, hotelId: string, raw: unknown): Promise<UserMovementResult> {
   authorize(actor, "inventory:post", { hotelId }); // permission first: unauthorised callers learn nothing about the payload
   const input = movementInput.parse(raw);
   if (input.type.startsWith("ADJUSTMENT") || input.type === "OPENING") requirePermission(actor, "inventory:adjust");
@@ -51,22 +63,94 @@ export async function postUserMovement(db: Db, actor: Actor, hotelId: string, ra
   const conv = defaultConverter.convert(input.quantity, input.unit, product.stockUnit, toConversions(product.conversions));
   const inbound = input.type === "ADJUSTMENT_IN" || input.type === "OPENING";
   const unitCostPerStock = input.unitCost ? D(input.unitCost).div(conv.factor) : null;
-  const tx = await postMovement(db, actor, {
-    hotelId,
-    warehouseId: input.warehouseId,
-    productId: product.id,
-    type: input.type.startsWith("ADJUSTMENT") ? "ADJUSTMENT" : (input.type as "CONSUMPTION" | "STAFF_MEAL" | "COMPLIMENTARY" | "OPENING"),
-    quantity: inbound ? conv.quantity : conv.quantity.neg(),
-    unitCost: unitCostPerStock,
-    txDate: input.txDate,
-    departmentId: input.departmentId ?? undefined,
-    sourceType: "MANUAL",
-    reason: input.reason ?? null,
-    // the client's key lives in its own per-user namespace: it can never equal a workflow key (count:, waste:, sale: …)
-    idempotencyKey: input.idempotencyKey ? `user:${actor.userId}:${input.idempotencyKey}` : null,
+  // the client's key lives in its own per-user namespace: it can never equal a workflow key (count:, waste:, sale: …)
+  const requestKey = input.idempotencyKey ? `user:${actor.userId}:${input.idempotencyKey}` : null;
+  // the movement and its audit row are written together, or not at all
+  return inTx(db, async (tx) => {
+    if (input.type === "ADJUSTMENT_IN" || input.type === "ADJUSTMENT_OUT") {
+      // like waste: an adjustment worth the hotel's approval value or more waits for someone else's approval (BIZ-03)
+      const hotel = await tx.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { adjustmentApprovalValue: true } });
+      const value = inbound ? (unitCostPerStock ? conv.quantity.times(unitCostPerStock) : await previewReceiptCost(tx, hotelId, wh.id, product.id, conv.quantity)) : await previewIssueCost(tx, hotelId, wh.id, product.id, conv.quantity);
+      // no known cost: nothing to compare, the posting below refuses it (MISSING_COST)
+      if (value && wasteRequiresApproval({ value, stockQty: conv.quantity }, { valueThreshold: hotel.adjustmentApprovalValue.toString() })) {
+        // a request the approver could never post is refused now, as the posting would be: closed period, future date, missing stock
+        await assertPostable(tx, actor, hotelId, input.txDate);
+        if (!inbound) {
+          const bal = await tx.stockBalance.findUnique({ where: { warehouseId_productId: { warehouseId: wh.id, productId: product.id } }, select: { quantity: true } });
+          const available = D(bal?.quantity.toString() ?? 0);
+          if (conv.quantity.gt(available)) throw new DomainError("INSUFFICIENT_STOCK", `Insufficient stock for ${product.name}: available ${available.toString()} ${product.stockUnit}, requested ${conv.quantity.toString()}`, { productId: product.id, available: available.toString(), requested: conv.quantity.toString() });
+        }
+        const movement: AdjustmentMovement = { type: input.type, warehouseId: wh.id, productId: product.id, departmentId: input.departmentId ?? null, quantity: toStorage(conv.quantity).toString(), unitCost: unitCostPerStock ? unitCostPerStock.toString() : null, txDate: input.txDate.toISOString(), reason: input.reason!, requestKey };
+        return requestAdjustmentApproval(tx, actor, hotelId, { movement, value, product: product.name, warehouse: wh.name, quantity: input.quantity, unit: input.unit, departmentId: input.departmentId ?? wh.departmentId });
+      }
+    }
+    const stx = await postMovement(tx, actor, {
+      hotelId,
+      warehouseId: input.warehouseId,
+      productId: product.id,
+      type: input.type.startsWith("ADJUSTMENT") ? "ADJUSTMENT" : (input.type as "CONSUMPTION" | "STAFF_MEAL" | "COMPLIMENTARY" | "OPENING"),
+      quantity: inbound ? conv.quantity : conv.quantity.neg(),
+      unitCost: unitCostPerStock,
+      txDate: input.txDate,
+      departmentId: input.departmentId ?? undefined,
+      sourceType: "MANUAL",
+      reason: input.reason ?? null,
+      idempotencyKey: requestKey,
+    });
+    await audit(tx, actor, { hotelId, action: `STOCK_${input.type}`, entityType: "StockTransaction", entityId: stx.id, after: { quantity: stx.quantity.toString(), totalCost: stx.totalCost.toString(), conversion: conv.path }, reason: input.reason });
+    return Object.assign(stx, { status: "POSTED" as const, approvalId: null });
   });
-  await audit(db, actor, { hotelId, action: `STOCK_${input.type}`, entityType: "StockTransaction", entityId: tx.id, after: { quantity: tx.quantity.toString(), totalCost: tx.totalCost.toString(), conversion: conv.path }, reason: input.reason });
-  return tx;
+}
+
+async function requestAdjustmentApproval(tx: Tx, actor: Actor, hotelId: string, r: { movement: AdjustmentMovement; value: Decimal; product: string; warehouse: string; quantity: string; unit: string; departmentId: string | null }): Promise<UserMovementResult> {
+  // the same request sent twice (a retried click) waits once
+  if (r.movement.requestKey) {
+    const same = await tx.approval.findFirst({ where: { hotelId, action: "MANUAL_ADJUSTMENT", requestedById: actor.userId, payload: { path: ["movement", "requestKey"], equals: r.movement.requestKey } } });
+    if (same) {
+      // decided meanwhile: a retry must not report a rejected or already posted adjustment as still waiting
+      if (same.status !== "PENDING") throw new DomainError("CONFLICT", "This adjustment request was already decided");
+      return { status: "PENDING_APPROVAL", approvalId: same.id, estimatedValue: String((same.payload as { estimatedValue?: string } | null)?.estimatedValue ?? "") };
+    }
+  }
+  const estimatedValue = toStorage(r.value).toString();
+  const id = randomUUID();
+  const approval = await tx.approval.create({
+    data: {
+      id,
+      hotelId,
+      action: "MANUAL_ADJUSTMENT",
+      entityType: "StockAdjustment",
+      entityId: id,
+      requestedById: actor.userId,
+      reason: r.movement.reason,
+      // shown on /approvals (every key but `movement`, which is what gets posted on approval)
+      payload: { type: r.movement.type === "ADJUSTMENT_IN" ? "Adjustment +" : "Adjustment −", product: r.product, warehouse: r.warehouse, quantity: r.quantity, unit: r.unit, txDate: r.movement.txDate, estimatedValue, movement: { ...r.movement, departmentScope: r.departmentId } },
+    },
+  });
+  await audit(tx, actor, { hotelId, action: "STOCK_ADJUSTMENT_REQUEST", entityType: "StockAdjustment", entityId: id, after: { type: r.movement.type, product: r.product, quantity: r.movement.quantity, estimatedValue, approvalId: approval.id }, reason: r.movement.reason });
+  return { status: "PENDING_APPROVAL", approvalId: approval.id, estimatedValue };
+}
+
+/** Posts an approved manual adjustment request (approvals.decideApproval); the approver is the poster, as for waste. */
+export async function postApprovedAdjustment(tx: Tx, actor: Actor, approval: { id: string; hotelId: string; payload: unknown }) {
+  const m = (approval.payload as { movement?: AdjustmentMovement } | null)?.movement;
+  if (!m) throw new DomainError("VALIDATION", "This adjustment request has nothing to post");
+  const stx = await postMovement(tx, actor, {
+    hotelId: approval.hotelId,
+    warehouseId: m.warehouseId,
+    productId: m.productId,
+    type: "ADJUSTMENT",
+    quantity: m.type === "ADJUSTMENT_IN" ? m.quantity : D(m.quantity).neg(),
+    unitCost: m.unitCost,
+    txDate: new Date(m.txDate),
+    departmentId: m.departmentId ?? undefined,
+    sourceType: "MANUAL",
+    sourceId: approval.id,
+    reason: m.reason,
+    idempotencyKey: `adjustment:${approval.id}`,
+  });
+  await audit(tx, actor, { hotelId: approval.hotelId, action: `STOCK_${m.type}`, entityType: "StockTransaction", entityId: stx.id, after: { quantity: stx.quantity.toString(), totalCost: stx.totalCost.toString(), approvalId: approval.id }, reason: m.reason });
+  return stx;
 }
 
 export const transferInput = z.object({ fromWarehouseId: z.string(), toWarehouseId: z.string(), productId: z.string(), quantity: dec, unit: z.string(), txDate: z.coerce.date(), reason: z.string().max(500).optional() });

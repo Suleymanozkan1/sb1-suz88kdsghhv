@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess, requireAllDepartmentsPage } from "@/server/page";
 import { listRules, listRuns, previewPeriodAllocation } from "@/server/services/allocation";
 import { OPEX_CATEGORIES } from "@/server/services/opex";
 import { DRIVER_LABEL } from "@/domain/allocation";
@@ -12,8 +12,9 @@ import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { PostAllocation, RuleForm, RuleToggle } from "./actions";
 import { ReverseButton } from "../operations/forms";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Allocation" };
+export const generateMetadata = pageTitle("Cost Allocation");
 
 /** Driver basis text from the allocation service; the sub-meter variant carries the utility name. */
 function tBasis(t: T, s: string): string {
@@ -25,6 +26,9 @@ export default async function AllocationPage({ searchParams }: { searchParams: P
   const t = await getT();
   const sp = await searchParams;
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "opex:view", hotelId);
+  // hotel-wide figures: the menu shows this page to all-department roles only (nav.ts hotelWide)
+  requireAllDepartmentsPage(actor);
   const cur = hotel.baseCurrency;
   const rules = await guarded(() => listRules(prisma, actor, hotelId));
   if (!rules.ok) return <Alert>{rules.error}</Alert>;

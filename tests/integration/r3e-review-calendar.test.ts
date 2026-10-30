@@ -18,7 +18,7 @@ const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.get
 const plus = (d: Date, n: number) => new Date(d.getTime() + n * 86_400_000);
 
 beforeAll(async () => {
-  h = await makeHotel("R3E");
+  h = await makeHotel("R3E", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   const fb = await h.actor("fb_manager");
   const products = [];

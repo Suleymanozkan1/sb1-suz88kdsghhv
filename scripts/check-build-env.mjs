@@ -22,12 +22,15 @@ if (problems.length) {
 ${problems.map((p) => `  - ${p}`).join("\n")}
 
 Fix it in the Vercel dashboard:
-  1. Project → Storage → Create Database → Neon (Postgres), or connect an existing one.
-     Tick every environment: Production, Preview and Development.
+  1. Project → Storage → Create Database → Neon (Postgres), or connect an existing one, for Production.
+     For Preview deployments, turn on Neon's "branch per preview deployment" so every preview gets its own
+     copy of the data. Never point Preview at the production database. If you do not want previews to have
+     a database at all, leave Preview unconnected: preview builds then stop here, which is harmless.
   2. Settings → Environment Variables: DATABASE_URL (and DATABASE_URL_UNPOOLED) must have a value
      for this environment. Delete any DATABASE_URL you added by hand with an empty value.
   3. Deployments → … → Redeploy.
-See docs/VERCEL.md ("Build fails with P1012 / empty DATABASE_URL").
+Only production builds migrate the database (scripts/vercel-migrate.ts).
+See docs/VERCEL.md ("Build fails with P1012 / empty DATABASE_URL" and "Preview deployments").
 `);
   process.exit(1);
 }

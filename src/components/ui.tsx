@@ -44,7 +44,8 @@ export function PageHeader({ title, subtitle, actions, exportKey, exportParams, 
 
 export function Card({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cn("rounded-xl border border-ink-200 bg-white shadow-sm", className)}>
+    // min-w-0: inside a grid or flex row the card never grows to its widest table; the table scrolls in its own region
+    <section className={cn("min-w-0 rounded-xl border border-ink-200 bg-white shadow-sm", className)}>
       {(title || actions) && (
         <header className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-ink-800">{typeof title === "string" ? <Title>{title}</Title> : title}</h2>
@@ -62,19 +63,19 @@ export function Card({ title, actions, children, className, padded = true }: { t
  */
 export function Stat({ label, value, hint, tone = "default", badge, href, onClick, active }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "default" | "good" | "bad" | "warn"; badge?: ReactNode; href?: string; onClick?: () => void; /** highlighted as the selected card */ active?: boolean }) {
   const body = <StatBody label={label} value={value} hint={hint} tone={tone} badge={badge} clickable={!!(href || onClick)} active={active} />;
-  if (href) return <Link href={href} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</Link>;
-  if (onClick) return <button type="button" onClick={onClick} aria-pressed={active} className="block w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</button>;
+  if (href) return <Link href={href} className="block min-w-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</Link>;
+  if (onClick) return <button type="button" onClick={onClick} aria-pressed={active} className="block w-full min-w-0 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{body}</button>;
   return body;
 }
 
 function StatBody({ label, value, hint, tone, badge, clickable, active }: { label: string; value: ReactNode; hint?: ReactNode; tone: "default" | "good" | "bad" | "warn"; badge?: ReactNode; clickable: boolean; active?: boolean }) {
   return (
-    <div className={cn("h-full rounded-xl border border-ink-200 bg-white p-4 shadow-sm", clickable && "cursor-pointer transition hover:border-brand-300 hover:shadow", active && "ring-2 ring-brand-600 ring-offset-2")}>
+    <div className={cn("h-full min-w-0 rounded-xl border border-ink-200 bg-white p-4 shadow-sm", clickable && "cursor-pointer transition hover:border-brand-300 hover:shadow", active && "ring-2 ring-brand-600 ring-offset-2")}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{label}</p>
         {badge}
       </div>
-      <p className={cn("mt-2 text-2xl font-semibold tabular-nums", tone === "good" && "text-brand-700", tone === "bad" && "text-red-700", tone === "warn" && "text-amber-700", tone === "default" && "text-ink-950")}>{value}</p>
+      <p className={cn("mt-2 text-2xl font-semibold tabular-nums [overflow-wrap:anywhere]", tone === "good" && "text-brand-700", tone === "bad" && "text-red-700", tone === "warn" && "text-amber-700", tone === "default" && "text-ink-950")}>{value}</p>
       {hint && <p className="mt-1 text-xs text-ink-500">{hint}</p>}
     </div>
   );
@@ -135,7 +136,7 @@ export function Select({ className, children, ...p }: SelectHTMLAttributes<HTMLS
 export function Table({ children, className, label = "Scrollable table" }: { children: ReactNode; className?: string; label?: string }) {
   // focusable scroll container: wide tables can be scrolled with the keyboard (WCAG 2.1.1)
   return (
-    <div className={cn("overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500", className)} tabIndex={0} role="region" aria-label={label}>
+    <div className={cn("relative overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500", className)} tabIndex={0} role="region" aria-label={label}>
       <table className="min-w-full divide-y divide-ink-100 text-sm">{children}</table>
     </div>
   );

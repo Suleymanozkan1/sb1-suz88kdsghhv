@@ -24,7 +24,7 @@ const P: Record<string, string> = {};
 const wasteValue = async () => (await prisma.wasteRecord.findMany({ where: { hotelId: h.hotel.id, wasteType: "BUFFET_LEFTOVER" } })).reduce((a, w) => a + Number(w.costValue), 0);
 
 beforeAll(async () => {
-  h = await makeHotel("BRKF");
+  h = await makeHotel("BRKF", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   brkf = (await prisma.department.create({ data: { hotelId: h.hotel.id, code: "BRKF", name: "Breakfast", isOutlet: true } })).id;
   for (const [k, sku, name, unit, cost] of [

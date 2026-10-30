@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { currentActor } from "@/server/auth/session";
 import { Alert } from "@/components/ui";
 import { SignOutButton } from "@/components/sign-out-button";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "No hotel access" };
+export const generateMetadata = pageTitle("No hotel access");
 export const dynamic = "force-dynamic";
 
 export default async function NoAccess() {
@@ -16,7 +18,7 @@ export default async function NoAccess() {
     <main className="mx-auto max-w-lg space-y-4 p-6">
       <h1 className="text-2xl font-semibold text-ink-950">{t("No hotel assigned")}</h1>
       <Alert tone="amber">{t("Your account ({email}) is active but not assigned to any active hotel. Ask your company administrator to give you access.", { email: actor.email })}</Alert>
-      <SignOutButton />
+      <div className="flex items-center gap-3"><SignOutButton /><Link href="/account/password" className="text-sm font-medium text-brand-700 hover:underline">{t("Change password")}</Link></div>
     </main>
   );
 }
