@@ -103,13 +103,13 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
             </ul>
             <p className="mt-2 text-xs text-ink-500">{t("To try them, sign out and sign in with one of these addresses. Your own company is not affected.")}</p>
           </div>
-          <Button variant="danger" disabled={busy} onClick={() => window.confirm(t("Remove all demo companies and their data?")) && void act(() => call("DELETE", "/api/setup/demo"))}>{t("Remove demo data")}</Button>
+          <RemoveForm busy={busy} label={t("Remove demo data")} variant="danger" onRemove={(password) => window.confirm(t("Remove all demo companies and their data?")) && void act(() => call("DELETE", "/api/setup/demo", { password }))} />
         </>
       )}
       {s.state === "failed" && (
         <>
           <Alert>{t("Loading the demo data did not finish.")}{s.error ? ` (${s.error})` : ""}</Alert>
-          {s.companies > 0 && <Button variant="secondary" disabled={busy} onClick={() => void act(() => call("DELETE", "/api/setup/demo"))}>{t("Clean up and start again")}</Button>}
+          {s.companies > 0 && <RemoveForm busy={busy} label={t("Clean up and start again")} variant="secondary" onRemove={(password) => void act(() => call("DELETE", "/api/setup/demo", { password }))} />}
         </>
       )}
       {(s.state === "none" || (s.state === "failed" && s.companies === 0)) && (
@@ -121,5 +121,16 @@ export function DemoPanel({ initial }: { initial: DemoState }) {
       )}
       <p><Link href="/" className="font-medium text-brand-700 hover:underline">{t("Go to the dashboard")}</Link></p>
     </div>
+  );
+}
+
+/** Removing the demo companies needs the owner's password, like loading them. */
+function RemoveForm({ busy, label, variant, onRemove }: { busy: boolean; label: string; variant: "danger" | "secondary"; onRemove: (password: string) => void }) {
+  const t = useT();
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onRemove(String(new FormData(e.currentTarget).get("password") ?? "")); }}>
+      <div><Label htmlFor="rm-pw">{t("Your password")}</Label><Input id="rm-pw" name="password" type="password" required autoComplete="current-password" /></div>
+      <Button type="submit" variant={variant} disabled={busy}>{label}</Button>
+    </form>
   );
 }
