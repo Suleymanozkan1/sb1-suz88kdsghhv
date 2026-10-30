@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { currentActor } from "@/server/auth/session";
 import { prisma } from "@/server/db";
 import { listTenants } from "@/server/services/tenancy";
@@ -21,7 +22,7 @@ export default async function PlatformPage() {
   const t = await getT();
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6">
-      <PageHeader title={t("HotelCost platform")} subtitle={<span>{t("Signed in as {email}", { email: actor.email })} <Badge tone="blue">{t("Super administrator")}</Badge> · {t("tenant data (costs, stock, revenue) is not visible here by design.")}</span>} actions={<SignOutButton />} />
+      <PageHeader title={t("HotelCost platform")} subtitle={<span>{t("Signed in as {email}", { email: actor.email })} <Badge tone="blue">{t("Super administrator")}</Badge> · {t("tenant data (costs, stock, revenue) is not visible here by design.")}</span>} actions={<div className="flex items-center gap-2"><Link href="/account/password" className="text-sm font-medium text-brand-700 hover:underline">{t("Change password")}</Link><SignOutButton /></div>} />
       <PlatformConsole tenants={tenants.map((x) => ({ id: x.id, name: x.name, active: x.active, isDemo: x.isDemo, plan: x.plan, createdAt: x.createdAt.toISOString(), users: x._count.users, hotels: x.hotels }))} />
       <h2 className="mb-3 mt-8 text-lg font-semibold">{t("Subscriptions & billing")}</h2>
       <BillingConsole

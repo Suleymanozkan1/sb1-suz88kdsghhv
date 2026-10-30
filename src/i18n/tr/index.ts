@@ -27,5 +27,6 @@ import { secb } from "./secb";
 import { secc } from "./secc";
 import { secd } from "./secd";
 import { denetim } from "./denetim";
+import { fixF } from "./fix-f";
 
-export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f, ...r3, ...r3a, ...r3b, ...r3c, ...r3d, ...r3e, ...r3f, ...seca, ...secb, ...secc, ...secd, ...denetim };
+export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f, ...r3, ...r3a, ...r3b, ...r3c, ...r3d, ...r3e, ...r3f, ...seca, ...secb, ...secc, ...secd, ...denetim, ...fixF };
