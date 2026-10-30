@@ -93,6 +93,13 @@ describe("nightly automatic orders", () => {
     expect((await res.json()).lastNightlyRunAt).toBe(last!.toISOString());
   });
 
+  it("health stays up on a database that is not migrated yet (first boot, e2e setup waits on it)", async () => {
+    vi.spyOn(prisma.auditLog, "findFirst").mockRejectedValueOnce(new Error("The table `public.AuditLog` does not exist in the current database."));
+    const res = await health();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ db: "up", lastNightlyRunAt: null });
+  });
+
   it("without a template editor the reply goes to a user of the hotel who manages purchasing", async () => {
     const t = await hotelWithDueOrder("FIXD-REPLY", { trialEndsAt: new Date(NOW.getTime() - 60 * DAY), paidThrough: new Date(NOW.getTime() + 30 * DAY) });
     const before = sentMail.length;

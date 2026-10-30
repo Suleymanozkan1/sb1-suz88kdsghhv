@@ -22,7 +22,8 @@ export async function GET() {
     const utc = ["UTC", "Etc/UTC", "GMT", "Etc/GMT", "Universal", "Zulu"].includes(tz);
     const warnings = utc ? [] : [`Database time zone is ${tz}; run: ALTER DATABASE <name> SET timezone TO 'UTC' and restart the app`];
     if (!utc) log.warn("health: database time zone is not UTC", { dbTimeZone: tz });
-    const lastNightlyRunAt = (await lastNightlySuccess(prisma))?.toISOString() ?? null;
+    // a database not migrated yet (first boot, e2e setup) is still reachable: the job time is then simply unknown
+    const lastNightlyRunAt = await lastNightlySuccess(prisma).then((d) => d?.toISOString() ?? null, () => null);
     // HTTP 200 even with a warning: a load balancer reading 503 would take a working app out of service
     return NextResponse.json({ status: utc ? "ok" : "warn", db: "up", dbLatencyMs, dbTimeZone: tz, lastNightlyRunAt, warnings, region: process.env.VERCEL_REGION ?? null, time: new Date().toISOString() });
   } catch (e) {
