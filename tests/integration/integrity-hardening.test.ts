@@ -76,4 +76,15 @@ describe("database-enforced immutability", () => {
     // the real tenant's row created in beforeAll is untouched
     expect(await prisma.stockTransaction.count({ where: { id: stockTxId } })).toBe(1);
   });
+
+  it("company-level audit rows of a demo tenant (no hotel) are purged too", async () => {
+    // e.g. an administrator's user or invitation changes in the demo company: organization set, no hotel
+    const org = await prisma.organization.create({ data: { name: "Demo purge org audit", isDemo: true } });
+    const hotel = await prisma.hotel.create({ data: { organizationId: org.id, code: "DPA", name: "Demo purge audit hotel" } });
+    await prisma.auditLog.create({ data: { organizationId: org.id, action: "USER_UPDATE", entityType: "User", entityId: "u1", source: "UI" } });
+    await prisma.auditLog.create({ data: { organizationId: org.id, hotelId: hotel.id, action: "HOTEL_SETTINGS", entityType: "Hotel", entityId: hotel.id, source: "UI" } });
+    const rows = await purgeDemoOrganizations(prisma, [org.id], true);
+    expect(rows.AuditLog).toBe(2);
+    expect(await prisma.organization.count({ where: { id: org.id } })).toBe(0);
+  });
 });

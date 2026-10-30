@@ -47,8 +47,13 @@ export async function purgeDemoOrganizations(db: PrismaClient, organizationIds: 
   pred.set("Hotel", `"organizationId" IN (${orgList})`);
   for (const t of tables) {
     if (t === "Currency") continue; // shared reference data, re-assigned below
-    if (hasHotel.has(t) && t !== "Hotel") pred.set(t, `"hotelId" IN (SELECT id FROM "Hotel" WHERE "organizationId" IN (${orgList}))`);
-    else if (hasOrg.has(t) && t !== "Hotel") pred.set(t, `"organizationId" IN (${orgList})`);
+    if (t === "Hotel") continue;
+    const byHotel = `"hotelId" IN (SELECT id FROM "Hotel" WHERE "organizationId" IN (${orgList}))`;
+    const byOrg = `"organizationId" IN (${orgList})`;
+    // a table with both columns (the audit trail) also holds company-level rows without a hotel: take them too
+    if (hasHotel.has(t) && hasOrg.has(t)) pred.set(t, `(${byHotel} OR ${byOrg})`);
+    else if (hasHotel.has(t)) pred.set(t, byHotel);
+    else if (hasOrg.has(t)) pred.set(t, byOrg);
   }
   for (let changed = true; changed; ) {
     changed = false;
