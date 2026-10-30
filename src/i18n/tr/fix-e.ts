@@ -46,4 +46,6 @@ export const fixE: Record<string, string> = {
   "Decision": "Karar",
   "Store": "Depo",
   "Differences": "Farklar",
+  // validation messages name the field (FE-08)
+  "Subcategory": "Alt kategori",
 };

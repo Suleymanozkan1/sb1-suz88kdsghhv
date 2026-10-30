@@ -5,6 +5,7 @@
  */
 import type { T } from "@/i18n/core";
 import { date } from "./format";
+import { fieldLabelKey } from "./field-labels";
 
 export interface DiffLine {
   field: string;
@@ -14,32 +15,12 @@ export interface DiffLine {
   to?: string;
 }
 
-/** English labels (translation keys) of the fields the services write most; other fields are spelled out from camelCase. */
-const LABEL: Record<string, string> = {
-  qty: "Quantity", quantity: "Quantity", cost: "Cost", unit: "Unit", unitCost: "Unit cost", totalCost: "Total cost", portionCost: "Portion cost",
-  sellingPrice: "Selling price", parQty: "Par level", roomType: "Room type", folio: "Folio", items: "Items", lines: "Lines", status: "Status", name: "Name",
-  code: "Code", type: "Type", active: "Active", version: "Version", notes: "Notes", note: "Note", reason: "Reason", target: "Target", metric: "Metric",
-  warnAt: "Warning level", period: "Period", priority: "Priority", validFrom: "Valid from", validTo: "Valid to", dueDate: "Due date", kind: "Type",
-  rootCause: "Root cause", fileName: "File name", total: "Total", year: "Year", in: "In", out: "Out", driver: "Driver", boardBasis: "Board basis",
-  serviceDate: "Service date", startTime: "Start time", endTime: "End time", expectedCovers: "Expected covers", actualCovers: "Actual covers",
-  paidCovers: "Paid covers", includedCovers: "Included covers", inHouseGuests: "In-house guests", occupiedRooms: "Occupied rooms", foodCost: "Food cost",
-  wasteCost: "Waste cost", remaining: "Remaining", actualSaving: "Actual saving", targetSaving: "Target saving", baselineCost: "Baseline cost",
-  ownerName: "Owner", problem: "Problem", action: "Action", posted: "Posted", closedAt: "Closed at", txDate: "Date", wasteDate: "Date", wasteType: "Waste type",
-  price: "Price", unitPrice: "Unit price", amount: "Amount", email: "E-mail", role: "Role", roleKey: "Role", requestedBy: "Requested by", decision: "Decision",
-  product: "Product", recipe: "Recipe", supplier: "Supplier", department: "Department", warehouse: "Store", resultRef: "Result",
-};
-
 /** Keys that hold another record's id: shown by name when known (products, recipes, stores, departments …), else left out. */
 const isRef = (k: string) => k === "key" || /Id$/.test(k);
 /** Bookkeeping fields with no meaning to a reader. */
 const SKIP = new Set(["id", "hotelId", "organizationId", "sessionId", "createdAt", "updatedAt", "createdById", "closedById", "pdfHash", "label"]);
 /** a database id (cuid / uuid) in a plain field, e.g. the two legs of a transfer: means nothing to a reader without a name */
 const isId = (v: unknown) => typeof v === "string" && (/^c[a-z0-9]{20,30}$/.test(v) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v));
-
-const humanize = (k: string) => {
-  const s = k.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
-  return s.charAt(0).toUpperCase() + s.slice(1);
-};
 
 function value(v: unknown, t: T, names: ReadonlyMap<string, string>): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -59,7 +40,7 @@ function value(v: unknown, t: T, names: ReadonlyMap<string, string>): string {
   return parts.length > 4 ? `${s} …` : s || "—";
 }
 
-const label = (k: string, t: T) => t(LABEL[k] ?? humanize(k));
+const label = (k: string, t: T) => t(fieldLabelKey(k));
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
