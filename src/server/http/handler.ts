@@ -14,6 +14,7 @@ import { actorFromToken, isApiToken, SESSION_COOKIE, HOTEL_COOKIE } from "../aut
 import { errorFields, log } from "../log";
 import { prisma } from "../db";
 import { accessHas, FEATURES, featureForPath, organizationAccess, type Feature } from "../plans";
+import { accessRemoval } from "./access-removal";
 
 /** A caller-supplied request id is kept only if it looks like one (it is echoed into logs and a header). */
 export function requestIdOf(req: Request): string {
@@ -195,7 +196,8 @@ export function api(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permissio
 
 /**
  * Writes that stay possible on an expired (read-only) subscription: signing in/out and switching hotel, paying,
- * the platform console, and exporting one's own data — a tenant is never locked out of its numbers.
+ * the platform console, and exporting one's own data — a tenant is never locked out of its numbers. Writes that only
+ * remove access (src/server/http/access-removal.ts) also pass, on an expired subscription and below their module's plan.
  */
 const READ_ONLY_EXEMPT = ["/api/auth/", "/api/billing/", "/api/platform/", "/api/export/", "/api/table-export/", "/api/reports/"];
 
@@ -227,10 +229,16 @@ async function handle(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permiss
   const path = req.nextUrl.pathname;
   const feature = opts.feature ?? featureForPath(path);
   const exempt = READ_ONLY_EXEMPT.some((p) => path.startsWith(p));
+  let body = () => readJson(req, MAX_BODY);
   if (feature || (writing && !exempt)) {
     const access = await organizationAccess(prisma, actor.organizationId);
-    if (feature && !accessHas(access, feature)) throw new DomainError("PLAN_REQUIRED", `This feature is part of the ${FEATURES[feature]} plan`, { feature, plan: FEATURES[feature] });
-    if (writing && !exempt && access.readOnly) throw new DomainError("PAYMENT_REQUIRED", "The subscription has expired: data is read-only until payment");
+    const planBlocked = !!feature && !accessHas(access, feature);
+    const readOnlyBlocked = writing && !exempt && access.readOnly;
+    // removing access (a leaver, a leaked key) never waits for a payment or an upgrade
+    const removal = (planBlocked || readOnlyBlocked) && writing ? await accessRemoval(req.method, path, body) : null;
+    if (removal) body = removal.body;
+    else if (planBlocked) throw new DomainError("PLAN_REQUIRED", `This feature is part of the ${FEATURES[feature!]} plan`, { feature, plan: FEATURES[feature!] });
+    else if (readOnlyBlocked) throw new DomainError("PAYMENT_REQUIRED", "The subscription has expired: data is read-only until payment");
   }
   const params = (await rc?.params) ?? {};
   const result = await fn({
@@ -239,7 +247,7 @@ async function handle(fn: (ctx: Ctx) => Promise<unknown>, opts: { perm?: Permiss
     req,
     params,
     query,
-    body: () => readJson(req, MAX_BODY),
+    body,
   });
   if (result instanceof Response) return result;
   return NextResponse.json(toJson(result));
