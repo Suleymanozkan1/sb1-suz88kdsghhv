@@ -1,4 +1,5 @@
 import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
+import { shareOfVariance, varianceText, varianceTone } from "@/lib/variance-display";
 import Link from "next/link";
 import { causeLabel, theoreticalVsActual } from "@/server/services/variance";
 import { can, departmentScope } from "@/server/auth/actor";
@@ -57,9 +58,9 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label={tr("Actual cost")} value={money(t.actualCost, cur, 0)} hint={tr("{pct} of revenue", { pct: pct(t.actualCostPct) })} />
         <Stat label={tr("Theoretical cost")} value={money(t.theoreticalCost, cur, 0)} hint={tr("{pct} of revenue", { pct: pct(t.theoreticalCostPct) })} />
-        <Stat label={tr("Variance")} value={money(t.variance, cur, 0)} tone={Number(t.variance) > 0 ? "bad" : "good"} hint={tr("{pct} pts", { pct: pct(t.costPctVariancePts, 2) })} />
+        <Stat label={tr("Variance")} value={money(t.variance, cur, 0)} tone={varianceTone(t.variance, t.theoreticalCost)} hint={tr("{pct} pts", { pct: pct(t.costPctVariancePts, 2) })} />
         <Stat label={tr("Recorded waste")} value={money(t.waste, cur, 0)} />
-        <Stat label={tr("Unexplained")} value={money(t.unexplained, cur, 0)} tone="warn" hint={tr("{pct} of theoretical", { pct: pct(t.unexplainedPct) })} />
+        <Stat label={tr("Unexplained")} value={money(t.unexplained, cur, 0)} tone={varianceTone(t.unexplained, t.theoreticalCost)} hint={tr("{pct} of theoretical", { pct: pct(t.unexplainedPct) })} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -89,7 +90,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
                   {c.cause === "UNEXPLAINED" ? tr("= Unexplained") : c.cause === "COMPLIMENTARY" && can(actor, "comp:view") ? <Link href={`/comps?from=${range.fromStr}&to=${range.toStr}${sp.departmentId ? `&departmentId=${sp.departmentId}` : ""}`} className="text-brand-700 hover:underline">− {tr(causeLabel(c.cause))}</Link> : `− ${tr(causeLabel(c.cause))}`}
                   {c.evidence && <span className="block text-xs font-normal text-ink-400">{tr(c.evidence)}</span>}
                 </span>
-                <span className="ml-auto whitespace-nowrap tabular-nums">{money(c.amount, cur)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></span>
+                <span className="ml-auto whitespace-nowrap tabular-nums">{money(c.amount, cur)} <span className="text-ink-400">({pct(shareOfVariance(c.amount, r.breakdown.total))})</span></span>
               </li>
             ))}
           </ul>
@@ -111,7 +112,6 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
             </thead>
             <tbody className="divide-y divide-ink-100">
               {r.products.map((p) => {
-                const u = Number(p.unexplainedValue);
                 return (
                   <tr key={p.productId} className="hover:bg-ink-50">
                     <Td><span className="font-medium"><Title>{p.name}</Title></span> <Badge>{tr(p.categoryGroup)}</Badge><span className="block text-xs text-ink-400">{p.sku} · {tr("avg")} {money(p.avgCost, cur)}/{p.unit}</span></Td>
@@ -123,7 +123,7 @@ export default async function VariancePage({ searchParams }: { searchParams: Pro
                     <Td align="right">{qty(p.waste.qty, p.unit)}</Td>
                     <Td align="right">{pct(p.variancePct)}</Td>
                     <Td align="right">{qty(p.unexplainedQty, p.unit)}</Td>
-                    <Td align="right" className={u > 0 ? "font-semibold text-red-700" : u < 0 ? "font-semibold text-brand-700" : ""}>{money(p.unexplainedValue, cur)}</Td>
+                    <Td align="right" className={varianceText[varianceTone(p.unexplainedValue, p.theoreticalValue)]}>{money(p.unexplainedValue, cur)}</Td>
                   </tr>
                 );
               })}
