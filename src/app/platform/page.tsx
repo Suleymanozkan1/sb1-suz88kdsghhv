@@ -35,10 +35,11 @@ export default async function PlatformPage() {
           isDemo: x.isDemo,
           active: x.active,
           activeHotels: x.activeHotels,
+          billableHotels: x.billableHotels,
           trialEndsAt: x.trialEndsAt?.toISOString() ?? null,
           paidThrough: x.paidThrough?.toISOString() ?? null,
           access: x.access ? { state: x.access.state, daysLeft: x.access.daysLeft } : null,
-          invoices: x.billingInvoices.map((i) => ({ id: i.id, number: i.number, plan: i.plan, total: i.total.toFixed(2), currency: i.currency, status: i.status, dueDate: i.dueDate.toISOString(), periodStart: i.periodStart.toISOString(), periodEnd: i.periodEnd.toISOString(), paidAt: i.paidAt?.toISOString() ?? null })),
+          invoices: x.billingInvoices.map((i) => ({ id: i.id, number: i.number, plan: i.plan, hotelCount: i.hotelCount, total: i.total.toFixed(2), currency: i.currency, status: i.status, dueDate: i.dueDate.toISOString(), periodStart: i.periodStart.toISOString(), periodEnd: i.periodEnd.toISOString(), paidAt: i.paidAt?.toISOString() ?? null })),
           requests: x.planRequests.map((r) => ({ id: r.id, plan: r.plan, note: r.note, createdAt: r.createdAt.toISOString() })),
         }))}
       />

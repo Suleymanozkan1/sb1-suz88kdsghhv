@@ -21,6 +21,7 @@ import { secaMessages } from "./seca";
 import { secbMessages } from "./secb";
 import { seccMessages } from "./secc";
 import { secdMessages } from "./secd";
+import { fixBMessages } from "./fix-b";
 import { denetimMessages } from "./denetim";
 import { fixFMessages } from "./fix-f";
 
@@ -40,6 +41,7 @@ export const TR_MESSAGES: Record<string, string> = {
   ...secbMessages,
   ...seccMessages,
   ...secdMessages,
+  ...fixBMessages,
   ...denetimMessages,
   ...fixFMessages,
   // ── HTTP / generic ──

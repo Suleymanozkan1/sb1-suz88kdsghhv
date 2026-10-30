@@ -11,7 +11,7 @@ import { D, Decimal, ZERO, sum, toStorage } from "@/domain/money";
 import { meterConsumption } from "@/domain/rooms";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
-import { type Actor, authorize, requireHotel } from "../auth/actor";
+import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertPostable } from "./period";
 import { OPEX_CATEGORY_KEYS, OPEX_CATEGORIES, type OpexCategory } from "./opex";
@@ -61,8 +61,17 @@ export async function setRuleActive(db: Db, actor: Actor, hotelId: string, id: s
   });
 }
 
-export async function listRules(db: Db, actor: Actor, hotelId: string) {
+/**
+ * Allocation moves department cost pools (payroll included) between departments: it is hotel-wide, like forecast and
+ * what-if, so reading it needs an all-department role. Department-scoped managers see their own share in the reports.
+ */
+function authorizeRead(actor: Actor, hotelId: string) {
   authorize(actor, "opex:view", { hotelId });
+  if (actor.departmentIds !== "ALL") throw new DomainError("FORBIDDEN", "Cost allocation is hotel-wide: needs an all-department role");
+}
+
+export async function listRules(db: Db, actor: Actor, hotelId: string) {
+  authorizeRead(actor, hotelId);
   return db.costAllocationRule.findMany({ where: { hotelId }, orderBy: [{ active: "desc" }, { priority: "asc" }, { name: "asc" }] });
 }
 
@@ -119,7 +128,7 @@ export interface AllocationPreview {
  * never allocate the same cost twice.
  */
 export async function previewAllocation(db: Db, actor: Actor, hotelId: string, from: Date, to: Date): Promise<AllocationPreview> {
-  authorize(actor, "opex:view", { hotelId });
+  authorizeRead(actor, hotelId);
   const [rules, depts, expenses] = await Promise.all([
     db.costAllocationRule.findMany({ where: { hotelId, active: true, OR: [{ validFrom: null }, { validFrom: { lt: to } }], AND: [{ OR: [{ validTo: null }, { validTo: { gte: from } }] }] } }),
     db.department.findMany({ where: { hotelId } }),
@@ -182,7 +191,7 @@ async function periodRange(db: Db, hotelId: string, periodId: string) {
 }
 
 export async function previewPeriodAllocation(db: Db, actor: Actor, hotelId: string, periodId: string) {
-  requireHotel(actor, hotelId);
+  authorizeRead(actor, hotelId);
   const { period, from, to } = await periodRange(db, hotelId, periodId);
   const existing = await db.allocationRun.findFirst({ where: { hotelId, periodId, status: "POSTED" } });
   return { period, preview: await previewAllocation(db, actor, hotelId, from, to), postedRun: existing };
@@ -239,7 +248,7 @@ export async function reverseAllocation(db: Db, actor: Actor, hotelId: string, r
 }
 
 export async function listRuns(db: Db, actor: Actor, hotelId: string) {
-  authorize(actor, "opex:view", { hotelId });
+  authorizeRead(actor, hotelId);
   const runs = await db.allocationRun.findMany({ where: { hotelId }, orderBy: { createdAt: "desc" }, take: 50 });
   const periods = new Map((await db.costPeriod.findMany({ where: { hotelId, id: { in: runs.map((r) => r.periodId) } } })).map((p) => [p.id, p.code]));
   return runs.map((r) => ({ ...r, periodCode: periods.get(r.periodId) ?? "?" }));

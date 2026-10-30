@@ -15,14 +15,20 @@ export const GET = api(async ({ actor }) => {
 /** Start loading the demo dataset (the page then runs the steps). The owner confirms with their password: demo users get it. */
 export const POST = api(async ({ actor, body, req }) => {
   await assertInstallationOwner(prisma, actor);
-  const { password } = z.object({ password: z.string().min(1).max(200) }).parse(await body());
-  if (!(await verifyPassword(actor.userId, password))) throw new DomainError("FORBIDDEN", "Password is not correct");
+  await confirmPassword(actor.userId, await body());
   await startDemoLoad(prisma, actor, requestLocale(req));
   return demoStatus(prisma);
 });
 
-export const DELETE = api(async ({ actor }) => {
+/** Removes every demo company: the owner confirms with their password, like loading. */
+export const DELETE = api(async ({ actor, body }) => {
   await assertInstallationOwner(prisma, actor);
+  await confirmPassword(actor.userId, await body());
   await removeDemo(prisma, actor);
   return { ok: true };
 });
+
+async function confirmPassword(userId: string, raw: unknown) {
+  const { password } = z.object({ password: z.string().min(1).max(200) }).parse(raw);
+  if (!(await verifyPassword(userId, password))) throw new DomainError("FORBIDDEN", "Password is not correct");
+}
