@@ -18,7 +18,7 @@ const P: Record<string, string> = {};
 let eggsDish = "";
 
 beforeAll(async () => {
-  h = await makeHotel("BUFFET");
+  h = await makeHotel("BUFFET", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   breakfast = (await prisma.department.create({ data: { hotelId: h.hotel.id, code: "BRKF", name: "Breakfast", isOutlet: true } })).id;
   for (const [k, sku, name, unit, cost, cat] of [

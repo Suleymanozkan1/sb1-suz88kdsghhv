@@ -73,7 +73,7 @@ describe("full flow on a new tenant", () => {
     await postTransfer(prisma, admin, H, { fromWarehouseId: wh.MAIN, toWarehouseId: wh.KITCH, productId: beef.id, quantity: 30, unit: "kg", txDate: day(3, 8) });
     await postTransfer(prisma, admin, H, { fromWarehouseId: wh.MAIN, toWarehouseId: wh.KITCH, productId: bun.id, quantity: 300, unit: "pc", txDate: day(3, 8) });
     const burger = await createRecipe(prisma, admin, H, { code: "BURGER", name: "Burger", type: "RESTAURANT", departmentId: dept.REST, posCode: "BURGER", version: { batchYieldQty: 1, yieldUnit: "portion", portions: 1, sellingPrice: 420, lines: [{ productId: beef.id, quantity: 150, unit: "g" }, { productId: bun.id, quantity: 1, unit: "pc" }] } });
-    await approveVersion(prisma, admin, H, burger.versions[0]!.id, { effectiveFrom: day(1, 0) });
+    await approveVersion(prisma, cc, H, burger.versions[0]!.id, { effectiveFrom: day(1, 0) });
     const sales = await commitSales(prisma, admin, H, { source: "API", rows: [{ externalId: "F-1", saleDate: day(5, 20).toISOString(), department: "REST", posCode: "BURGER", quantity: 120, netRevenue: "50400" }, { externalId: "F-2", saleDate: day(6, 20).toISOString(), department: "REST", posCode: "BURGER", quantity: 80, netRevenue: "33600" }] });
     expect(D(sales.theoreticalCost).gt(0)).toBe(true);
     await postUserMovement(prisma, admin, H, { warehouseId: wh.KITCH, productId: beef.id, departmentId: dept.REST, type: "CONSUMPTION", quantity: 31.5, unit: "kg", txDate: day(6, 22) }).catch(async () => postUserMovement(prisma, admin, H, { warehouseId: wh.KITCH, productId: beef.id, departmentId: dept.REST, type: "CONSUMPTION", quantity: 29, unit: "kg", txDate: day(6, 22) }));

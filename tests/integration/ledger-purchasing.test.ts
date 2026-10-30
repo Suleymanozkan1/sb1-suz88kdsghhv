@@ -21,7 +21,7 @@ beforeAll(async () => {
 describe("purchase → receipt → stock → average cost → price variance (spec §284)", () => {
   it("golden: 1 case (10 kg) chicken @ 2000 TL/case + 100 TL freight → 210 TL/kg landed", async () => {
     const po = await createPurchaseOrder(prisma, pm, h.hotel.id, { supplierId: h.supplier.id, orderDate: day("2026-09-01"), expectedDate: day("2026-09-02"), items: [{ productId: chicken.id, quantity: 2, unit: "case", unitPrice: 2000 }] });
-    await approvePurchaseOrder(prisma, pm, h.hotel.id, po.id);
+    await approvePurchaseOrder(prisma, cc, h.hotel.id, po.id);
     expect((await openPoQuantities(prisma, h.hotel.id)).get(chicken.id)!.toString()).toBe("20");
 
     const r = await postGoodsReceipt(prisma, pm, h.hotel.id, {

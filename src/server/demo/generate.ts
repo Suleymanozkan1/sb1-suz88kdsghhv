@@ -128,6 +128,8 @@ interface Ctx {
   hotelId: string;
   hotel: HotelDef;
   admin: Actor;
+  /** prepares recipes and budgets; the company administrator approves them (creator ≠ approver, audit BIZ-02) */
+  controller: Actor;
   start: Date;
   end: Date;
   days: Date[];
@@ -261,6 +263,10 @@ export async function runDemoStep(db: PrismaClient, profile: DemoProfile, step: 
       const admin = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "companyadmin"), name: n.locale === "tr" ? `${n.org(o.name)} Yöneticisi` : `${o.name} Admin`, passwordHash: hash, roleId: roleId.admin! } });
       await db.userHotelAccess.createMany({ data: hotelIds.map((hotelId) => ({ userId: admin.id, hotelId })) });
       users++;
+      // the cost controller exists from the start: it prepares the recipes and budgets the administrator approves
+      const controller = await db.user.create({ data: { organizationId: org.id, email: emailFor(o, "controller"), name: controllerName(o, n), passwordHash: hash, roleId: roleId.cost_controller! } });
+      await db.userHotelAccess.createMany({ data: hotelIds.map((hotelId) => ({ userId: controller.id, hotelId })) });
+      users++;
     }
     return { users, hotels: 0 };
   }
@@ -270,7 +276,8 @@ export async function runDemoStep(db: PrismaClient, profile: DemoProfile, step: 
     const def = o.hotels[i]!;
     const hotel = await db.hotel.findFirstOrThrow({ where: { code: def.code, organization: { isDemo: true } } });
     const admin = await db.user.findUniqueOrThrow({ where: { email: emailFor(o, "companyadmin") } });
-    const ctx: Ctx = { db, profile, rnd: prng(hashSeed(`${profile.name}:${def.code}`)), orgId: hotel.organizationId, orgKey: o.key, hotelId: hotel.id, hotel: def, admin: (await actorForUser(admin.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", n, log: (s) => log(`  [${def.code}] ${s}`) };
+    const controller = await db.user.findUniqueOrThrow({ where: { email: emailFor(o, "controller") } });
+    const ctx: Ctx = { db, profile, rnd: prng(hashSeed(`${profile.name}:${def.code}`)), orgId: hotel.organizationId, orgKey: o.key, hotelId: hotel.id, hotel: def, admin: (await actorForUser(admin.id))!, controller: (await actorForUser(controller.id))!, start, end, days, dept: {}, wh: {}, products: [], byCat: new Map(), suppliers: [], rooms: [], periods: new Map(), scenarios: [], isQa: o.key === "E", n, log: (s) => log(`  [${def.code}] ${s}`) };
     if (step.kind === "hotel") {
       if (await db.department.count({ where: { hotelId: hotel.id } })) throw new Error(`Demo hotel ${def.code} is already built`);
       return { users: 0, hotels: 1, carry: JSON.parse(JSON.stringify(await buildHotelData(ctx, i))) as unknown };
@@ -319,6 +326,8 @@ export async function generateDemo(db: PrismaClient, profile: DemoProfile, opts:
   return { profile: profile.name, organizations: profile.orgs.length, hotels, users, counts, seconds: Math.trunc((Date.now() - t0) / 1000 + 0.5) };
 }
 
+const controllerName = (o: DemoProfile["orgs"][number], N: DemoNames) => `${N.position("Cost Controller")} (${N.org(o.name)})`;
+
 const emailFor = (o: DemoProfile["orgs"][number], role: string) => (o.key === "A" && o.slug === "demo-hotel-group" ? `${role}@test.local` : `${role}@${o.slug}.test.local`);
 
 async function ensurePlatformAdmin(db: PrismaClient, hash: string) {
@@ -333,7 +342,7 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
   const first = hotelIds[0]!;
   const dept = async (codes: string[], hotelId = first) => (await db.department.findMany({ where: { hotelId, code: { in: codes } }, select: { id: true } })).map((d) => d.id);
   const defs: Array<[string, string, string, string[], string[]]> = [
-    ["controller", "Cost Controller", "cost_controller", hotelIds, []],
+    ["controller", "Cost Controller", "cost_controller", hotelIds, []], // created in the "orgs" step
     ["fbm", "F&B Manager", "fb_manager", [first], await dept(["FB", "REST", "CAFE", "BAR", "BRKF", "KITCH", "PAST", "BANQ", "MINI"])],
     ["chef", "Executive Chef", "chef", [first], await dept(["KITCH", "REST", "BANQ"])],
     ["breakfast", "Breakfast Chef", "breakfast_chef", [first], await dept(["BRKF", "KITCH"])],
@@ -346,6 +355,8 @@ async function createOrgUsers(db: PrismaClient, o: DemoProfile["orgs"][number], 
   ];
   let n = 0;
   for (const [key, title, role, hotels, depts] of defs) {
+    // created with the company (it prepares the demo's recipes and budgets)
+    if (key === "controller") continue;
     const u = await db.user.create({ data: { organizationId: orgId, email: emailFor(o, key), name: `${N.position(title)} (${N.org(o.name)})`, passwordHash: hash, roleId: roleId[role]! } });
     await db.userHotelAccess.createMany({ data: hotels.map((h) => ({ userId: u.id, hotelId: h })) });
     if (depts.length) await db.userDepartmentAccess.createMany({ data: depts.map((d) => ({ userId: u.id, departmentId: d })) });
@@ -497,7 +508,8 @@ function pickN<T>(rnd: () => number, list: T[], n: number): T[] {
 }
 
 async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
-  const { rnd, db, hotelId: H, admin, n: N } = ctx;
+  // the cost controller writes the recipe cards, the administrator approves them
+  const { rnd, db, hotelId: H, admin, controller, n: N } = ctx;
   const P = (cat: string) => ctx.byCat.get(cat) ?? [];
   const recipeUnit = (p: ProductMeta) => (p.stockUnit === "kg" ? "g" : p.stockUnit === "l" ? "ml" : "pc");
   const line = (p: ProductMeta, qtyStock: number) => ({ productId: p.id, quantity: p.stockUnit === "pc" ? String(Math.max(1, rint(qtyStock))) : String(Math.max(1, rint(qtyStock * 1000))), unit: recipeUnit(p), ...(p.cat.group === "FOOD" && p.item[5] < 100 && rnd() < 0.3 ? { wastePct: String(2 + Math.trunc(rnd() * 4)) } : {}) });
@@ -523,7 +535,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
     else if (name === "Special Mix" && semi["Spice Mix"]) lines = [{ subRecipeId: semi["Spice Mix"]!, quantity: "150", unit: "g" }, ...pickN(rnd, P("SAUCE"), 2).map((p) => line(p, 0.3)), ...pickN(rnd, P("VEG"), 1).map((p) => line(p, 0.2))];
     else if (name === "Burger Sauce" && semi["Special Mix"]) lines = [{ subRecipeId: semi["Special Mix"]!, quantity: "200", unit: "g" }, ...P("SAUCE").slice(0, 2).map((p) => line(p, 0.35)), ...pickN(rnd, P("DAIRY"), 1).map((p) => line(p, 0.1))];
     else lines = [...pickN(rnd, [...P("VEG"), ...P("DAIRY"), ...P("PASTRY"), ...P("DRY")], 3 + Math.trunc(rnd() * 4)).map((p) => line(p, 0.1 + rnd() * 0.4)), ...pickN(rnd, P("SPICE"), 1).map((p) => line(p, 0.01))];
-    const r = await createRecipe(db, admin, H, { code, name: N.semi(name), type: "SEMI_FINISHED", departmentId: ctx.dept.KITCH, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: N.t("Standard batch"), lines } });
+    const r = await createRecipe(db, controller, H, { code, name: N.semi(name), type: "SEMI_FINISHED", departmentId: ctx.dept.KITCH, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: N.t("Standard batch"), lines } });
     await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: v1From });
     semi[name] = r.id;
   }
@@ -566,7 +578,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
       const portionCost = costOf(lines as never) / batch + (lines.some((l) => l.subRecipeId) ? 6 : 0);
       const price = Math.max(20, rint((portionCost * (MARKUP[type] ?? 3)) / 5) * 5);
       const code = `${prefix}-${String(k + 1).padStart(3, "0")}`;
-      const r = await createRecipe(db, admin, H, { code, name: N.dish(main, style), type, departmentId: ctx.dept[deptCode], posCode: type === "MINIBAR" ? null : code, version: { batchYieldQty: batch, yieldUnit: "portion", portions: batch, sellingPrice: price, reason: N.t("Initial standard"), lines } });
+      const r = await createRecipe(db, controller, H, { code, name: N.dish(main, style), type, departmentId: ctx.dept[deptCode], posCode: type === "MINIBAR" ? null : code, version: { batchYieldQty: batch, yieldUnit: "portion", portions: batch, sellingPrice: price, reason: N.t("Initial standard"), lines } });
       await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: v1From });
       const weight = type === "BANQUET" || type === "MINIBAR" ? 0 : 0.3 + rnd() * rnd() * 3;
       created.push({ id: r.id, code, outlet: type === "ROOM_SERVICE" ? "ROOMSVC" : deptCode, type, price, weight, versionId: r.versions[0]!.id, base: lines as never, batch });
@@ -583,7 +595,7 @@ async function buildRecipes(ctx: Ctx): Promise<RecipeInfo[]> {
       const from = new Date(ctx.start.getTime() + Math.trunc((span * v) / (extra + 1) / DAY) * DAY);
       const factor = 0.88 + rnd() * 0.24;
       const lines = c.base.map((l) => ({ ...l, quantity: l.unit === "pc" ? l.quantity : String(Math.max(1, rint(Number(l.quantity) * factor))) }));
-      const nv = await createVersion(db, admin, H, c.id, { batchYieldQty: c.batch, yieldUnit: "portion", portions: c.batch, sellingPrice: rint((c.price * (1 + 0.04 * v)) / 5) * 5, reason: N.t(v % 2 ? "Portion adjusted after tasting" : "Supplier change, recipe re-engineered"), lines });
+      const nv = await createVersion(db, controller, H, c.id, { batchYieldQty: c.batch, yieldUnit: "portion", portions: c.batch, sellingPrice: rint((c.price * (1 + 0.04 * v)) / 5) * 5, reason: N.t(v % 2 ? "Portion adjusted after tasting" : "Supplier change, recipe re-engineered"), lines });
       await approveVersion(db, admin, H, nv.id, { effectiveFrom: from });
       versionIds.push(nv.id);
     }
@@ -1161,7 +1173,7 @@ async function buffetPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
   });
   let dishId: string | null = null;
   if (sim.buffetPlan.some((b) => b.items.some((i) => i.dish)) && dishLines.length === BREAKFAST_DISH.lines.length) {
-    const r = await createRecipe(db, admin, H, { code: BREAKFAST_DISH.code, name: ctx.n.dish(BREAKFAST_DISH.name, ""), type: "BREAKFAST", departmentId: ctx.dept.BRKF, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: ctx.n.t("Standard batch"), lines: dishLines.map(({ p, q, unit }) => ({ productId: p.id, quantity: String(q), unit })) } });
+    const r = await createRecipe(db, ctx.controller, H, { code: BREAKFAST_DISH.code, name: ctx.n.dish(BREAKFAST_DISH.name, ""), type: "BREAKFAST", departmentId: ctx.dept.BRKF, version: { batchYieldQty: 1, yieldUnit: "kg", portions: 1, reason: ctx.n.t("Standard batch"), lines: dishLines.map(({ p, q, unit }) => ({ productId: p.id, quantity: String(q), unit })) } });
     await approveVersion(db, admin, H, r.versions[0]!.id, { effectiveFrom: new Date(ctx.start.getTime() - DAY) });
     dishId = r.id;
   }
@@ -1248,8 +1260,8 @@ async function servicesPhase(ctx: Ctx, pms: Pms, sim: SimResult) {
       }
       for (const r of rev) lines.set(`${m}|${r.departmentId}|REVENUE`, { month: m, departmentId: r.departmentId, categoryGroup: "REVENUE", amount: Number(r._sum.netRevenue?.toString() ?? 0) * f * 1.03, targetPct: null });
     }
-    const bud = await createBudget(db, admin, H, { year, name: N.locale === "tr" ? `Bütçe ${year}` : `Budget ${year}`, notes: N.t(overrun ? "F&B cost budget set 18 % below run rate (scenario 13: overrun)" : "Seasonality-weighted run rate, 3 % efficiency") });
-    await setBudgetLines(db, admin, H, bud.id, [...lines.values()].filter((l) => l.amount > 0).map((l) => ({ ...l, amount: l.amount.toFixed(2) })));
+    const bud = await createBudget(db, ctx.controller, H, { year, name: N.locale === "tr" ? `Bütçe ${year}` : `Budget ${year}`, notes: N.t(overrun ? "F&B cost budget set 18 % below run rate (scenario 13: overrun)" : "Seasonality-weighted run rate, 3 % efficiency") });
+    await setBudgetLines(db, ctx.controller, H, bud.id, [...lines.values()].filter((l) => l.amount > 0).map((l) => ({ ...l, amount: l.amount.toFixed(2) })));
     await approveBudget(db, admin, H, bud.id);
     if (overrun) scenario(ctx, "S13_BUDGET_OVERRUN", "Food & beverage cost budget below the actual run rate", "EDGE_CASE", "Budget vs actual: unfavourable variance on FOOD / BEVERAGE", "Budget", [bud.id]);
   }

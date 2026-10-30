@@ -34,7 +34,7 @@ const FROM = day("2026-08-01");
 const TO = new Date("2026-09-01T00:00:00Z");
 
 beforeAll(async () => {
-  h = await makeHotel("EXCEL");
+  h = await makeHotel("EXCEL", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   const chicken = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "CHK", name: "Chicken Breast", purchaseUnit: "case", caseKg: "10", supplierId: h.supplier.id });
   const bun = await makeProduct(h.hotel.id, h.cats.food.id, { sku: "BUN", name: "Burger Bun", stockUnit: "pc", supplierId: h.supplier.id });

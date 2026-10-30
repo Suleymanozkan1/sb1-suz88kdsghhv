@@ -23,7 +23,7 @@ const reason = (name: string) => reasons.find((r) => r.name === name)!.id;
 const SEP = { from: new Date("2026-09-01T00:00:00Z"), to: new Date("2026-10-01T00:00:00Z") };
 
 beforeAll(async () => {
-  h = await makeHotel("COMPS");
+  h = await makeHotel("COMPS", { allowSelfApproval: true });
   cc = await h.actor("cost_controller");
   fbPastry = await h.actor("fb_manager", [h.depts.pastry.id]);
   const beef = await makeProduct(h.hotel.id, h.cats.meat.id, { sku: "BEEF", name: "Ground Beef", supplierId: h.supplier.id });
