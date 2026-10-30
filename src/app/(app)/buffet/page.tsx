@@ -12,8 +12,9 @@ import { money, qty, date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { NewDay } from "./new-session";
 import { currentBusinessDay } from "@/domain/business-day";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Breakfast" };
+export const generateMetadata = pageTitle("Breakfast");
 
 const n = (v: number | null | undefined) => (v === null || v === undefined ? "—" : v.toLocaleString("tr-TR"));
 

@@ -6,8 +6,9 @@ import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th } from "@/componen
 import { date, dateTime } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { PackForm, VerifyButton } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Reports" };
+export const generateMetadata = pageTitle("Reports");
 
 const LABEL: Record<string, string> = { FULL_COST_EXPORT: "Full cost export (Excel / API)", MANAGEMENT_PACK: "Management pack (PDF)", PERIOD_CLOSE: "Period close snapshot" };
 

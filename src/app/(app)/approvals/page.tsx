@@ -7,8 +7,9 @@ import { approvalsOverview, canOpenApprovals } from "@/server/services/approvals
 import { actionLabel, approvalDetails } from "@/server/table-export/reports/approvals";
 import { Decide } from "./decide";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Approvals" };
+export const generateMetadata = pageTitle("Approvals");
 
 export default async function ApprovalsPage() {
   const t = await getT();

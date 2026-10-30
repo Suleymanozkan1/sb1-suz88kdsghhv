@@ -10,8 +10,9 @@ import { getT } from "@/i18n/server";
 import { DeleteRequest } from "./delete-request";
 import { LedgerFilters } from "./ledger-filters";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Stock Ledger" };
+export const generateMetadata = pageTitle("Stock Ledger");
 const PAGE = 50;
 const SUMMARY_MAX = 5000;
 

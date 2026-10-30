@@ -18,8 +18,9 @@ import { PLAN_LABEL } from "@/components/feature-gate";
 import { LanguageSwitch } from "@/components/language-switch";
 import { money } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Hotel food & beverage cost control", description: "Explains, line by line, the difference between what a hotel bought and what its recipes should have used." };
+export const generateMetadata = pageTitle("Hotel food & beverage cost control", "Explains, line by line, the difference between what a hotel bought and what its recipes should have used.");
 export const dynamic = "force-dynamic";
 
 /** Illustrative split of one month's variance; shown with an explicit "example" label. */

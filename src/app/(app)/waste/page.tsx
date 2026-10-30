@@ -12,8 +12,9 @@ import { D, ZERO, sum, type Decimal } from "@/domain/money";
 import { currentBusinessDay } from "@/domain/business-day";
 import { Title } from "@/components/title";
 import { ProductChip } from "@/components/product-chip";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Waste" };
+export const generateMetadata = pageTitle("Waste");
 
 export default async function WastePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string; productId?: string }> }) {
   const sp = await searchParams;

@@ -7,8 +7,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { RoomBoard } from "./room-board";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Minibar" };
+export const generateMetadata = pageTitle("Minibar");
 
 export default async function MinibarPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; occupied?: string }> }) {
   const t = await getT();

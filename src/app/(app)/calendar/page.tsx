@@ -9,8 +9,9 @@ import { date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { DoneButton, NewTask } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Control Calendar" };
+export const generateMetadata = pageTitle("Cost Control Calendar");
 
 const TONE = { DONE: "green", OVERDUE: "red", DUE_TODAY: "amber", UPCOMING: "gray" } as const;
 const STATUS_FILTERS = ["OVERDUE", "DONE", "OPEN"] as const;

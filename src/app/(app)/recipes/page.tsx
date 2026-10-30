@@ -10,8 +10,9 @@ import { getT } from "@/i18n/server";
 import { RecipePriceRefresh } from "./refresh-prices";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Recipes" };
+export const generateMetadata = pageTitle("Recipes");
 
 export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; from?: string; to?: string }> }) {
   const sp = await searchParams;

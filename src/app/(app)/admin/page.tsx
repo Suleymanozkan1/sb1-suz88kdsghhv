@@ -7,8 +7,9 @@ import { listInvites } from "@/server/services/tenancy";
 import { Alert, PageHeader } from "@/components/ui";
 import { AdminConsole } from "./console";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Administration" };
+export const generateMetadata = pageTitle("Administration");
 
 export default async function AdminPage() {
   const { actor, hotelId } = await pageContext();

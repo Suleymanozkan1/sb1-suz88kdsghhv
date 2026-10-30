@@ -12,8 +12,9 @@ import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { PostAllocation, RuleForm, RuleToggle } from "./actions";
 import { ReverseButton } from "../operations/forms";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Allocation" };
+export const generateMetadata = pageTitle("Cost Allocation");
 
 /** Driver basis text from the allocation service; the sub-meter variant carries the utility name. */
 function tBasis(t: T, s: string): string {

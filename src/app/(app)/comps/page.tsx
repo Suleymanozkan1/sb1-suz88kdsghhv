@@ -14,8 +14,9 @@ import { Title } from "@/components/title";
 import { CompForm } from "./comp-form";
 import { ReasonList } from "./reason-list";
 import { DeleteComp } from "./delete-comp";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "On-house & Hospitality" };
+export const generateMetadata = pageTitle("On-house & Hospitality");
 
 type SP = { from?: string; to?: string; kind?: string; reasonId?: string; departmentId?: string };
 const KIND_LABEL = { ON_HOUSE: "On-house", HOSPITALITY: "Hospitality" } as const;

@@ -8,8 +8,9 @@ import { PLAN_LABEL } from "@/components/feature-gate";
 import { date, money } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { BillingProfileForm, PlanRequestButton } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Subscription" };
+export const generateMetadata = pageTitle("Subscription");
 
 const STATE_TONE = { TRIAL: "blue", ACTIVE: "green", PAST_DUE: "amber", EXPIRED: "red" } as const;
 const STATE_LABEL = { TRIAL: "Free trial", ACTIVE: "Active", PAST_DUE: "Payment overdue", EXPIRED: "Ended (read-only)" } as const;

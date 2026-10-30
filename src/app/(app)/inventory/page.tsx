@@ -13,8 +13,9 @@ import { MovementForm } from "./movement-form";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 import { ProductChip } from "@/components/product-chip";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Inventory" };
+export const generateMetadata = pageTitle("Inventory");
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ group?: string; level?: string; from?: string; to?: string; productId?: string }> }) {
   const sp = await searchParams;

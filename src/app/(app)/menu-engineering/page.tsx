@@ -8,8 +8,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Menu Engineering" };
+export const generateMetadata = pageTitle("Menu Engineering");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 const TONE: Record<MenuClass, "green" | "amber" | "blue" | "red"> = { STAR: "green", PLOWHORSE: "amber", PUZZLE: "blue", DOG: "red" };

@@ -16,7 +16,7 @@ export const savings: ReportDef = {
     const A = opps.assumptions;
     return {
       title: t("Cost savings"),
-      subtitle: t("Default assumptions (override via the API): waste avoidable {waste} %, unexplained usage recoverable {unexplained} %, carrying cost {carrying} %/year, energy {energy} %, OTA → direct {ota} %, labor efficiency {labor} % (a configured LABOR_COST_PCT target replaces it).", { waste: (A.wasteReduction * 100).toFixed(0), unexplained: (A.unexplainedCapture * 100).toFixed(0), carrying: (A.carryingCostAnnual * 100).toFixed(0), energy: (A.energyReduction * 100).toFixed(0), ota: (A.otaShiftToDirect * 100).toFixed(0), labor: (A.laborEfficiency * 100).toFixed(0) }),
+      subtitle: t("Default assumptions: waste avoidable {waste} %, unexplained usage recoverable {unexplained} %, carrying cost {carrying} %/year, energy {energy} %, OTA → direct {ota} %, labor efficiency {labor} % (a labor cost % target, when set, replaces it).", { waste: (A.wasteReduction * 100).toFixed(0), unexplained: (A.unexplainedCapture * 100).toFixed(0), carrying: (A.carryingCostAnnual * 100).toFixed(0), energy: (A.energyReduction * 100).toFixed(0), ota: (A.otaShiftToDirect * 100).toFixed(0), labor: (A.laborEfficiency * 100).toFixed(0) }),
       fileName: "maliyet-tasarrufu",
       filters: [[t("From"), date(range.fromStr)], [t("To"), date(range.toStr)]],
       tables: [

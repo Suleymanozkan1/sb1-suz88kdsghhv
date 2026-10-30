@@ -7,8 +7,9 @@ import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th, cn } from "@/compo
 import { pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Data Quality" };
+export const generateMetadata = pageTitle("Data Quality");
 
 /**
  * Every check is a card; clicking it lists its records below (feedback r3 §15): the record, why it is a problem and a

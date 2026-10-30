@@ -9,8 +9,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Theoretical vs Actual" };
+export const generateMetadata = pageTitle("Theoretical vs Actual");
 
 export default async function VariancePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; departmentId?: string; group?: string }> }) {
   const sp = await searchParams;

@@ -11,8 +11,9 @@ import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { AssetForm, ExpenseForm, LaundryForm, MeterForm, MeterReadingForm, ReverseButton } from "./forms";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Operating Costs" };
+export const generateMetadata = pageTitle("Operating Costs");
 
 const TABS = [["expenses", "Expenses"], ["housekeeping", "Housekeeping"], ["laundry", "Laundry"], ["labor", "Labor"], ["energy", "Energy"], ["engineering", "Engineering"], ["setup", "Assets & meters"]] as const;
 type Tab = (typeof TABS)[number][0];

@@ -9,8 +9,9 @@ import { dateTime, money, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { IntegrityActions } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Calculation Integrity" };
+export const generateMetadata = pageTitle("Calculation Integrity");
 
 const TONE = { COMPLETED: "green", RUNNING: "blue", PARTIAL: "amber", PENDING: "gray", FAILED: "red", PENDING_REPROCESS: "amber" } as const;
 const RESULT_TONE: Record<string, "green" | "amber" | "red"> = { OK: "green", WARNINGS: "amber", ISSUES: "red" };

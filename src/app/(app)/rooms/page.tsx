@@ -8,8 +8,9 @@ import { PeriodFilter } from "@/components/period-filter";
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Room Cost" };
+export const generateMetadata = pageTitle("Room Cost");
 
 const LABEL = ROOM_COMPONENT_LABEL;
 /** Server texts with numbers in them: translate the fixed part, keep the numbers. */

@@ -18,8 +18,9 @@ import { shareOfVariance, varianceBar, varianceTone } from "@/lib/variance-displ
 import { Title } from "@/components/title";
 import { gettingStarted } from "@/server/services/onboarding";
 import { GettingStarted } from "@/components/getting-started";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Dashboard" };
+export const generateMetadata = pageTitle("Dashboard");
 
 const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "On-house / Hospitality", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
 const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", INSUFFICIENT_DATA: "red" } as const;

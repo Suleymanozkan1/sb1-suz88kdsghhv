@@ -14,4 +14,36 @@ export const fixE: Record<string, string> = {
   "Stores: goods receipts, transfers, issues, counts and minibar refills.": "Depolar: mal kabul, transfer, çıkış, sayım ve minibar dolumu.",
   // /forbidden for hotel-wide pages (forecast, what-if, cost allocation)
   "hotel-wide figures: needs a role with access to all departments": "otel geneli rakamlar: tüm departmanlara erişimi olan bir rol gerekir",
+  // browser tab titles (generateMetadata → pageTitle)
+  "Cost Control Calendar": "Maliyet Kontrol Takvimi",
+  "No hotel access": "Otel erişimi yok",
+  "Accept invitation": "Daveti kabul et",
+  "Explains, line by line, the difference between what a hotel bought and what its recipes should have used.": "Otelin satın aldığı ile reçetelerine göre kullanması gereken arasındaki farkı kalem kalem açıklar.",
+  // /savings: no "API" or internal metric code in the assumptions line
+  "Default assumptions: waste avoidable {waste} %, unexplained usage recoverable {unexplained} %, carrying cost {carrying} %/year, energy {energy} %, OTA → direct {ota} %, labor efficiency {labor} % (a labor cost % target, when set, replaces it).":
+    "Varsayılan varsayımlar: önlenebilir fire %{waste}, geri kazanılabilir açıklanamayan kullanım %{unexplained}, stok tutma maliyeti yıllık %{carrying}, enerji %{energy}, OTA'dan doğrudan satışa geçiş %{ota}, personel verimliliği %{labor} (tanımlı bir personel maliyeti % hedefi varsa onun yerine geçer).",
+  // audit trail: readable changes ("Field: old → new")
+  "Changes": "Değişiklikler",
+  "changed to": "yeni değer",
+  "Recorded value": "Kayıtlı değer",
+  "{n} lines": "{n} satır",
+  "Par level": "Par stok",
+  "Notes": "Notlar",
+  "Warning level": "Uyarı düzeyi",
+  "Valid from": "Geçerlilik başlangıcı",
+  "Valid to": "Geçerlilik bitişi",
+  "File name": "Dosya adı",
+  "In": "Giriş",
+  "Out": "Çıkış",
+  "Service date": "Servis tarihi",
+  "Start time": "Başlangıç saati",
+  "End time": "Bitiş saati",
+  "Paid covers": "Ücretli kuver",
+  "Included covers": "Pansiyona dahil kuver",
+  "Actual saving": "Gerçekleşen tasarruf",
+  "Baseline cost": "Başlangıç maliyeti",
+  "Closed at": "Kapanış zamanı",
+  "Decision": "Karar",
+  "Store": "Depo",
+  "Differences": "Farklar",
 };

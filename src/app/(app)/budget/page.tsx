@@ -7,8 +7,9 @@ import { Alert, Badge, Card, Empty, PageHeader, Table, Td, Th, cn } from "@/comp
 import { money, pct } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { BudgetActions, BudgetLinesUpload, NewBudget, TargetForm } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Budget & Targets" };
+export const generateMetadata = pageTitle("Budget & Targets");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -65,7 +66,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
           {r.byDept.length === 0 ? <div className="p-4"><Empty title={tr("No cost in this month")} /></div> : (
             <Table>
               <thead><tr><Th>{tr("Department")}</Th><Th align="right">{tr("Budget")}</Th><Th align="right">{tr("Actual")}</Th><Th align="right">{tr("Variance")}</Th></tr></thead>
-              <tbody className="divide-y divide-ink-100">{r.byDept.map((d) => <tr key={d.department}><Td>{d.department}</Td><Td align="right">{money(d.budget, cur, 0)}</Td><Td align="right">{money(d.actual, cur, 0)}</Td><Td align="right" className={d.variance?.gt(0) ? "text-red-700" : ""}>{money(d.variance, cur, 0)}</Td></tr>)}</tbody>
+              <tbody className="divide-y divide-ink-100">{r.byDept.map((d) => <tr key={d.department}><Td>{d.department === "Hotel level" ? tr("Hotel level") : d.department}</Td><Td align="right">{money(d.budget, cur, 0)}</Td><Td align="right">{money(d.actual, cur, 0)}</Td><Td align="right" className={d.variance?.gt(0) ? "text-red-700" : ""}>{money(d.variance, cur, 0)}</Td></tr>)}</tbody>
             </Table>
           )}
         </Card>

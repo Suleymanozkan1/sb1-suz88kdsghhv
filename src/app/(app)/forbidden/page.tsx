@@ -3,8 +3,9 @@ import { pageContext } from "@/server/page";
 import { Alert, PageHeader } from "@/components/ui";
 import { getT } from "@/i18n/server";
 import { ALL_DEPARTMENTS, homeHref, navFlags } from "@/components/nav";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "No permission" };
+export const generateMetadata = pageTitle("No permission");
 
 export default async function Forbidden({ searchParams }: { searchParams: Promise<{ need?: string }> }) {
   const { actor } = await pageContext();

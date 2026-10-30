@@ -10,8 +10,9 @@ import { date, money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Review" };
+export const generateMetadata = pageTitle("Cost Review");
 
 const f100 = (v: { times(n: number): unknown } | null | undefined) => (v ? (v.times(100) as { toString(): string }) : null);
 

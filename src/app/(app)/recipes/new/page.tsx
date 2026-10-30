@@ -5,8 +5,9 @@ import { prisma } from "@/server/db";
 import { PageHeader } from "@/components/ui";
 import { getT } from "@/i18n/server";
 import { RecipeWizard } from "./wizard";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "New Recipe" };
+export const generateMetadata = pageTitle("New Recipe");
 
 export default async function NewRecipePage() {
   const t = await getT();

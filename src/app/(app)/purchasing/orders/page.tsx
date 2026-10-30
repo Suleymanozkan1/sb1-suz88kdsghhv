@@ -12,8 +12,9 @@ import { AutoOrder } from "./auto-order";
 import { Suppliers } from "./suppliers";
 import { OrderEmailEditor } from "./order-email-editor";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Order Suggestions" };
+export const generateMetadata = pageTitle("Order Suggestions");
 
 const TABS = ["recommendations", "auto", "suppliers"] as const;
 type Tab = (typeof TABS)[number];

@@ -11,8 +11,9 @@ import { Keys, RunNow } from "./automation";
 import { IntegrationBanner, botMessage, runSummary } from "./integration-status";
 import { integrationOverview } from "@/server/integrations/ingest";
 import { ReverseButton } from "../operations/forms";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Imports" };
+export const generateMetadata = pageTitle("Imports");
 
 export default async function ImportsPage() {
   const t = await getT();

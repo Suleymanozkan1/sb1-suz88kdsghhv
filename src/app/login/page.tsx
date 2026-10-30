@@ -6,8 +6,9 @@ import { getT } from "@/i18n/server";
 import { LoginForm } from "./login-form";
 import { LanguageSwitch } from "@/components/language-switch";
 import { Alert } from "@/components/ui";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Giriş" };
+export const generateMetadata = pageTitle("Sign in");
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ joined?: string }> }) {

@@ -4,8 +4,9 @@ import { prisma } from "@/server/db";
 import { Alert, Button, Card, Empty, Input, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { money, parseNum, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Forecast & What-if" };
+export const generateMetadata = pageTitle("Forecast & What-if");
 
 type SP = { month?: string; occupancyPct?: string; coversPct?: string; priceChangePct?: string; wfrom?: string; productId?: string; productPricePct?: string; wOccupancyPct?: string; buffetCoversPct?: string; wastePts?: string; laborPct?: string; energyPct?: string };
 const numIn = (v?: string) => { const n = parseNum(v); return Number.isFinite(n) ? n : null; };

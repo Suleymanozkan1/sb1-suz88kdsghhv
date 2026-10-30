@@ -12,8 +12,9 @@ import { ProductForm } from "./product-form";
 import { PullProductsButton } from "./pull-products";
 import { CategoryAccountCodes } from "./category-codes";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Products" };
+export const generateMetadata = pageTitle("Products");
 
 const PAGE = 200;
 
