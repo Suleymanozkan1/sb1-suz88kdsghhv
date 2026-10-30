@@ -24,6 +24,52 @@
 
 **Kimlikler:** Aynı sorunu anlatan bulgular birleştirildi (aşağıdaki eşleme tablosu). Her yerde birleşik kimlik kullanılıyor.
 
+## 0. Uygulama durumu (30 Ekim 2026)
+
+Ürün sahibi tüm düzeltmelere onay verdi. P0 ve P1 kod düzeltmelerinin büyük kısmı bu dalda uygulandı; her birinin regresyon testi var.
+
+**Canlı kontrol (P0-1):** `https://costcontrol-ashen.vercel.app` faturalamayı kapalı gösteriyor ("Bu kurulum lisanslı"). Canlı veritabanında platform şirketi yok, yani 23 Kasım kilidi bugün kimseyi etkilemiyor. Faturalama açılmadan önce `docs/VERCEL.md` içindeki kontrol listesi uygulanmalı.
+
+### Uygulananlar
+
+| Kimlik | Durum | Ne değişti |
+|---|---|---|
+| ARCH-03 (+NV-12) | ✅ | Migrasyon ve refreeze yalnızca `VERCEL_ENV=production` iken (ya da Vercel dışında) çalışıyor. Önizlemeler atlıyor; `MIGRATE_ON_PREVIEW=1` yalnızca Neon önizleme dalı için. |
+| ARCH-02 (+SEC-06) | ✅ | next 15.5.28, nodemailer 10.3.1, sharp 0.35.5, postcss 8.5.28. Kalan yüksek uyarılar (zod 4, prisma 7) büyük sürüm gerektiriyor; CI kapısında 31 Ocak 2027'ye kadar gerekçeli olarak kabul edildi. |
+| DEMO-01 | ✅ kod / ⏳ canlı | Şifreler belgelerden çıkarıldı. Canlı demonun şifresi ayrıca değiştirilmeli. |
+| DB-06 (+QA-03) | ✅ | `setup:first-company` için `--plan` ve `--paid-through`; platform konsolunda 7 gün içinde süresi dolacak kiracı uyarısı; e2e şirketleri artık dolmuyor; kapatma anahtarı ve lansman kontrol listesi belgelendi. |
+| SEC-01 | ✅ | Faturalama açıkken demo uç noktaları kapalı. Demo silme şifre istiyor. |
+| SEC-02 | ✅ | Kullanıcı pasifleştirme, davet iptali, entegrasyon anahtarı ve API anahtarı iptali süresi dolmuş veya düşük paketli kiracıda da çalışıyor. İptal edilen anahtar yenilemede geri gelmiyor. |
+| SEC-03 | ✅ | Dağıtım modülü yalnızca tüm departmanlara yetkili rollere açık; menüden de gizlendi. |
+| SEC-04 1. adım | ✅ | Kullanıcı kendi şifresini değiştirebiliyor (diğer oturumlar kapanıyor); SMTP ve güvenilir adres varsa e-postayla sıfırlama; başarılı ve başarısız girişler IP ile denetime yazılıyor. MFA 2. adımda. |
+| BE-01 (+BIZ-06) | ✅ | Ödeme bildirimi, son bildirimden bu yana aynı anda aktif olan en yüksek otel sayısını faturalıyor; konsol iki sayıyı yan yana gösteriyor. |
+| BIZ-07 | ✅ | Kapanan modül ekranı "verileriniz silinmedi" diyor ve CSV indirme sunuyor. |
+| BIZ-03 | ✅ | Eşiği aşan stok düzeltmeleri onaya gidiyor ve başka biri onaylayınca bir kez işleniyor; denetim kaydı aynı işlemde. |
+| BIZ-02 1. aşama | ✅ | Sipariş, bütçe ve reçete sürümünü oluşturan kişi onaylayamıyor. Otel ayarı "Kaydı oluşturan kendi kaydını onaylayabilir" (varsayılan kapalı) tek yöneticili oteller için. |
+| BIZ-01 | Karar: aynen kalıyor | Reçete düzenlemesi kendini onaylamaya devam ediyor (belgelenmiş tasarım; ileriye dönük ve denetimli). |
+| BIZ-15 (+UX-09) | ✅ | Demo üreticisindeki iki hata düzeltildi; açıklanamayan sapma −%46'dan +%1,1'e indi. Sapma rengi artık büyüklüğe göre. |
+| DB-01 | ✅ | Belge numaraları kilitli ve en yüksek numaradan; kilitlenmede otomatik yeniden deneme; kalan kilitlenme 503 "sistem meşgul". |
+| PERF-03 acil önlem | ✅ | Bot aktarımı satış noktası başına ayrı işlem; 3.000 satır 12.150 sorgudan 2.679'a, yaklaşık 14,5 sn'den 5,5 sn'ye indi. Sayım onayı 17 sn'den 11 sn'ye indi. |
+| ARCH-01 acil önlem | ✅ | Vercel'de ağır dışa aktarmalar en fazla 2 ay (`EXPORT_MAX_MONTHS`) ve 4,3 MB; aşınca anlaşılır mesaj. |
+| ARCH-04 | ✅ | Gece işi hatalı oteli günlüğe yazıp 500 dönüyor; webhook `after()` ile; `/api/health` son başarılı gece işini gösteriyor. |
+| BIZ-08 | ✅ | Süresi dolmuş veya paketi uygun olmayan kiracılara otomatik sipariş gitmiyor; e-postada `replyTo` ve `AO-` referansı var. |
+| TOOL-01 (+QA-06) | ✅ | CI'da e2e işi, bağımlılık güvenlik kapısı, Dependabot ve kapsam eşiği. |
+| FE-01 (+FE-02) | ✅ | 390 px telefonda hiçbir menü sayfası yatay kaymıyor; mobil e2e testi tüm menüyü geziyor. |
+| UX-03 | ✅ | Menü, sayfanın gerçekten istediği izni gösteriyor; onay rozeti yalnızca karar verilebilen talepleri sayıyor; kahvaltı şefine daraltılmış şablon; rol açıklamaları. |
+| UX-02 | ✅ | Sekme başlıkları, sunucu etiketleri ve denetim izi farkları Türkçe ("Alan: eski → yeni"). |
+| FE-04, FE-08 (kısmen) | ✅ | "Ana içeriğe geç" bağlantısı; doğrulama hataları alanın Türkçe adını gösteriyor. |
+
+### Kalanlar
+
+- **ARCH-01 / PERF-01 kalıcı çözüm:** Blob/S3 ile dosya teslimi ve akış. Büyük iş.
+- **PERF-03 kalıcı çözüm:** hareketlerin bellekte hesaplanıp toplu yazılması.
+- **BIZ-02 2. aşama:** rol düzenleme ekranı ve görev ayrılığı matrisi.
+- **BIZ-08:** her otomatik sipariş için sipariş kaydı. Fiyat bilinmediği ve onay kuralıyla çakıştığı için tasarım kararı gerekiyor.
+- **FE-08:** hatanın alanın altında `aria-invalid` ile gösterilmesi.
+- **SEC-04 2. adım:** yöneticiler için MFA.
+- **Diğer P2 ve P3 maddeleri** olduğu gibi duruyor.
+- **Sizin yapmanız gerekenler:** Vercel'de Preview ortamının canlı veritabanına bağlı olup olmadığını kontrol etmek ve Neon önizleme dalını açmak; canlı demonun şifresini değiştirmek; faturalamayı açmadan önce kontrol listesini uygulamak.
+
 ## 1. Çapraz incelemenin değiştirdikleri
 
 Beşinci aşamada bağımsız bir gözden geçirici her YÜKSEK ve önemli ORTA bulgunun kaynak satırını yeniden okudu. Mümkün olanları `hotelcost_test_f` test veritabanında ve yerel demo sunucusunda salt okunur olarak yeniden üretti. Canlı ortama dokunulmadı.

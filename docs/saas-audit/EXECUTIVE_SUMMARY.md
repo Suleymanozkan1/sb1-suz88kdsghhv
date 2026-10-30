@@ -4,6 +4,8 @@
 **Kapsam:** `main` 39083c6. Denetim 30 Ekim 2026'da yapıldı.
 **Hedefler:** GM demosu Kasım başında, lansman Kasım sonunda.
 
+> **Güncelleme (30 Ekim 2026):** Ürün sahibinin onayıyla P0 ve P1 kod düzeltmelerinin büyük kısmı uygulandı. Canlı kontrolde faturalamanın kapalı olduğu görüldü, yani 23 Kasım kilidi bugün kimseyi etkilemiyor. Ayrıntı ve kalan işler: [MASTER_ACTION_PLAN, bölüm 0](MASTER_ACTION_PLAN.md#0-uygulama-durumu-30-ekim-2026).
+
 ## Kısa sonuç
 
 Ürünün çekirdeği sağlam. Maliyet ve stok hesapları kuruşu kuruşuna tutuyor, testler geniş ve hepsi geçiyor, kiracı izolasyonu veritabanı düzeyinde korunuyor. Önceki güvenlik denetiminin 32 bulgusunun hepsi kapalı.
