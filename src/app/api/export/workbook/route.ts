@@ -3,6 +3,7 @@ import { api, requestLocale } from "@/server/http/handler";
 import { buildExcelReport, parseExportParams } from "@/server/excel";
 import { rateLimit } from "@/server/auth/session";
 import { prisma } from "@/server/db";
+import { assertExportRange, assertResponseSize } from "@/server/export-limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -11,7 +12,11 @@ export const maxDuration = 120;
 export const GET = api(async ({ actor, hotelId, query, req }) => {
   await rateLimit(`export:${actor.userId}`, 30, 60 * 60 * 1000);
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
-  const r = await buildExcelReport(prisma, actor, hotelId, parseExportParams(query), base, requestLocale(req));
+  const params = parseExportParams(query);
+  // Vercel: a bounded range, and never a file the platform would cut off with an opaque 413 (src/server/export-limits.ts)
+  assertExportRange(params);
+  const r = await buildExcelReport(prisma, actor, hotelId, params, base, requestLocale(req));
+  assertResponseSize(r.buffer.length);
   return new NextResponse(new Uint8Array(r.buffer), {
     headers: {
       "content-type": "application/vnd.ms-excel.sheet.macroEnabled.12",
