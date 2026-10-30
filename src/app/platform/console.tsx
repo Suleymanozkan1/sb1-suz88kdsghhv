@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import { call } from "@/lib/client";
 import { useT } from "@/i18n/client";
+import { date } from "@/lib/format";
+
+export interface Renewal { id: string; name: string; kind: "ENDING" | "ENDED"; state: "TRIAL" | "ACTIVE" | "PAST_DUE" | "EXPIRED"; endsAt: string | null; readOnlyFrom: string | null }
 
 interface Tenant { id: string; name: string; active: boolean; isDemo: boolean; plan: string; createdAt: string; users: number; hotels: Array<{ id: string; code: string; name: string; active: boolean }> }
 
-export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
+export function PlatformConsole({ tenants, renewals = [], billingOn = true }: { tenants: Tenant[]; renewals?: Renewal[]; billingOn?: boolean }) {
   const router = useRouter();
   const t = useT();
   const [msg, setMsg] = useState<{ tone: "red" | "green"; text: string } | null>(null);
@@ -58,6 +61,29 @@ export function PlatformConsole({ tenants }: { tenants: Tenant[] }) {
 
   return (
     <div className="space-y-4">
+      {renewals.length > 0 && (
+        <div data-testid="renewal-warnings">
+          <Alert tone={renewals.some((r) => r.state === "EXPIRED") ? "red" : "amber"}>
+            <p className="font-medium">{t("Subscriptions that end within 7 days or have ended ({count})", { count: renewals.length })}</p>
+            {!billingOn && <p className="mt-1">{t("Billing enforcement is off on this installation, so no tenant is read-only right now.")}</p>}
+            <ul className="mt-1 list-disc pl-5">
+              {renewals.map((r) => (
+                <li key={r.id}>
+                  <span className="font-medium">{r.name}</span>{": "}
+                  {r.state === "EXPIRED"
+                    ? t("ended on {date}; the tenant is read-only", { date: date(r.endsAt) })
+                    : r.state === "PAST_DUE"
+                      ? t("paid period ended on {date}; read-only from {readOnly}", { date: date(r.endsAt), readOnly: date(r.readOnlyFrom) })
+                      : r.state === "TRIAL"
+                        ? t("free trial ends on {date}; read-only from then unless paid", { date: date(r.endsAt) })
+                        : t("paid period ends on {date}; read-only from {readOnly} unless renewed", { date: date(r.endsAt), readOnly: date(r.readOnlyFrom) })}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1">{t("Record the payment or extend the trial under Subscriptions below.")}</p>
+          </Alert>
+        </div>
+      )}
       <Card title={t("New tenant (company)")}>
         <form onSubmit={create} className="grid gap-3 md:grid-cols-4">
           <div className="md:col-span-2"><Label htmlFor="t-org">{t("Company name")}</Label><Input id="t-org" name="organizationName" required /></div>
