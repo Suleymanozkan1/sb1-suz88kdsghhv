@@ -23,6 +23,7 @@ import { recordMovement } from "../services/minibar";
 import { ingestComps } from "../services/comps";
 import { assertPeriodsWritable } from "../services/period";
 import { lastClosedBusinessDay } from "@/domain/business-day";
+import { errorFields, log } from "../log";
 import { ingestSchema, runStatusSchema, type IngestInput, type IngestResult } from "./contract";
 
 // ───────── keys ─────────
@@ -132,16 +133,27 @@ async function ingestChecks(db: Db, actor: Actor, hotelId: string, p: Extract<In
   const checksWithRows = new Set(rows.map((r) => r.check));
   const dupChecks = [...checksWithRows].filter((i) => !fresh.some((r) => r.check === i)).length;
   if (!fresh.length) return { received: p.items.length, accepted: 0, duplicates: dupChecks, errors };
-  try {
-    const res = await commitSales(db, actor, hotelId, { rows: fresh.map(({ check: _c, departmentId: _d, ...r }) => r), source: "API", fileName: `${p.source} ${p.businessDay} (${runId})`, mappingVersion: "micros-bot-v1" });
-    for (const r of res.rows) if (r.status === "INVALID") errors.push({ item: fresh[r.row - 1]!.check, message: `${fresh[r.row - 1]!.name}: ${r.messages.join("; ")}` });
-    const bad = new Set(res.rows.filter((r) => r.status === "INVALID").map((r) => fresh[r.row - 1]!.check));
-    const accepted = new Set(fresh.map((r) => r.check).filter((i) => !bad.has(i))).size;
-    return { received: p.items.length, accepted, duplicates: dupChecks, errors };
-  } catch (e) {
-    errors.push({ item: -1, message: msg(e) });
-    return { received: p.items.length, accepted: 0, duplicates: dupChecks, errors };
+  // one import (one transaction) per outlet of the business day: a big hotel's day no longer holds every outlet's stock
+  // rows locked in one long transaction, and one outlet's problem does not reject the others' sales
+  const byOutlet = new Map<string, Row[]>();
+  for (const r of fresh) byOutlet.set(r.departmentId, [...(byOutlet.get(r.departmentId) ?? []), r]);
+  const bad = new Set<number>();
+  const costCache = new Map<string, Map<string, Decimal>>();
+  for (const part of byOutlet.values()) {
+    try {
+      const res = await commitSales(db, actor, hotelId, { rows: part.map(({ check: _c, departmentId: _d, ...r }) => r), source: "API", fileName: `${p.source} ${p.businessDay} ${part[0]!.department} (${runId})`, mappingVersion: "micros-bot-v1", costCache });
+      for (const r of res.rows) {
+        if (r.status !== "INVALID") continue;
+        errors.push({ item: part[r.row - 1]!.check, message: `${part[r.row - 1]!.name}: ${r.messages.join("; ")}` });
+        bad.add(part[r.row - 1]!.check);
+      }
+    } catch (e) {
+      errors.push({ item: -1, message: `${part[0]!.department}: ${msg(e)}` });
+      for (const r of part) bad.add(r.check);
+    }
   }
+  const accepted = new Set(fresh.map((r) => r.check).filter((i) => !bad.has(i))).size;
+  return { received: p.items.length, accepted, duplicates: dupChecks, errors };
 }
 
 async function unsortedCategory(db: Db, hotelId: string) {
@@ -365,7 +377,7 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
     try {
       await runAutoOrders(db, hotelId);
     } catch (e) {
-      console.error("[integrations] auto-order run after Micros import failed", hotelId, e);
+      log.error("integrations: auto-order run after Micros import failed", { hotelId, runId: r.runId, ...errorFields(e) });
     }
   }
   return run;

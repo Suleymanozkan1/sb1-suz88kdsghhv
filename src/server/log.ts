@@ -6,10 +6,14 @@
  *  - LOG_LEVEL = debug | info | warn | error (default info; "silent" in unit tests).
  *  - ERROR_WEBHOOK_URL (optional): errors are also POSTed as JSON — a Slack/Teams/Discord incoming webhook or any
  *    endpoint. No paid service is required. At most one post per distinct message per minute, so a failure loop
- *    cannot flood the channel; the post never blocks or fails the request that logged it.
+ *    cannot flood the channel; the post never blocks or fails the request that logged it. Inside a request it is
+ *    handed to Next's after(), so a serverless function is kept alive until it is delivered instead of being frozen
+ *    with the post still in flight once the response is out.
  *
  * Fields that could carry secrets are never logged: callers pass ids, never bodies, tokens or passwords.
  */
+import { after } from "next/server";
+
 type Level = "debug" | "info" | "warn" | "error";
 const ORDER: Record<Level | "silent", number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 99 };
 
@@ -41,7 +45,18 @@ function notify(entry: LogFields) {
   if (lastPost.size > 500) lastPost.clear();
   const text = `HotelCost ${process.env.HOTELCOST_ENV ?? process.env.NODE_ENV ?? ""}: ${entry.msg}${entry.error ? ` — ${String(entry.error)}` : ""}${entry.requestId ? ` (request ${String(entry.requestId)})` : ""}`;
   // `text` is what Slack/Teams/Discord-compatible webhooks display; the rest is for generic receivers
-  void fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, content: text, ...entry }), signal: AbortSignal.timeout(5000) }).catch(() => undefined);
+  const post = () => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, content: text, ...entry }), signal: AbortSignal.timeout(5000) }).then(() => undefined, () => undefined);
+  deliver(post);
+}
+
+/** Runs `task` after the response inside a request (after() keeps the function alive for it); elsewhere at once. */
+export function deliver(task: () => Promise<void>) {
+  try {
+    after(task);
+  } catch {
+    // outside a request scope (scripts, the job runner, tests) after() throws: send right away, as before
+    void task();
+  }
 }
 
 function write(level: Level, msg: string, fields?: LogFields) {

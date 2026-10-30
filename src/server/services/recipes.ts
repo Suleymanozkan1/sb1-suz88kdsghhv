@@ -10,6 +10,7 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize, departmentScope, requireDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { assertNotOwnRecord } from "./segregation";
+import { nextNumber } from "../numbering";
 import { productCostTable, toConversions } from "./products";
 import { raiseAlert } from "./alerts";
 import { decimalText, localDay } from "@/lib/format";
@@ -184,12 +185,8 @@ function lineData(lines: z.infer<typeof versionInput>["lines"]) {
   return lines.map((l, i) => ({ sortOrder: i, productId: l.productId || null, subRecipeId: l.subRecipeId || null, quantity: l.quantity, unit: l.unit, yieldPct: null, wastePct: "0", note: l.note ?? null }));
 }
 
-/** Next free automatic recipe code: R-0001, R-0002… */
-async function nextRecipeCode(db: Db, hotelId: string): Promise<string> {
-  const used = await db.recipe.findMany({ where: { hotelId, code: { startsWith: "R-" } }, select: { code: true } });
-  const max = used.reduce((m, r) => Math.max(m, Number(/^R-(\d+)$/.exec(r.code)?.[1] ?? 0)), 0);
-  return `R-${String(max + 1).padStart(4, "0")}`;
-}
+/** Next free automatic recipe code: R-0001, R-0002… (locked per hotel until the transaction ends) */
+const nextRecipeCode = (db: Db, hotelId: string): Promise<string> => nextNumber(db, hotelId, "RECIPE");
 
 export async function createRecipe(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "recipe:manage", { hotelId });

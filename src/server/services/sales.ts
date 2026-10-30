@@ -5,13 +5,14 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { CostPeriod, Prisma } from "@prisma/client";
 import { D, Decimal, ZERO, toStorage } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
 import { inTx, type Db } from "../db";
 import { type Actor, authorize, canDepartment } from "../auth/actor";
 import { audit } from "./audit";
 import { assertPostable } from "./period";
-import { postMovement, reverseMovement } from "./ledger";
+import { lockBalances, postMovement, reverseMovement } from "./ledger";
 import { businessDay } from "@/domain/business-day";
 
 const dec = z.union([z.string(), z.number()]).transform((v) => String(v).replace(",", ".")).refine((v) => v.trim() !== "" && Number.isFinite(Number(v)), "Must be a number");
@@ -162,7 +163,12 @@ export async function theoreticalFor(
 }
 
 /** Commit an import: idempotent per file hash and per POS line id (spec §249, §296). */
-export async function commitSales(db: Db, actor: Actor, hotelId: string, input: { rows: unknown[]; source: "CSV" | "EXCEL" | "API" | "MANUAL"; fileName?: string; rawContent?: string; mappingVersion?: string }) {
+/**
+ * `costCache` (internal): day → product cost table, shared by the per-outlet imports of one bot delivery so every
+ * outlet's lines are valued with the costs as they were before the delivery posted any consumption (as when the
+ * whole day was one import).
+ */
+export async function commitSales(db: Db, actor: Actor, hotelId: string, input: { rows: unknown[]; source: "CSV" | "EXCEL" | "API" | "MANUAL"; fileName?: string; rawContent?: string; mappingVersion?: string; costCache?: Map<string, Map<string, Decimal>> }) {
   const preview = await previewSales(db, actor, hotelId, input.rows);
   const fileHash = createHash("sha256").update(input.rawContent ?? JSON.stringify(input.rows)).digest("hex");
   return inTx(
@@ -188,34 +194,42 @@ export async function commitSales(db: Db, actor: Actor, hotelId: string, input: 
       });
       const good = preview.rows.filter((r) => (r.status === "VALID" || r.status === "WARNING") && r.data);
       const versions = await tx.recipeVersion.findMany({ where: { recipe: { hotelId }, status: { in: ["APPROVED", "SUPERSEDED"] } } });
-      const costCache = new Map<string, Map<string, Decimal>>();
+      const costCache = input.costCache ?? new Map<string, Map<string, Decimal>>();
       let theoreticalTotal = ZERO;
+      // the period check once per distinct sale date (in row order, so the first refused date is the one reported), the
+      // lines in bulk: a 3 000-line POS day was 3 queries per line before
+      const checked = new Set<number>();
+      for (const r of good) {
+        const t = r.data!.saleDate.getTime();
+        if (checked.has(t)) continue;
+        checked.add(t);
+        await assertPostable(tx, actor, hotelId, r.data!.saleDate);
+      }
+      const lines: Prisma.SaleLineCreateManyInput[] = [];
       for (const r of good) {
         const d = r.data!;
-        await assertPostable(tx, actor, hotelId, d.saleDate);
         const { versionId, unitCost } = d.recipeId ? await theoreticalFor(tx, hotelId, d.recipeId, d.saleDate, versions, costCache) : { versionId: null, unitCost: null };
         const qty = D(d.quantity);
         const theo = unitCost ? qty.times(unitCost) : null;
         if (theo) theoreticalTotal = theoreticalTotal.plus(theo);
-        await tx.saleLine.create({
-          data: {
-            hotelId,
-            importId: imp.id,
-            sourceRow: r.row,
-            externalId: d.externalId,
-            saleDate: d.saleDate,
-            departmentId: d.departmentId,
-            recipeId: d.recipeId,
-            recipeVersionId: versionId,
-            posCode: d.posCode,
-            itemName: d.name || null,
-            quantity: d.quantity,
-            netRevenue: d.netRevenue,
-            theoreticalUnitCost: unitCost ? toStorage(unitCost).toString() : null,
-            theoreticalCost: theo ? toStorage(theo).toString() : null,
-          },
+        lines.push({
+          hotelId,
+          importId: imp.id,
+          sourceRow: r.row,
+          externalId: d.externalId,
+          saleDate: d.saleDate,
+          departmentId: d.departmentId,
+          recipeId: d.recipeId,
+          recipeVersionId: versionId,
+          posCode: d.posCode,
+          itemName: d.name || null,
+          quantity: d.quantity,
+          netRevenue: d.netRevenue,
+          theoreticalUnitCost: unitCost ? toStorage(unitCost).toString() : null,
+          theoreticalCost: theo ? toStorage(theo).toString() : null,
         });
       }
+      for (let i = 0; i < lines.length; i += 1000) await tx.saleLine.createMany({ data: lines.slice(i, i + 1000) });
       const deducted = await postSalesConsumption(tx, actor, hotelId, imp.id);
       await audit(tx, actor, { hotelId, action: "SALES_IMPORT", entityType: "SalesImport", entityId: imp.id, after: { ...preview.summary, fileName: input.fileName, theoreticalTotal: theoreticalTotal.toString(), stockMovements: deducted } });
       return { import: imp, summary: preview.summary, rows: preview.rows, theoreticalCost: theoreticalTotal.toString(), stockMovements: deducted };
@@ -302,11 +316,19 @@ export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string
       per.set(dish, (per.get(dish) ?? ZERO).plus(sold));
     }
   }
+  // every stock row this posting touches is locked up front in one fixed order (receipts and counts do the same), and
+  // the period of each business day is checked once, not per movement
+  // (outside a transaction each movement is its own: nothing would hold these locks between them)
+  const inTransaction = !("$transaction" in db);
+  if (inTransaction) await lockBalances(db, hotelId, [...groups.values()].flatMap((g) => (warehouseOf(g.departmentId) ? [...g.qty.keys()].map((productId) => ({ warehouseId: warehouseOf(g.departmentId)!, productId })) : [])));
+  const periods = new Map<string, CostPeriod>();
   let n = 0;
   for (const g of groups.values()) {
     const warehouseId = warehouseOf(g.departmentId);
     if (!warehouseId) continue;
     for (const [productId, q] of g.qty) {
+      const txDate = new Date(`${g.day}T12:00:00Z`);
+      if (inTransaction && !periods.has(g.day)) periods.set(g.day, await assertPostable(db, actor, hotelId, txDate));
       const dishes = [...g.dishes.get(productId)!].sort((a, b) => b[1].comparedTo(a[1])).map(([name, k]) => `${k.toString()} × ${name}`);
       await postMovement(db, actor, {
         hotelId,
@@ -314,13 +336,14 @@ export async function postSalesConsumption(db: Db, actor: Actor, hotelId: string
         productId,
         type: "CONSUMPTION",
         quantity: toStorage(q).neg().toString(),
-        txDate: new Date(`${g.day}T12:00:00Z`),
+        txDate,
         departmentId: g.departmentId,
         sourceType: SALES_SOURCE,
         sourceId: importId,
         reason: `Sales: ${dishes.slice(0, 6).join(", ")}${dishes.length > 6 ? ", …" : ""}`.slice(0, 500),
         idempotencyKey: `sale:${importId}:${only ? `${only.tag}:` : ""}${g.day}:${g.departmentId}:${productId}`,
         allowNegative: true,
+        postable: periods.get(g.day),
       });
       n++;
     }

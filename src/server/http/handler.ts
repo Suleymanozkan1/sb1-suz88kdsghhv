@@ -12,7 +12,7 @@ import type { Permission } from "../auth/permissions";
 import { defaultLocale, LANG_COOKIE, normalizeLocale, translateMessage, type Locale } from "@/i18n/core";
 import { actorFromToken, isApiToken, SESSION_COOKIE, HOTEL_COOKIE } from "../auth/session";
 import { errorFields, log } from "../log";
-import { prisma } from "../db";
+import { isTransientTxError, prisma } from "../db";
 import { accessHas, FEATURES, featureForPath, organizationAccess, type Feature } from "../plans";
 import { accessRemoval } from "./access-removal";
 
@@ -133,6 +133,11 @@ export function errorResponse(e: unknown, locale: Locale = "en", ctx: { requestI
     return NextResponse.json({ error: { code: e.code, message: tm(e.message), details: toJson(e.details ?? null) } }, { status: STATUS[e.code], headers: retry ? { "retry-after": String(retry) } : undefined });
   }
   if (e instanceof ZodError) return NextResponse.json({ error: { code: "VALIDATION", message: tm("Invalid input"), details: e.issues.map((i) => ({ ...i, message: tm(i.message) })) } }, { status: 422 });
+  // a deadlock / serialization failure that outlived inTx's retries: nothing was saved and trying again is the answer
+  if (isTransientTxError(e)) {
+    log.warn("api transaction conflict", { ...ctx, ...errorFields(e) });
+    return NextResponse.json({ error: { code: "BUSY", message: tm("The system is busy with other changes right now: nothing was saved, please try again"), ...(ctx.requestId ? { requestId: ctx.requestId } : {}) } }, { status: 503, headers: { "retry-after": "2" } });
+  }
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") return NextResponse.json({ error: { code: "DUPLICATE", message: tm("Duplicate record") } }, { status: 409 });
     if (e.code === "P2025") return NextResponse.json({ error: { code: "NOT_FOUND", message: tm("Not found") } }, { status: 404 });

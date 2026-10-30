@@ -4,6 +4,7 @@ import { api, requestLocale } from "@/server/http/handler";
 import { prisma } from "@/server/db";
 import { rateLimit } from "@/server/auth/session";
 import { parseExportParams } from "@/server/excel";
+import { assertExportRange } from "@/server/export-limits";
 import { listExportJobs, queueExportJob, runExportJob } from "@/server/services/export-jobs";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,10 @@ export const POST = api(async ({ actor, hotelId, body: read, req }) => {
   const b = body.parse(await read());
   const q = new URLSearchParams({ from: b.from, to: b.to, departmentId: b.departmentId, warehouseId: b.warehouseId, group: b.group });
   const base = process.env.PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.headers.get("x-forwarded-host") ?? req.headers.get("host")}`;
-  const job = await queueExportJob(prisma, actor, hotelId, parseExportParams(q), base, requestLocale(req));
+  const params = parseExportParams(q);
+  // the file is downloaded through this function too: on Vercel the range is bounded up front (src/server/export-limits.ts)
+  assertExportRange(params);
+  const job = await queueExportJob(prisma, actor, hotelId, params, base, requestLocale(req));
   after(() => runExportJob(prisma, job.id));
   return job;
 }, { perm: "report:export" });

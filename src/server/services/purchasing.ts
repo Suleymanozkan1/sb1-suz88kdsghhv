@@ -13,7 +13,8 @@ import { inTx, type Db } from "../db";
 import { type Actor, authorize } from "../auth/actor";
 import { audit } from "./audit";
 import { assertNotOwnRecord } from "./segregation";
-import { postMovement } from "./ledger";
+import { lockBalances, postMovement } from "./ledger";
+import { nextNumber } from "../numbering";
 import { raiseAlert } from "./alerts";
 import { toConversions } from "./products";
 import { decimalText } from "@/lib/format";
@@ -50,12 +51,6 @@ export const poInput = z.object({
   items: z.array(z.object({ productId: z.string().min(1), quantity: pos, unit: z.string().min(1), unitPrice: nonNeg })).min(1),
 });
 
-async function nextNumber(db: Db, prefix: string, hotelId: string, model: "purchaseOrder" | "goodsReceipt" | "stockCount") {
-  const n =
-    model === "purchaseOrder" ? await db.purchaseOrder.count({ where: { hotelId } }) : model === "goodsReceipt" ? await db.goodsReceipt.count({ where: { hotelId } }) : await db.stockCount.count({ where: { hotelId } });
-  return `${prefix}-${String(n + 1).padStart(6, "0")}`;
-}
-
 export async function createPurchaseOrder(db: Db, actor: Actor, hotelId: string, raw: unknown) {
   authorize(actor, "purchase:manage", { hotelId });
   const input = poInput.parse(raw);
@@ -72,7 +67,7 @@ export async function createPurchaseOrder(db: Db, actor: Actor, hotelId: string,
     const po = await tx.purchaseOrder.create({
       data: {
         hotelId,
-        number: await nextNumber(tx, "PO", hotelId, "purchaseOrder"),
+        number: await nextNumber(tx, hotelId, "PO"),
         supplierId: supplier.id,
         orderDate: input.orderDate,
         expectedDate: input.expectedDate ?? null,
@@ -146,6 +141,9 @@ export async function postGoodsReceipt(db: Db, actor: Actor, hotelId: string, ra
   return inTx(
     db,
     async (tx) => {
+      // first: receipts of a hotel take their numbers one at a time, so a concurrent one with the same idempotency key
+      // or invoice number is seen below instead of racing past the checks
+      const number = await nextNumber(tx, hotelId, "GRN");
       if (input.idempotencyKey) {
         const ex = await tx.goodsReceipt.findUnique({ where: { hotelId_idempotencyKey: { hotelId, idempotencyKey: input.idempotencyKey } }, include: { items: true } });
         if (ex) {
@@ -185,10 +183,12 @@ export async function postGoodsReceipt(db: Db, actor: Actor, hotelId: string, ra
         input.exchangeRate ?? 1,
       );
 
+      // stock rows locked in one fixed order (as sales and counts do), never in the order the lines arrive
+      await lockBalances(tx, hotelId, lines.map((l) => ({ warehouseId: warehouse.id, productId: l.p.id })));
       const receipt = await tx.goodsReceipt.create({
         data: {
           hotelId,
-          number: await nextNumber(tx, "GRN", hotelId, "goodsReceipt"),
+          number,
           supplierId: supplier.id,
           orderId: po?.id ?? null,
           warehouseId: warehouse.id,

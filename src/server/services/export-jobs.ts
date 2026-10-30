@@ -11,6 +11,7 @@ import { actorForUser } from "../auth/actors";
 import { DomainError } from "@/domain/errors";
 import type { ExportParams } from "./export";
 import { normalizeLocale, type Locale } from "@/i18n/core";
+import { errorFields, log } from "../log";
 
 const STALE_MINUTES = 30;
 const MAX_ACTIVE_PER_USER = 2;
@@ -75,13 +76,14 @@ export async function runExportJob(db: Db, jobId: string): Promise<void> {
       data: { status: "COMPLETED", finishedAt: new Date(), file: new Uint8Array(r.buffer), size: r.buffer.length, fileName: r.fileName, exportId: r.export.exportId, reconciliation: r.export.score.reconciliation, expiresAt: new Date(Date.now() + ttlHours() * 3600_000) },
     });
   } catch (e) {
+    log.error("export job failed", { job: "export", jobId, hotelId: job.hotelId, userId: job.userId, ...errorFields(e) });
     await db.exportJob.update({ where: { id: jobId }, data: { status: "FAILED", finishedAt: new Date(), error: (e instanceof Error ? e.message : String(e)).slice(0, 1000) } });
   }
 }
 
 /** Fire-and-forget start for the web request; errors are recorded on the job, never thrown. */
 export function startExportJob(db: Db, jobId: string) {
-  setImmediate(() => void runExportJob(db, jobId).catch((e) => console.error("[export-job]", jobId, e)));
+  setImmediate(() => void runExportJob(db, jobId).catch((e) => log.error("export job crashed", { job: "export", jobId, ...errorFields(e) })));
 }
 
 export async function listExportJobs(db: Db, actor: Actor, hotelId: string) {
