@@ -23,6 +23,7 @@ import { recordMovement } from "../services/minibar";
 import { ingestComps } from "../services/comps";
 import { assertPeriodsWritable } from "../services/period";
 import { lastClosedBusinessDay } from "@/domain/business-day";
+import { errorFields, log } from "../log";
 import { ingestSchema, runStatusSchema, type IngestInput, type IngestResult } from "./contract";
 
 // ───────── keys ─────────
@@ -376,7 +377,7 @@ export async function reportRun(db: Db, hotelId: string, raw: unknown) {
     try {
       await runAutoOrders(db, hotelId);
     } catch (e) {
-      console.error("[integrations] auto-order run after Micros import failed", hotelId, e);
+      log.error("integrations: auto-order run after Micros import failed", { hotelId, runId: r.runId, ...errorFields(e) });
     }
   }
   return run;

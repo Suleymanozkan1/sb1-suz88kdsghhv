@@ -6,6 +6,7 @@
  * on the screen and nothing is sent. Rules are pre-filled from the order recommendations (product, supplier,
  * category, consumption), so nobody has to type every product.
  */
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { D, Decimal, ZERO } from "@/domain/money";
 import { DomainError } from "@/domain/errors";
@@ -16,7 +17,7 @@ import { audit } from "./audit";
 import { nextNumber } from "../numbering";
 import { orderRecommendations } from "./inventory";
 import { toConversions } from "./products";
-import { hotelAccess, hotelPlan, planHas, trialAllFeatures } from "../plans";
+import { hotelAccess, planHas, trialAllFeatures } from "../plans";
 import { mailConfigured, sendMail } from "../mail";
 import { date, decimalText, localDay } from "@/lib/format";
 import { DEFAULT_ORDER_EMAIL, renderOrderEmail } from "@/app/(app)/purchasing/orders/order-email";
@@ -200,12 +201,16 @@ export async function fillFromRecommendations(db: Db, actor: Actor, hotelId: str
  * e-mail per supplier, written with the hotel's order e-mail template (HTML table + plain-text fallback). Runs after each Micros import, nightly and on "check now". An ordered product is not ordered
  * again while that order is outstanding: until a goods receipt of it is posted, its stock is back above the reorder
  * point, or the supplier's lead time + 1 day has passed (7 days without a lead time — the order was lost).
- * Returns what was due and what was sent.
+ * Returns what was due and what was sent. A tenant whose subscription has expired (read-only) orders nothing: its
+ * suppliers are not e-mailed and its rules are left as they are. Each e-mail carries a reference (AO-yyyymmdd-xxxxxx),
+ * also kept in the audit trail, and asks the supplier to reply to the hotel's purchasing contact (replyTo).
  */
 export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Actor; now?: Date } = {}) {
   if (opts.actor) authorize(opts.actor, "purchase:manage", { hotelId });
   const now = opts.now ?? new Date();
-  const plan = await hotelPlan(db, hotelId);
+  const access = await hotelAccess(db, hotelId);
+  const plan = access.plan;
+  if (access.readOnly) return { due: 0, sent: 0, failed: 0, plan, emailEnabled: false, skipped: "READ_ONLY" as const };
   const rules = await db.autoOrderRule.findMany({ where: { hotelId, active: true }, include: { product: true, supplier: true } });
   const stock = await stockByProduct(db, hotelId, rules.map((r) => r.productId));
   const low = (r: (typeof rules)[number]) => (stock.get(r.productId) ?? ZERO).lte(D(r.reorderPoint.toString()));
@@ -229,7 +234,7 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
   };
   const due = rules.filter((r) => low(r) && !outstanding(r));
   if (!planHas(plan, "autoOrderEmail") || !due.length) return { due: due.length, sent: 0, failed: 0, plan, emailEnabled: planHas(plan, "autoOrderEmail") };
-  const [hotel, template] = await Promise.all([db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true, timezone: true } }), orderEmailTemplate(db, hotelId)]);
+  const [hotel, template, replyTo] = await Promise.all([db.hotel.findUniqueOrThrow({ where: { id: hotelId }, select: { name: true, timezone: true } }), orderEmailTemplate(db, hotelId), orderReplyTo(db, hotelId, opts.actor)]);
   const today = date(localDay(hotel.timezone, now));
   const groups = new Map<string, typeof due>();
   for (const r of due) {
@@ -251,8 +256,10 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
     if (!rs.length) continue;
     const to = k.split("|")[1]!;
     const s = rs[0]!.supplier;
-    const mail = renderOrderEmail(template, { supplier: s.name, hotel: hotel.name, date: today, lines: rs.map((r) => ({ product: r.product.name, qty: r.orderQty.toString(), unit: r.product.stockUnit })) });
-    const res = to ? await sendMail({ to, ...mail }) : ({ ok: false, error: "Supplier has no e-mail address" } as const);
+    const reference = orderReference(now);
+    const mail = withReference(renderOrderEmail(template, { supplier: s.name, hotel: hotel.name, date: today, lines: rs.map((r) => ({ product: r.product.name, qty: r.orderQty.toString(), unit: r.product.stockUnit })) }), reference);
+    const res = to ? await sendMail({ to, ...mail, ...(replyTo ? { replyTo } : {}) }) : ({ ok: false, error: "Supplier has no e-mail address" } as const);
+    await audit(db, opts.actor ?? null, { hotelId, action: res.ok ? "AUTO_ORDER_SENT" : "AUTO_ORDER_FAILED", entityType: "Supplier", entityId: s.id, source: opts.actor ? "APP" : "SYSTEM", after: { reference, email: to || null, replyTo, lines: rs.map((r) => ({ productId: r.productId, product: r.product.name, quantity: r.orderQty.toString(), unit: r.product.stockUnit })), error: res.ok ? null : res.error } });
     for (const r of rs) {
       await db.autoOrderSend.create({ data: { hotelId, ruleId: r.id, quantity: r.orderQty, stockQty: (stock.get(r.productId) ?? ZERO).toString(), email: to || "-", status: res.ok ? "SENT" : "FAILED", error: res.ok ? null : res.error } });
       if (!res.ok) await db.autoOrderRule.update({ where: { id: r.id }, data: { lastOrderedAt: r.lastOrderedAt } });
@@ -261,6 +268,32 @@ export async function runAutoOrders(db: Db, hotelId: string, opts: { actor?: Act
     else failed += rs.length;
   }
   return { due: due.length, sent, failed, plan, emailEnabled: true };
+}
+
+/** The reference printed on an automatic order e-mail: day + random part, unique enough to find it again. */
+const orderReference = (now: Date) => `AO-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${randomBytes(3).toString("hex").toUpperCase()}`;
+
+/** The reference goes into the subject and at the end of the e-mail (the e-mail is Turkish, like its template). */
+function withReference(m: { subject: string; text: string; html: string }, reference: string) {
+  return {
+    subject: `${m.subject} (Ref: ${reference})`,
+    text: `${m.text}\n\nSipariş referansı: ${reference}`,
+    html: m.html.replace(/<\/div>$/, `<br><br>Sipariş referansı: <strong>${reference}</strong></div>`),
+  };
+}
+
+/**
+ * Where a supplier's answer to an automatic order goes. The hotel has no purchasing address of its own, so: the user
+ * who ran the check, else whoever last edited the hotel's order e-mail, else the longest-standing active user of the
+ * hotel who manages purchasing. null: the mail server's sender address stays the only one.
+ */
+async function orderReplyTo(db: Db, hotelId: string, actor?: Actor): Promise<string | null> {
+  if (actor?.email && actor.roleKey !== "integration") return actor.email;
+  const tpl = await db.orderEmailTemplate.findUnique({ where: { hotelId }, select: { updatedById: true } });
+  const editor = tpl?.updatedById ? await db.user.findFirst({ where: { id: tpl.updatedById, active: true, hotelAccess: { some: { hotelId } } }, select: { email: true } }) : null;
+  if (editor) return editor.email;
+  const buyer = await db.user.findFirst({ where: { active: true, hotelAccess: { some: { hotelId } }, role: { permissions: { has: "purchase:manage" } } }, orderBy: { createdAt: "asc" }, select: { email: true } });
+  return buyer?.email ?? null;
 }
 
 // ───────── suppliers ─────────

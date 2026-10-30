@@ -84,7 +84,8 @@ describe("automatic ordering (reorder point → e-mail per supplier)", () => {
     expect(mail[0]!.to).toBe("orders@anadolu.test");
     expect(mail[0]!.text).toContain("Olive Oil: 20 l");
     // the built-in Turkish template, addressed to the supplier, with an HTML product table
-    expect(mail[0]!.subject).toBe(`Sipariş: ${h.hotel.name}, 03.09.2026`);
+    // the template's subject, plus the order's reference (BIZ-08: the supplier can quote it)
+    expect(mail[0]!.subject).toMatch(new RegExp(`^Sipariş: ${h.hotel.name}, 03\\.09\\.2026 \\(Ref: AO-20260903-[0-9A-F]{6}\\)$`));
     expect(mail[0]!.text).toContain(`Sayın ${h.supplier.name},`);
     expect(mail[0]!.text).toContain(`${h.hotel.name} için aşağıdaki ürünlere ihtiyacımız var:`);
     expect(mail[0]!.html).toContain("<table");
@@ -190,8 +191,10 @@ describe("order e-mail template (per hotel, editable)", () => {
     const r = await runAutoOrders(prisma, h.hotel.id, { now: new Date("2026-09-10T02:00:00Z") });
     expect(r.sent).toBeGreaterThanOrEqual(1);
     const m = sentMail.slice(before).find((x) => x.to === "seker@supplier.test")!;
-    expect(m.subject).toBe(`Acil sipariş 10.09.2026 <${h.hotel.name}>`);
-    expect(m.text).toBe(`Merhaba Şeker Dünyası & ekibi,\n- Sugar <fine>: 12,5 kg\nTeşekkürler`);
+    const ref = /\(Ref: (AO-\d{8}-[0-9A-F]{6})\)$/.exec(m.subject)?.[1];
+    expect(m.subject).toBe(`Acil sipariş 10.09.2026 <${h.hotel.name}> (Ref: ${ref})`);
+    // the saved template exactly, then the order's reference
+    expect(m.text).toBe(`Merhaba Şeker Dünyası & ekibi,\n- Sugar <fine>: 12,5 kg\nTeşekkürler\n\nSipariş referansı: ${ref}`);
     // HTML: the template text is escaped, only the product table is markup
     expect(m.html).toContain("Merhaba");
     expect(m.html).toContain("&amp; ekibi,<br><table");
