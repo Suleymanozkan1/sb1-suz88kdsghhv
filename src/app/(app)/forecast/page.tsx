@@ -1,11 +1,12 @@
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess, requireAllDepartmentsPage } from "@/server/page";
 import { forecastReport, whatIfReport } from "@/server/services/planning";
 import { prisma } from "@/server/db";
 import { Alert, Button, Card, Empty, Input, Label, PageHeader, Select, Stat, Table, Td, Th } from "@/components/ui";
 import { money, parseNum, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Forecast & What-if" };
+export const generateMetadata = pageTitle("Forecast & What-if");
 
 type SP = { month?: string; occupancyPct?: string; coversPct?: string; priceChangePct?: string; wfrom?: string; productId?: string; productPricePct?: string; wOccupancyPct?: string; buffetCoversPct?: string; wastePts?: string; laborPct?: string; energyPct?: string };
 const numIn = (v?: string) => { const n = parseNum(v); return Number.isFinite(n) ? n : null; };
@@ -17,6 +18,9 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "budget:view", hotelId);
+  // hotel-wide figures: the menu shows this page to all-department roles only (nav.ts hotelWide)
+  requireAllDepartmentsPage(actor);
   const cur = hotel.baseCurrency;
   const now = new Date();
   const [y, m] = (sp.month ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`).split("-").map(Number) as [number, number];

@@ -9,13 +9,14 @@ import { TokenPanel } from "./token-panel";
 import { BackgroundExport } from "./background-export";
 import { getT } from "@/i18n/server";
 import { exportMaxMonths } from "@/server/export-limits";
+import { pageTitle } from "@/i18n/metadata";
 
 /** Fill {name} slots of a translated sentence with elements (bold words, code, badges). */
 function rich(text: string, parts: Record<string, React.ReactNode>): React.ReactNode[] {
   return text.split(/\{(\w+)\}/).map((s, i) => (i % 2 ? <Fragment key={i}>{parts[s] ?? `{${s}}`}</Fragment> : s));
 }
 
-export const metadata = { title: "Excel Export" };
+export const generateMetadata = pageTitle("Excel Export");
 
 export default async function ExcelPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const t = await getT();

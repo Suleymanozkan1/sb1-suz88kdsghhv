@@ -8,7 +8,7 @@ import { BUILT_IN_VIDEOS } from "@/lib/training-videos";
 import { call } from "@/lib/client";
 import { useLocale, useT } from "@/i18n/client";
 
-interface Role { id: string; key: string; name: string; allDepartments: boolean }
+interface Role { id: string; key: string; name: string; allDepartments: boolean; /** what the role is for (role template), English key */ description?: string }
 interface User { id: string; email: string; name: string; active: boolean; roleKey: string; roleName: string; allDepartments: boolean; departmentIds: string[]; hotelIds: string[] }
 interface Invite { id: string; email: string; name: string | null; roleKey: string; createdAt: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null }
 interface Dept { id: string; code: string; name: string; isOutlet: boolean; active: boolean; parentId: string | null; sqm: string | null; headcount: number | null }
@@ -101,7 +101,7 @@ export function AdminConsole(p: Props) {
               <div><Label htmlFor="u-name">{t("Name")}</Label><Input id="u-name" name="name" required /></div>
               <div><Label htmlFor="u-email">{t("E-mail")}</Label><Input id="u-email" name="email" type="email" required /></div>
               <div><Label htmlFor="u-pw" hint={t("min 10")}>{t("Initial password")}</Label><Input id="u-pw" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
-              <div><Label htmlFor="u-role">{t("Role")}</Label><Select id="u-role" name="roleKey" value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
+              <div><Label htmlFor="u-role">{t("Role")}</Label><Select id="u-role" name="roleKey" value={roleKey} aria-describedby={roleOf(roleKey)?.description ? "u-role-desc" : undefined} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{roleOf(roleKey)?.description && <p id="u-role-desc" className="mt-1 text-xs text-ink-500">{t(roleOf(roleKey)!.description!)}</p>}</div>
               {hotelPicker("hotel", [p.currentHotelId])}
               {!roleOf(roleKey)?.allDepartments && deptPicker("dept")}
               <div className="md:col-span-4"><Button type="submit">{t("Create user")}</Button></div>
@@ -160,7 +160,7 @@ export function AdminConsole(p: Props) {
             }}>
               <div><Label htmlFor="v-name">{t("Name (optional)")}</Label><Input id="v-name" name="name" /></div>
               <div><Label htmlFor="v-email">{t("E-mail")}</Label><Input id="v-email" name="email" type="email" required /></div>
-              <div><Label htmlFor="v-role">{t("Role")}</Label><Select id="v-role" name="roleKey" value={roleKey} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select></div>
+              <div><Label htmlFor="v-role">{t("Role")}</Label><Select id="v-role" name="roleKey" value={roleKey} aria-describedby={roleOf(roleKey)?.description ? "v-role-desc" : undefined} onChange={(e) => setRoleKey(e.target.value)}>{p.roles.map((r) => <option key={r.key} value={r.key}>{t(r.name)}</option>)}</Select>{roleOf(roleKey)?.description && <p id="v-role-desc" className="mt-1 text-xs text-ink-500">{t(roleOf(roleKey)!.description!)}</p>}</div>
               {hotelPicker("hotel", [p.currentHotelId])}
               {!roleOf(roleKey)?.allDepartments && deptPicker("dept")}
               <div className="md:col-span-4"><Button type="submit">{t("Create invitation")}</Button></div>

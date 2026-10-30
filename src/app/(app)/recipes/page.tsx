@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Pencil, Plus } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { listRecipes, RECIPE_TYPES } from "@/server/services/recipes";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -10,13 +10,15 @@ import { getT } from "@/i18n/server";
 import { RecipePriceRefresh } from "./refresh-prices";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Recipes" };
+export const generateMetadata = pageTitle("Recipes");
 
 export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; from?: string; to?: string }> }) {
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "recipe:view", hotelId);
   const res = await guarded(() => listRecipes(prisma, actor, hotelId, { q: sp.q, type: sp.type || undefined, from: sp.from || undefined, to: sp.to || undefined }));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const manage = can(actor, "recipe:manage");

@@ -10,8 +10,9 @@ import { currentBusinessDay } from "@/domain/business-day";
 import { getT } from "@/i18n/server";
 import { ReceiptForm } from "./receipt-form";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Purchasing" };
+export const generateMetadata = pageTitle("Purchasing");
 
 /** the screen lists the latest receipts of the period; PDF / Excel / CSV carry all of them */
 const SHOWN = 100;

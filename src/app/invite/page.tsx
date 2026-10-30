@@ -3,8 +3,9 @@ import { describeInvite } from "@/server/services/tenancy";
 import { Alert } from "@/components/ui";
 import { AcceptForm } from "./accept-form";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Accept invitation" };
+export const generateMetadata = pageTitle("Accept invitation");
 export const dynamic = "force-dynamic";
 
 export default async function InvitePage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {

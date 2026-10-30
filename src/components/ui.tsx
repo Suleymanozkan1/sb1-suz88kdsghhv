@@ -44,7 +44,8 @@ export function PageHeader({ title, subtitle, actions, exportKey, exportParams, 
 
 export function Card({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cn("rounded-xl border border-ink-200 bg-white shadow-sm", className)}>
+    // min-w-0: inside a grid or flex row the card never grows to its widest table; the table scrolls in its own region
+    <section className={cn("min-w-0 rounded-xl border border-ink-200 bg-white shadow-sm", className)}>
       {(title || actions) && (
         <header className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-ink-800">{typeof title === "string" ? <Title>{title}</Title> : title}</h2>
@@ -135,7 +136,7 @@ export function Select({ className, children, ...p }: SelectHTMLAttributes<HTMLS
 export function Table({ children, className, label = "Scrollable table" }: { children: ReactNode; className?: string; label?: string }) {
   // focusable scroll container: wide tables can be scrolled with the keyboard (WCAG 2.1.1)
   return (
-    <div className={cn("overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500", className)} tabIndex={0} role="region" aria-label={label}>
+    <div className={cn("relative overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500", className)} tabIndex={0} role="region" aria-label={label}>
       <table className="min-w-full divide-y divide-ink-100 text-sm">{children}</table>
     </div>
   );

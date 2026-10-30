@@ -10,8 +10,9 @@ import { Title } from "@/components/title";
 import { date, money, qty } from "@/lib/format";
 import { sum } from "@/domain/money";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Count Results" };
+export const generateMetadata = pageTitle("Count Results");
 
 type SP = { warehouseId?: string; from?: string; to?: string; lines?: string };
 

@@ -4,6 +4,7 @@ import { CheckCircle2, Circle } from "lucide-react";
 import type { OnboardingStep } from "@/server/services/onboarding";
 import { getT } from "@/i18n/server";
 import { cn } from "./ui";
+import { canOpenHref } from "./nav";
 
 export async function GettingStarted({ steps, done, total, permissions }: { steps: OnboardingStep[]; done: number; total: number; permissions: ReadonlySet<string> }) {
   if (done >= total) return null;
@@ -21,7 +22,8 @@ export async function GettingStarted({ steps, done, total, permissions }: { step
       <p className="mt-3 text-sm text-ink-600">{t("The first theoretical-vs-actual variance needs these, in this order. Each step is checked from your data.")}</p>
       <ol className="mt-3 grid gap-2 md:grid-cols-2">
         {steps.map((s) => {
-          const can = permissions.has(s.perm);
+          // the action itself, and the page it is done on (e.g. Imports needs an import permission)
+          const can = permissions.has(s.perm) && canOpenHref(s.href, permissions);
           const isNext = s === next;
           return (
             <li key={s.key} className={cn("flex gap-3 rounded-lg p-2.5", isNext && "bg-brand-50")}>

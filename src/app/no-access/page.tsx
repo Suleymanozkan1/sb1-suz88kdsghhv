@@ -4,8 +4,9 @@ import { currentActor } from "@/server/auth/session";
 import { Alert } from "@/components/ui";
 import { SignOutButton } from "@/components/sign-out-button";
 import { getT } from "@/i18n/server";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "No hotel access" };
+export const generateMetadata = pageTitle("No hotel access");
 export const dynamic = "force-dynamic";
 
 export default async function NoAccess() {

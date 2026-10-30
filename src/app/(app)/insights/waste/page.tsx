@@ -7,8 +7,9 @@ import { money, pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Top waste products" };
+export const generateMetadata = pageTitle("Top waste products");
 
 /** Dashboard drill-down (feedback r2 §2): the 20 products with the highest waste cost in any date range. */
 export default async function TopWastePage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {

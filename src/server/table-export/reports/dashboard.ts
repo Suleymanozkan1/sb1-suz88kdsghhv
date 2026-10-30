@@ -5,6 +5,7 @@ import { date } from "@/lib/format";
 import { translateMessage } from "@/i18n/core";
 import type { ReportDef, XTable } from "../types";
 import { metricTable } from "./metrics";
+import { shareOfVariance } from "@/lib/variance-display";
 
 const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "On-house / Hospitality", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
 
@@ -74,7 +75,7 @@ export const dashboard: ReportDef = {
         {
           title: t("Why is actual different from theoretical?"),
           columns: [{ key: "cause", header: t("Cause") }, { key: "amount", header: t("Amount"), type: "money" }, { key: "pct", header: "%", type: "pct" }],
-          rows: d.breakdown.components.map((c) => ({ cause: t(causeLabel[c.cause] ?? c.cause), amount: c.amount, pct: c.pctOfTotal })),
+          rows: d.breakdown.components.map((c) => ({ cause: t(causeLabel[c.cause] ?? c.cause), amount: c.amount, pct: shareOfVariance(c.amount, d.breakdown.total) })),
         },
         {
           title: t("Top unexplained usage"),

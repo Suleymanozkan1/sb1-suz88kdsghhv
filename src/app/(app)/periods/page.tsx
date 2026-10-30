@@ -7,8 +7,9 @@ import { date } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { PeriodActions } from "./period-actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Cost Periods" };
+export const generateMetadata = pageTitle("Cost Periods");
 
 /** Checklist details are "<n> <words>" or "<a> of <b> days"; translate the words, keep the numbers. */
 function detailText(t: T, s: string) {

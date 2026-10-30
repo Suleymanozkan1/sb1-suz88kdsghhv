@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { integrityRun, listRuns, type FindingValue } from "@/server/services/integrity";
 import { can } from "@/server/auth/actor";
 import { prisma } from "@/server/db";
@@ -9,8 +9,9 @@ import { dateTime, money, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import type { T } from "@/i18n/core";
 import { IntegrityActions } from "./actions";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Calculation Integrity" };
+export const generateMetadata = pageTitle("Calculation Integrity");
 
 const TONE = { COMPLETED: "green", RUNNING: "blue", PARTIAL: "amber", PENDING: "gray", FAILED: "red", PENDING_REPROCESS: "amber" } as const;
 const RESULT_TONE: Record<string, "green" | "amber" | "red"> = { OK: "green", WARNINGS: "amber", ISSUES: "red" };
@@ -28,6 +29,7 @@ export default async function IntegrityPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "audit:view", hotelId);
   const runs = await guarded(() => listRuns(prisma, actor, hotelId));
   if (!runs.ok) return <Alert>{runs.error}</Alert>;
   // the run picked in the log, else the last completed check

@@ -32,5 +32,6 @@ import { fixB } from "./fix-b";
 import { fixC } from "./fix-c";
 import { fixA } from "./fix-a";
 import { fixD } from "./fix-d";
+import { fixE } from "./fix-e";
 
-export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f, ...r3, ...r3a, ...r3b, ...r3c, ...r3d, ...r3e, ...r3f, ...seca, ...secb, ...secc, ...secd, ...denetim, ...fixF, ...fixB, ...fixC, ...fixA, ...fixD };
+export const TR: Record<string, string> = { ...common, ...shell, ...stock, ...ops, ...planning, ...server, ...reports, ...setup, ...exports, ...XL_UI, ...r2a, ...r2b, ...r2c, ...r2d, ...r2e, ...r2f, ...r3, ...r3a, ...r3b, ...r3c, ...r3d, ...r3e, ...r3f, ...seca, ...secb, ...secc, ...secd, ...denetim, ...fixF, ...fixB, ...fixC, ...fixA, ...fixD, ...fixE };

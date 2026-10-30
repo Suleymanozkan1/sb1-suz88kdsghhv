@@ -13,12 +13,14 @@ import { money, pct, qty } from "@/lib/format";
 import { IntegrationBanner } from "./imports/integration-status";
 import { integrationHealth } from "@/server/integrations/ingest";
 import { getT } from "@/i18n/server";
-import { homeHref } from "@/components/nav";
+import { homeHref, navFlags } from "@/components/nav";
+import { shareOfVariance, varianceBar, varianceTone } from "@/lib/variance-display";
 import { Title } from "@/components/title";
 import { gettingStarted } from "@/server/services/onboarding";
 import { GettingStarted } from "@/components/getting-started";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Dashboard" };
+export const generateMetadata = pageTitle("Dashboard");
 
 const causeLabel: Record<string, string> = { PRICE: "Price / timing", WASTE: "Recorded waste", STAFF_MEAL: "Staff meals", COMPLIMENTARY: "On-house / Hospitality", BUFFET_CONSUMPTION: "Buffet (per cover)", MINIBAR_CONSUMPTION: "Minibar (rooms)", OPERATING_SUPPLIES: "Operating supplies (HK, ENG, linen)", UNEXPLAINED: "Unexplained" };
 const confidenceTone = { ACTUAL: "green", ESTIMATED: "blue", PARTIAL: "amber", INSUFFICIENT_DATA: "red" } as const;
@@ -28,7 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const t = await getT();
   // roles without the dashboard (e.g. warehouse user) start on the first page their menu offers
   if (!actor.permissions.has("dashboard:view")) {
-    const home = homeHref(actor.permissions, (await canOpenApprovals(prisma, actor, hotelId)) ? ["approvals"] : []);
+    const home = homeHref(actor.permissions, navFlags(actor, await canOpenApprovals(prisma, actor, hotelId)));
     if (home && home !== "/") redirect(home);
     return <Empty title={t("Nothing to show for your role on this page")}>{t("Ask your company administrator if you need access.")}</Empty>;
   }
@@ -77,8 +79,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* cost % cards lead with the amount; the % of revenue sits small under it (feedback r2 §2) */}
         <Stat label={t("Actual cost")} value={<>{money(k.actualCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.actualCostPct) })}</span></>} hint={t("Opening + purchases ± transfers − closing")} />
         <Stat label={t("Theoretical cost")} value={<>{money(k.theoreticalCost, cur, 0)}<span className="block text-sm font-medium text-ink-500">{t("{pct} of revenue", { pct: pct(k.theoreticalCostPct) })}</span></>} hint={t("Σ sold × recipe cost at time of sale")} />
-        <Stat label={t("Variance")} value={money(k.variance, cur, 0)} tone={Number(k.variance) > 0 ? "bad" : "good"} hint={t("Actual − theoretical")} />
-        <Stat label={t("Unexplained variance")} value={money(k.unexplained, cur, 0)} tone={Math.abs(Number(k.unexplained)) > 0 ? "warn" : "good"} hint={t("After price, waste, staff meal, comp")} />
+        {/* colored by size against theoretical, not by sign: a large negative variance is a warning too (UX-09) */}
+        <Stat label={t("Variance")} value={money(k.variance, cur, 0)} tone={varianceTone(k.variance, k.theoreticalCost)} hint={t("Actual − theoretical")} />
+        <Stat label={t("Unexplained variance")} value={money(k.unexplained, cur, 0)} tone={varianceTone(k.unexplained, k.theoreticalCost)} hint={t("After price, waste, staff meal, comp")} />
         <Stat label={t("Revenue")} value={money(k.revenue, cur, 0)} hint={t("Gap {gap} pts", { gap: pct(k.costPctVariancePts, 2) })} />
         <Stat label={t("Waste cost")} value={money(k.wasteCost, cur, 0)} hint={t("{ofCost} of cost · {ofRevenue} of revenue", { ofCost: pct(k.wastePctOfCost), ofRevenue: pct(k.wastePctOfRevenue) })} />
         <Stat label={t("Stock value")} value={money(k.stockValue, cur, 0)} hint={t("Current, from the stock ledger")} />
@@ -94,10 +97,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <li key={c.cause}>
                   <div className="mb-1 flex justify-between text-sm">
                     <span className={c.cause === "UNEXPLAINED" ? "font-semibold text-ink-900" : "text-ink-700"}>{t(causeLabel[c.cause] ?? c.cause)}</span>
-                    <span className="tabular-nums">{money(c.amount, cur, 0)} <span className="text-ink-400">({pct(c.pctOfTotal)})</span></span>
+                    <span className="tabular-nums">{money(c.amount, cur, 0)} <span className="text-ink-400">({pct(shareOfVariance(c.amount, d.breakdown.total))})</span></span>
                   </div>
                   <div className="h-2 rounded-full bg-ink-100">
-                    <div className={`h-2 rounded-full ${c.cause === "UNEXPLAINED" ? "bg-amber-500" : v >= 0 ? "bg-red-400" : "bg-brand-500"}`} style={{ width: `${(Math.abs(v) / maxComp) * 100}%` }} />
+                    {/* explained causes are neutral; the unexplained rest takes the color of its size */}
+                    <div className={`h-2 rounded-full ${c.cause === "UNEXPLAINED" ? varianceBar[varianceTone(v, k.theoreticalCost)] : "bg-sky-400"}`} style={{ width: `${(Math.abs(v) / maxComp) * 100}%` }} />
                   </div>
                 </li>
               );

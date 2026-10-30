@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { pageContext, guarded } from "@/server/page";
+import { pageContext, guarded, requirePageAccess } from "@/server/page";
 import { dataQuality, dqText } from "@/server/services/data-quality";
 import { prisma } from "@/server/db";
 import { Alert, Badge, Card, PageHeader, Stat, Table, Td, Th, cn } from "@/components/ui";
 import { pct, qty } from "@/lib/format";
 import { getT } from "@/i18n/server";
 import { Title } from "@/components/title";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Data Quality" };
+export const generateMetadata = pageTitle("Data Quality");
 
 /**
  * Every check is a card; clicking it lists its records below (feedback r3 §15): the record, why it is a problem and a
@@ -18,6 +19,7 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId } = await pageContext();
+  requirePageAccess(actor, "dashboard:view", hotelId);
   const res = await guarded(() => dataQuality(prisma, actor, hotelId));
   if (!res.ok) return <Alert>{res.error}</Alert>;
   const { score, checks } = res.data;

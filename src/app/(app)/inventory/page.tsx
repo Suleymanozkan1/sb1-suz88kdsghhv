@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pageContext, guarded, monthRange } from "@/server/page";
+import { pageContext, guarded, monthRange, requirePageAccess } from "@/server/page";
 import { inventoryStatus, LEVEL_LABEL, STOCK_LEVELS, stockLevelParam } from "@/server/services/insights";
 import { can, departmentScope } from "@/server/auth/actor";
 import { warehouseScope } from "@/server/auth/scope";
@@ -13,13 +13,15 @@ import { MovementForm } from "./movement-form";
 import { FilterBar } from "@/components/filter-bar";
 import { Title } from "@/components/title";
 import { ProductChip } from "@/components/product-chip";
+import { pageTitle } from "@/i18n/metadata";
 
-export const metadata = { title: "Inventory" };
+export const generateMetadata = pageTitle("Inventory");
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ group?: string; level?: string; from?: string; to?: string; productId?: string }> }) {
   const sp = await searchParams;
   const t = await getT();
   const { actor, hotelId, hotel } = await pageContext();
+  requirePageAccess(actor, "inventory:view", hotelId);
   const range = monthRange(sp);
   const level = stockLevelParam(sp.level);
   const res = await guarded(() => inventoryStatus(prisma, actor, hotelId, { categoryGroup: sp.group || undefined, period: range }));
